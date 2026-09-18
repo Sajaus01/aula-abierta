@@ -60,6 +60,7 @@ export function openDatabase(dataDir) {
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       resource_id TEXT NOT NULL REFERENCES resources(id) ON DELETE CASCADE,
       completed INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL,
+      opened_at TEXT, last_opened_at TEXT,
       PRIMARY KEY(user_id,resource_id)
     );
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -68,6 +69,19 @@ export function openDatabase(dataDir) {
       target_id TEXT, created_at TEXT NOT NULL
     );
   `);
+  // Additive and repeatable: existing progress and legacy migration bundles remain
+  // intact. A completed legacy row is interpreted as opened by the read API.
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const columns = new Set(db.prepare('PRAGMA table_info(progress)').all().map(column => column.name));
+    if (!columns.has('opened_at')) db.exec('ALTER TABLE progress ADD COLUMN opened_at TEXT');
+    if (!columns.has('last_opened_at')) db.exec('ALTER TABLE progress ADD COLUMN last_opened_at TEXT');
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    db.close();
+    throw error;
+  }
   const insert = db.prepare('INSERT OR IGNORE INTO settings(key,value) VALUES (?,?)');
   insert.run('name', 'Aula Abierta');
   insert.run('subtitle', 'Un lugar para aprender, a tu ritmo.');

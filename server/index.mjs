@@ -113,6 +113,11 @@ export async function createApp(options = {}) {
   const audit = (actor, action, target) => run('INSERT INTO audit(actor_id,action,target_id,created_at) VALUES (?,?,?,?)', actor?.id || null, action, target || null, now());
   const requireAdmin = auth => { if (!auth || auth.user.role !== 'admin' || auth.assurance !== 'password') fail(403, 'Se requiere una sesión de administración.', 'ADMIN_REQUIRED'); };
   const requireAuth = auth => { if (!auth) fail(401, 'Inicia sesión para continuar.', 'LOGIN_REQUIRED'); return auth; };
+  const requireStudent = auth => {
+    requireAuth(auth);
+    if (auth.user.role !== 'student') fail(403, 'Esta función está disponible para estudiantes.', 'STUDENT_REQUIRED');
+    return auth;
+  };
 
   function readSession(req) {
     const match = (req.headers.cookie || '').split(';').map(value => value.trim()).find(value => value.startsWith('aula_session='));
@@ -155,8 +160,38 @@ export async function createApp(options = {}) {
   function courseView(course, auth, details = false) {
     const result = { id:course.id, title:course.title, description:course.description, accessMode:course.access_mode, published:Boolean(course.published), coverUrl:course.cover_url, createdAt:course.created_at, updatedAt:course.updated_at, enrolled:isEnrolled(auth?.user.id, course.id), locked:!canAccess(course, auth), resourceCount:one('SELECT COUNT(*) AS count FROM resources r JOIN modules m ON m.id=r.module_id WHERE m.course_id=?', course.id).count, moduleCount:one('SELECT COUNT(*) AS count FROM modules WHERE course_id=?', course.id).count };
     if (auth?.user.role === 'admin') result.enrollmentCount = one("SELECT COUNT(*) AS count FROM enrollments WHERE course_id=? AND status='active'", course.id).count;
-    if (details) result.modules = query('SELECT * FROM modules WHERE course_id=? ORDER BY position,rowid', course.id).map(module => ({ id:module.id, courseId:module.course_id, title:module.title, position:module.position, resources:query('SELECT * FROM resources WHERE module_id=? ORDER BY position,rowid', module.id).map(resourceView) }));
+    if (details) result.modules = query('SELECT * FROM modules WHERE course_id=? ORDER BY position,id', course.id).map(module => ({ id:module.id, courseId:module.course_id, title:module.title, position:module.position, resources:query('SELECT * FROM resources WHERE module_id=? ORDER BY position,id', module.id).map(resourceView) }));
     return result;
+  }
+  function progressView(row) {
+    return { resourceId:row.resource_id, completed:Boolean(row.completed), updatedAt:row.updated_at, openedAt:row.opened_at || null, lastOpenedAt:row.last_opened_at || null };
+  }
+  function learningSummary(auth) {
+    const courses = [], recent = [], activities = [];
+    const resourceSummary = row => ({ id:row.id, title:row.title, moduleTitle:row.module_title, kind:row.kind });
+    const byRecent = (a, b) => b.lastOpenedAt.localeCompare(a.lastOpenedAt) || a.id.localeCompare(b.id);
+    for (const course of query('SELECT * FROM courses WHERE published=1 ORDER BY created_at DESC,id')) {
+      if (!canAccess(course, auth)) continue;
+      const resources = query(`SELECT r.id,r.title,r.kind,m.title AS module_title,
+        p.completed,p.updated_at,p.opened_at,p.last_opened_at
+        FROM resources r JOIN modules m ON m.id=r.module_id
+        LEFT JOIN progress p ON p.resource_id=r.id AND p.user_id=?
+        WHERE m.course_id=? ORDER BY m.position,m.id,r.position,r.id`, auth.user.id, course.id);
+      const opened = resources.filter(row => row.opened_at || row.last_opened_at || row.completed);
+      const history = opened.map(row => ({ ...resourceSummary(row), lastOpenedAt:row.last_opened_at || row.opened_at || row.updated_at })).sort(byRecent);
+      const next = resources.find(row => !row.completed);
+      courses.push({ courseId:course.id, total:resources.length, opened:opened.length,
+        completed:resources.filter(row => row.completed).length,
+        exercisesTotal:resources.filter(row => row.kind === 'exercise').length,
+        exercisesCompleted:resources.filter(row => row.kind === 'exercise' && row.completed).length,
+        nextResource:next ? resourceSummary(next) : null, lastResource:history[0] || null });
+      for (const row of history) recent.push({ courseId:course.id, courseTitle:course.title, resourceId:row.id, title:row.title, kind:row.kind, lastOpenedAt:row.lastOpenedAt });
+      for (const row of resources) if (row.kind === 'exercise' && !row.completed && activities.length < 5) {
+        activities.push({ courseId:course.id, courseTitle:course.title, resourceId:row.id, title:row.title, kind:row.kind });
+      }
+    }
+    recent.sort((a, b) => b.lastOpenedAt.localeCompare(a.lastOpenedAt) || a.resourceId.localeCompare(b.resourceId));
+    return { courses, recent:recent.slice(0, 5), activities };
   }
   function studentView(user) {
     return { ...userView(user), active:Boolean(user.active), hasPassword:Boolean(user.password_hash), createdAt:user.created_at, updatedAt:user.updated_at, enrollmentCount:one("SELECT COUNT(*) AS count FROM enrollments WHERE student_id=? AND status='active'", user.id).count };
@@ -346,17 +381,41 @@ export async function createApp(options = {}) {
       if (path === '/api/progress' && method === 'GET') {
         requireAuth(auth);
         const rows = query('SELECT p.*,m.course_id FROM progress p JOIN resources r ON r.id=p.resource_id JOIN modules m ON m.id=r.module_id WHERE p.user_id=?', auth.user.id);
-        return json(res, rows.filter(row => canAccess(one('SELECT * FROM courses WHERE id=?', row.course_id), auth)).map(row => ({ resourceId:row.resource_id, completed:Boolean(row.completed), updatedAt:row.updated_at })));
+        return json(res, rows.filter(row => canAccess(one('SELECT * FROM courses WHERE id=?', row.course_id), auth)).map(progressView));
+      }
+      if (path === '/api/learning' && method === 'GET') {
+        requireStudent(auth);
+        return json(res, learningSummary(auth));
+      }
+      match = /^\/api\/progress\/([^/]+)\/open$/.exec(path);
+      if (match && method === 'POST') {
+        requireStudent(auth);
+        await readJson(req);
+        const currentAuth = requireStudent(readSession(req));
+        const row = one('SELECT m.course_id FROM resources r JOIN modules m ON m.id=r.module_id WHERE r.id=?', match[1]);
+        if (!row) fail(404, 'Recurso no encontrado.', 'NOT_FOUND');
+        requireCourse(row.course_id, currentAuth);
+        const at = now();
+        run(`INSERT INTO progress(user_id,resource_id,completed,updated_at,opened_at,last_opened_at) VALUES (?,?,0,?,?,?)
+          ON CONFLICT(user_id,resource_id) DO UPDATE SET updated_at=excluded.updated_at,
+          opened_at=COALESCE(progress.opened_at,progress.last_opened_at,CASE WHEN progress.completed=1 THEN progress.updated_at END,excluded.opened_at),
+          last_opened_at=excluded.last_opened_at`, currentAuth.user.id, match[1], at, at, at);
+        return json(res, progressView(one('SELECT * FROM progress WHERE user_id=? AND resource_id=?', currentAuth.user.id, match[1])));
       }
       match = /^\/api\/progress\/([^/]+)$/.exec(path);
       if (match && method === 'PUT') {
-        requireAuth(auth);
+        requireStudent(auth);
+        const body = await readJson(req), completed = boolean(body.completed, 'Completado');
+        const currentAuth = requireStudent(readSession(req));
         const row = one('SELECT m.course_id FROM resources r JOIN modules m ON m.id=r.module_id WHERE r.id=?', match[1]);
         if (!row) fail(404, 'Recurso no encontrado.', 'NOT_FOUND');
-        requireCourse(row.course_id, auth);
-        const body = await readJson(req), completed = boolean(body.completed, 'Completado'), at = now();
-        run('INSERT INTO progress(user_id,resource_id,completed,updated_at) VALUES (?,?,?,?) ON CONFLICT(user_id,resource_id) DO UPDATE SET completed=excluded.completed,updated_at=excluded.updated_at', auth.user.id, match[1], completed, at);
-        return json(res, { resourceId:match[1], completed:Boolean(completed), updatedAt:at });
+        requireCourse(row.course_id, currentAuth);
+        const at = now(), opened = completed ? at : null;
+        run(`INSERT INTO progress(user_id,resource_id,completed,updated_at,opened_at,last_opened_at) VALUES (?,?,?,?,?,?)
+          ON CONFLICT(user_id,resource_id) DO UPDATE SET completed=excluded.completed,updated_at=excluded.updated_at,
+          opened_at=COALESCE(progress.opened_at,progress.last_opened_at,CASE WHEN progress.completed=1 THEN progress.updated_at END,excluded.opened_at),
+          last_opened_at=COALESCE(progress.last_opened_at,progress.opened_at,CASE WHEN progress.completed=1 THEN progress.updated_at END,excluded.last_opened_at)`, currentAuth.user.id, match[1], completed, at, opened, opened);
+        return json(res, progressView(one('SELECT * FROM progress WHERE user_id=? AND resource_id=?', currentAuth.user.id, match[1])));
       }
 
       if (path.startsWith('/api/admin/')) {
@@ -512,7 +571,7 @@ export async function createApp(options = {}) {
           const order = own(body, 'position') ? position(body.position) : module.position;
           run('UPDATE modules SET title=?,position=? WHERE id=?', title, order, module.id);
           audit(auth.user, 'module.update', module.id);
-          return json(res, { id:module.id, courseId:module.course_id, title, position:order, resources:query('SELECT * FROM resources WHERE module_id=? ORDER BY position,rowid', module.id).map(resourceView) });
+          return json(res, { id:module.id, courseId:module.course_id, title, position:order, resources:query('SELECT * FROM resources WHERE module_id=? ORDER BY position,id', module.id).map(resourceView) });
         }
         match = /^\/api\/admin\/modules\/([^/]+)\/resources$/.exec(path);
         if (match && method === 'POST') {
