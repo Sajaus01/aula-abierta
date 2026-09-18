@@ -118,9 +118,18 @@ async function render() {
 }
 function openModal(title,body,onSubmit,{wide=false,submit='Guardar'}={}) {
  if(modal.open)modal.close();
+ document.documentElement.classList.remove('resource-viewer-open');
  modal.className=wide?'wide':'';
  modal.innerHTML=`<div class="modal-head"><h2 id="modal-title">${title}</h2><button type="button" class="icon-btn" data-action="close-modal" aria-label="Cerrar">${icon('close')}</button></div>${onSubmit?'<form id="modal-form">':''}${body}${onSubmit?`<div class="form-error" role="alert"></div><div class="form-actions"><button type="button" class="btn secondary" data-action="close-modal">Cancelar</button><button type="submit" class="btn">${submit}</button></div></form>`:''}`;
  modalHandler=onSubmit;modal.showModal();
+}
+function openResourceViewer(resource,view,actions) {
+ if(modal.open)modal.close();
+ modal.className='resource-viewer';
+ modal.innerHTML=`<header class="viewer-header"><button type="button" class="btn secondary viewer-back" data-action="close-modal" aria-label="Volver al curso" autofocus>${icon('arrow')}<span class="viewer-action-label">Volver al curso</span></button><div class="viewer-heading"><h2 id="modal-title" title="${e(resource.title)}">${e(resource.title)}</h2><span>${kinds[resource.kind]}</span></div><div class="viewer-actions">${actions}<button type="button" class="icon-btn" data-action="close-modal" aria-label="Cerrar material" title="Cerrar material">${icon('close')}</button></div></header><div class="content-view">${view}</div>`;
+ modalHandler=null;
+ document.documentElement.classList.add('resource-viewer-open');
+ modal.showModal();
 }
 async function submitForm(form,fn) {
  const submit=form.querySelector('[type=submit]'),error=form.querySelector('.form-error');error.textContent='';submit.disabled=true;
@@ -165,7 +174,9 @@ async function viewResource(id) {
  else if(r.content)view=`<pre>${e(r.content)}</pre>`;
  else view=`<div class="empty"><div class="empty-icon">${icon(kindIcon(r.kind))}</div><h3>${e(r.title)}</h3><p>${file?'Descarga el archivo para abrirlo en tu dispositivo.':url?'Abre este material en su página original.':'Este material aún no tiene contenido.'}</p></div>`;
  const completed=state.progress.some(p=>p.resourceId===id&&p.completed);
- openModal(e(r.title),`${badge(state.currentCourse?.accessMode||'public')}<span class="badge gray" style="margin-left:8px">${kinds[r.kind]}</span><div class="content-view">${view}</div><div class="form-actions wrap">${file?`<a class="btn secondary" href="${e(file)}" download>${icon('download')}Descargar archivo</a>`:''}${url?`<a class="btn secondary" href="${e(url)}" target="_blank" rel="noopener noreferrer">${icon('link')}Abrir enlace</a>`:''}${state.user&&!admin()?btn(completed?'Marcar pendiente':'Marcar completado',`complete:${id}`,completed?'secondary':'','check'):btn('Cerrar','close-modal','secondary')}</div>`,null,{wide:true});
+ const completionLabel=completed?'Marcar pendiente':'Marcar completado';
+ const actions=`${file?`<a class="btn secondary" href="${e(file)}" download aria-label="Descargar archivo" title="Descargar archivo">${icon('download')}<span class="viewer-action-label">Descargar</span></a>`:''}${url?`<a class="btn secondary" href="${e(url)}" target="_blank" rel="noopener noreferrer" aria-label="Abrir enlace original" title="Abrir enlace original">${icon('link')}<span class="viewer-action-label">Abrir enlace</span></a>`:''}${state.user&&!admin()?`<button type="button" class="btn ${completed?'secondary':''}" data-action="complete:${id}" aria-label="${completionLabel}" title="${completionLabel}">${icon('check')}<span class="viewer-action-label">${completionLabel}</span></button>`:''}`;
+ openResourceViewer(r,view,actions);
 }
 function importStudents() {
  openModal('Importar estudiantes',`<div class="form-stack"><p class="small-paragraph">Carga una lista CSV con las columnas <strong>cedula,nombre,correo</strong>. El correo es opcional. Conserva las cédulas como texto para no perder ceros.</p><label>Archivo CSV<input type="file" name="csv" accept=".csv,text/csv" required></label><p class="field-hint">Los estudiantes existentes no se duplican. Las matrículas se asignan después, desde Matrículas.</p>${btn('Descargar plantilla vacía','csv-template','secondary small','download')}</div>`,async fd=>{const f=fd.get('csv');if(f.size>1024*1024)throw new Error('La lista debe pesar menos de 1 MB.');const students=parseStudentsCsv(await f.text());if(!students.length)throw new Error('La lista no contiene estudiantes.');if(students.length>500)throw new Error('Importa hasta 500 estudiantes por lista.');const result=await post('/admin/students/bulk',{students});await saved('Lista procesada');state.importResult=result;openModal('Resultado de la importación',`<p class="small-paragraph">Se registraron ${result.created?.length||0} estudiantes. Guarda los códigos antes de cerrar.</p>${result.errors?.length?`<div class="notice warning" style="margin-top:15px">${result.errors.map(x=>e(x.error||x.message||JSON.stringify(x))).join('<br>')}</div>`:''}<div class="table-wrap"><table><thead><tr><th>ESTUDIANTE</th><th>CÉDULA</th><th>CÓDIGO</th></tr></thead><tbody>${(result.created||[]).map(s=>`<tr><td>${e(s.name)}</td><td>${e(s.document)}</td><td><code>${e(s.activationCode)}</code></td></tr>`).join('')}</tbody></table></div><div class="form-actions">${btn('Guardar códigos','export-codes','secondary','download')}${btn('Listo','close-modal')}</div>`,null,{wide:true});},{submit:'Importar estudiantes'});
@@ -186,7 +197,14 @@ function bindForms() {
  document.getElementById('settings-form')?.addEventListener('submit',ev=>{ev.preventDefault();submitForm(ev.currentTarget,async fd=>{state.settings=await patch('/admin/settings',values(fd));await render();toast('Configuración guardada');});});
 }
 modal.addEventListener('submit',ev=>{if(ev.target.id==='modal-form'){ev.preventDefault();submitForm(ev.target,fd=>modalHandler(fd));}});
-modal.addEventListener('close',()=>{if(state.importResult)state.importResult=null;});
+modal.addEventListener('close',()=>{
+ // A close event from a previous dialog must not clear a newly opened one.
+ if(modal.open)return;
+ modal.replaceChildren();
+ modalHandler=null;
+ document.documentElement.classList.remove('resource-viewer-open');
+ if(state.importResult)state.importResult=null;
+});
 document.addEventListener('input',ev=>{if(ev.target.id==='search'){const position=ev.target.selectionStart;state.query=ev.target.value;render().then(()=>{const s=document.getElementById('search');s?.focus();s?.setSelectionRange(position,position);});}});
 document.addEventListener('click',async ev=>{
  const el=ev.target.closest('[data-action]');if(!el)return;const [action,id]=el.dataset.action.split(':');
@@ -221,14 +239,14 @@ document.addEventListener('click',async ev=>{
    case 'delete-resource':confirmAction('Eliminar material','Este material dejará de estar disponible para los estudiantes.',()=>api(`/admin/resources/${id}`,{method:'DELETE'}));break;
    case 'resource':await viewResource(id);break;
    case 'library-add':location.hash='cursos';toast('Abre un curso y añade materiales en sus capítulos');break;
-   case 'complete':{const completed=!state.progress.some(x=>x.resourceId===id&&x.completed);await api(`/progress/${id}`,{method:'PUT',body:{completed}});await saved(completed?'Recurso completado':'Recurso marcado como pendiente');break;}
+   case 'complete':{const completed=!state.progress.some(x=>x.resourceId===id&&x.completed);await api(`/progress/${id}`,{method:'PUT',body:{completed}});await saved(completed?'Recurso completado':'Recurso marcado como pendiente');document.querySelector(`[data-action="resource:${id}"]`)?.focus();break;}
    case 'change-password':openModal('Cambiar contraseña','<div class="form-stack"><label>Contraseña actual<input name="currentPassword" type="password" autocomplete="current-password" required></label><label>Nueva contraseña<input name="newPassword" type="password" autocomplete="new-password" minlength="12" required><span class="field-hint">Usa al menos 12 caracteres.</span></label></div>',async fd=>{await post('/auth/password',values(fd));await post('/auth/logout');state.user=null;state.assurance=null;modal.close();location.hash='login';await render();toast('Contraseña actualizada. Ingresa nuevamente.');});break;
    case 'help':openModal('Tu aula, paso a paso',`<div class="steps">${[['Crea el curso','Elige su modalidad: libre, solo cédula o cédula y contraseña. Puedes empezar con un borrador.'],['Organiza el contenido','Dentro del curso, crea capítulos y añade archivos, enlaces, ejercicios o HTML.'],['Registra y matricula','Añade estudiantes desde una lista CSV o de forma individual. Asígnales cursos y, si quieres, fechas de acceso.'],['Comparte el acceso','Entrega cada código de activación de forma privada para que el estudiante cree su contraseña. Publica el curso cuando esté listo.']].map(([t,c],i)=>`<div class="step"><span class="step-number">${i+1}</span><div><strong>${t}</strong><p>${c}</p></div></div>`).join('')}</div><div class="form-actions">${btn('Entendido','close-modal')}</div>`);break;
    case 'reload':await boot();break;
   }
  }catch(err){toast(err.message);}
 });
-window.addEventListener('hashchange',()=>{state.query='';state.filter='all';render();window.scrollTo(0,0);});
+window.addEventListener('hashchange',()=>{if(modal.open&&modal.classList.contains('resource-viewer'))modal.close();state.query='';state.filter='all';render();window.scrollTo(0,0);});
 async function boot() {
  try { const [status,session,settings]=await Promise.all([api('/status'),api('/auth/me'),api('/settings')]);Object.assign(state,session,{settings,setupRequired:status.setupRequired});await refresh();await render(); }
  catch(error){app.innerHTML=publicShell(heading('Tu aula necesita conectarse','El diseño está listo. Para gestionar estudiantes y cursos, inicia el servidor de la plataforma.')+`<div class="notice warning">${icon('shield')}${e(error.message)}</div><section class="panel"><h2>Activación de la plataforma</h2><p class="small-paragraph" style="margin-top:15px">Este proyecto incluye el servidor, la base de datos y las instrucciones de instalación. Consulta el README del repositorio aula-abierta. No ingreses cédulas ni contraseñas hasta que el servicio esté conectado.</p><div class="form-actions">${btn('Comprobar conexión','reload','secondary','arrow')}</div></section>`);}
