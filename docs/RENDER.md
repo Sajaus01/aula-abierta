@@ -2,7 +2,7 @@
 
 Guía preparada el **18 de septiembre de 2026**. Render ejecutaría la plataforma, proporcionaría HTTPS y guardaría tus datos en un disco persistente. El código seguiría en [Sajaus01/aula-abierta](https://github.com/Sajaus01/aula-abierta). No necesitas comprar un dominio para comenzar.
 
-**Estado:** esta guía deja preparado el despliegue; no se ha creado ni contratado un servicio en Render y no se han generado cargos.
+Esta guía describe la configuración de publicación. Comprueba en tu panel de Render el estado del servicio y su facturación.
 
 ## Costo de referencia
 
@@ -12,7 +12,7 @@ El servicio gratuito no sirve para conservar los datos de esta aplicación: sus 
 
 ## 1. Configurar el servicio
 
-Cuando decidas contratarlo, entra en [Render](https://dashboard.render.com), selecciona **New → Web Service**, conecta GitHub y elige `Sajaus01/aula-abierta`, rama **`main`**. Configura:
+Entra en [Render](https://dashboard.render.com), selecciona **New → Web Service** y usa **Public Git Repository** con `https://github.com/Sajaus01/aula-abierta`, rama **`main`**. Esta opción permite publicar el repositorio público sin conceder acceso adicional a tu cuenta de GitHub. Configura:
 
 | Campo | Valor |
 | --- | --- |
@@ -49,7 +49,6 @@ En **Advanced → Add Disk**, configura:
 
 | Campo | Valor |
 | --- | --- |
-| Name | `aula-data` |
 | Mount Path | `/var/data` |
 | Size | `1 GB` |
 
@@ -59,14 +58,24 @@ En **Advanced → Add Disk**, configura:
 
 Comprueba el servicio de pago, el disco y el costo que muestra Render. **Create Web Service** inicia la contratación y el despliegue. Esa acción queda a tu cargo; preparar estos archivos no la ejecuta.
 
-Cuando Render indique que está **Live**, abre la URL HTTPS que te asigne e ingresa con tu cédula y contraseña de administrador. La plataforma comienza vacía. Crea cursos, agrega estudiantes y sube materiales desde el panel.
+Cuando Render indique que está **Live**, abre la URL HTTPS que te asigne e ingresa con tu cédula y contraseña de administrador. La plataforma comienza vacía; puedes crear contenido desde el panel o trasladar una instalación existente antes de agregar cursos y estudiantes.
 
 Después de comprobar el acceso, elimina `ADMIN_PASSWORD` de las variables de Render y elige **Save and deploy**. La cuenta ya queda guardada en la base de datos. Cambiar esa variable por sí solo no reemplaza una contraseña existente.
+
+## Trasladar el contenido local
+
+Con la sesión de administrador abierta, ve a **Configuración → Importar traslado** y selecciona la copia de migración preparada para tu instalación. Se conservan los cursos, capítulos, recursos, archivos, estudiantes, matrículas y avances incluidos en la copia. La cuenta de administrador y la configuración del destino se mantienen.
+
+La importación inicial solo admite un destino sin cursos ni estudiantes y se ejecuta una vez. El límite del archivo es 64 MB. La herramienta valida el paquete antes de guardarlo y rechaza una importación que sobrescribiría datos. No es una herramienta de sincronización ni reemplaza un sistema de respaldos.
+
+Las contraseñas de estudiantes que ya estaban configuradas conservan su hash; las sesiones y los códigos de activación del origen no se trasladan. Si un estudiante necesita activar su cuenta, genera un código nuevo desde **Estudiantes**. La cuenta de prueba de administrador local no se copia.
+
+**La copia de migración contiene datos privados.** Consérvala fuera del repositorio, de las carpetas públicas y de las páginas del curso. Súbela únicamente mediante el importador administrativo de tu propia plataforma usando HTTPS.
 
 ## Después de publicar
 
 - Haz una prueba con un curso y estudiante propios; comprueba que los materiales privados no se abran al cerrar sesión y que los datos sobrevivan a un nuevo despliegue.
 - Conserva respaldos coherentes de la base SQLite y de los materiales fuera del servicio. No confundas la copia del código en GitHub con una copia de tus datos académicos. La guía de [operación y respaldos](PUBLICACION.md#persistencia-y-copias) explica qué debes conservar; sus comandos Docker corresponden únicamente a instalaciones Docker.
-- Al actualizar el código conectado, Render puede volver a desplegarlo. Con disco persistente hay una breve interrupción durante ese cambio. [Consideraciones de discos](https://render.com/docs/disks#disk-limitations-and-considerations).
+- Al usar la URL de un repositorio público sin conectar GitHub, publica los cambios desde **Manual Deploy → Deploy latest commit** en Render. No presupongas despliegues automáticos. Con disco persistente hay una breve interrupción durante ese cambio. [Consideraciones de discos](https://render.com/docs/disks#disk-limitations-and-considerations).
 - Si más adelante agregas un dominio propio, configura `APP_URL` con su dirección HTTPS exacta y úsala para entrar. La URL inicial de Render es suficiente para empezar.
 

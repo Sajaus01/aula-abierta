@@ -5,6 +5,7 @@ import { resolve, join, extname, dirname, sep, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDatabase, bootstrapAdmin } from './database.mjs';
 import { token, digest, hashPassword, verifyPassword, passwordError, RateLimiter } from './security.mjs';
+import { importMigration, MigrationError, MIGRATION_MAX_BYTES } from './migration.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
@@ -69,7 +70,7 @@ async function readJson(req, limit = 1024 * 1024) {
   return parsed;
 }
 
-function validateFile(file) {
+export function validateFile(file) {
   if (!file || typeof file !== 'object' || Array.isArray(file)) fail(400, 'El archivo no es válido.');
   const name = string(file.name, 'el nombre del archivo', 180, true);
   if (/[\x00-\x1f\x7f\\/]/.test(name)) fail(400, 'El nombre del archivo contiene caracteres no permitidos.');
@@ -360,6 +361,10 @@ export async function createApp(options = {}) {
 
       if (path.startsWith('/api/admin/')) {
         requireAdmin(auth);
+        if (path === '/api/admin/migration' && method === 'POST') {
+          const bundle = await readJson(req, MIGRATION_MAX_BYTES);
+          return json(res, importMigration({ db, uploadsDir, bundle, validateFile, actorId:auth.user.id }), 201);
+        }
         if (path === '/api/admin/settings' && method === 'GET') return json(res, settings());
         if (path === '/api/admin/settings' && method === 'PATCH') {
           const body = await readJson(req), values = {};
@@ -568,7 +573,7 @@ export async function createApp(options = {}) {
       return fileResponse(req, res, filePath, mime, basename(filePath));
     } catch (error) {
       if (res.headersSent) { res.destroy(); return; }
-      const status = error instanceof ApiError ? error.status : error instanceof URIError ? 400 : 500;
+      const status = error instanceof ApiError || error instanceof MigrationError ? error.status : error instanceof URIError ? 400 : 500;
       if (status === 500) console.error('Error interno:', error.message);
       res.removeHeader('Content-Length');
       res.removeHeader('Content-Disposition');

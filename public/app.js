@@ -112,6 +112,7 @@ async function render() {
   else content=({inicio:dashboard,cursos:()=>coursesPage(),estudiantes:studentsPage,matriculas:enrollmentsPage,biblioteca:libraryPage,ajustes:settingsPage}[current]||dashboard)();
   if(version!==renderVersion)return;
   app.innerHTML=state.user&&current!=='login'?shell(content,current):publicShell(content);
+  if(admin()&&current==='ajustes')document.querySelector('.settings-grid')?.insertAdjacentHTML('beforeend',`<section class="panel"><h2>Trasladar un aula existente</h2><p class="small-paragraph">Importa una copia de migración en una plataforma sin cursos ni estudiantes. Conserva la cuenta de administrador de destino. El archivo contiene datos privados: no lo subas a GitHub.</p><div class="form-actions">${btn('Importar traslado','import-migration','secondary','upload')}</div></section>`);
   bindForms();
  }catch(error){app.innerHTML=publicShell(`<div class="notice error">${e(error.message)}</div>${btn('Volver a intentar','reload','','arrow')}`);}
 }
@@ -170,6 +171,15 @@ function importStudents() {
  openModal('Importar estudiantes',`<div class="form-stack"><p class="small-paragraph">Carga una lista CSV con las columnas <strong>cedula,nombre,correo</strong>. El correo es opcional. Conserva las cédulas como texto para no perder ceros.</p><label>Archivo CSV<input type="file" name="csv" accept=".csv,text/csv" required></label><p class="field-hint">Los estudiantes existentes no se duplican. Las matrículas se asignan después, desde Matrículas.</p>${btn('Descargar plantilla vacía','csv-template','secondary small','download')}</div>`,async fd=>{const f=fd.get('csv');if(f.size>1024*1024)throw new Error('La lista debe pesar menos de 1 MB.');const students=parseStudentsCsv(await f.text());if(!students.length)throw new Error('La lista no contiene estudiantes.');if(students.length>500)throw new Error('Importa hasta 500 estudiantes por lista.');const result=await post('/admin/students/bulk',{students});await saved('Lista procesada');state.importResult=result;openModal('Resultado de la importación',`<p class="small-paragraph">Se registraron ${result.created?.length||0} estudiantes. Guarda los códigos antes de cerrar.</p>${result.errors?.length?`<div class="notice warning" style="margin-top:15px">${result.errors.map(x=>e(x.error||x.message||JSON.stringify(x))).join('<br>')}</div>`:''}<div class="table-wrap"><table><thead><tr><th>ESTUDIANTE</th><th>CÉDULA</th><th>CÓDIGO</th></tr></thead><tbody>${(result.created||[]).map(s=>`<tr><td>${e(s.name)}</td><td>${e(s.document)}</td><td><code>${e(s.activationCode)}</code></td></tr>`).join('')}</tbody></table></div><div class="form-actions">${btn('Guardar códigos','export-codes','secondary','download')}${btn('Listo','close-modal')}</div>`,null,{wide:true});},{submit:'Importar estudiantes'});
 }
 function downloadText(name,text,type='text/csv') {const url=URL.createObjectURL(new Blob([text],{type}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function importMigration() {
+ openModal('Importar el aula local',`<div class="form-stack"><p class="small-paragraph">El traslado incluye los cursos, estudiantes, matrículas, avances y materiales del archivo. Solo se permite cuando esta plataforma aún no tiene cursos ni estudiantes.</p><label>Archivo de migración<input type="file" name="bundle" accept=".json,application/json" required></label><p class="field-hint">La cuenta de administrador y su contraseña actuales se conservan. Las sesiones y los códigos de activación anteriores no se trasladan.</p></div>`,async fd=>{
+  const file=fd.get('bundle');if(!file?.size)throw new Error('Selecciona el archivo de migración.');if(file.size>64*1024*1024)throw new Error('La copia supera el límite de 64 MB.');
+  let bundle;try{bundle=JSON.parse(await file.text());}catch{throw new Error('El archivo no contiene una copia JSON válida.');}
+  if(!bundle||bundle.format!=='aula-abierta-migration'||bundle.version!==1)throw new Error('El archivo no es una copia compatible de Aula Abierta.');
+  const result=await post('/admin/migration',bundle);await saved('Traslado completado');
+  const counts=result.imported;openModal('Tu aula ya está trasladada',`<p class="small-paragraph">Se importaron ${Number(counts.courses)} cursos, ${Number(counts.students)} estudiantes, ${Number(counts.resources)} recursos y ${Number(counts.enrollments)} matrículas.</p><p class="field-hint" style="margin-top:16px">Los estudiantes que aún no tengan contraseña necesitarán un código nuevo desde Estudiantes.</p><div class="form-actions">${btn('Continuar','close-modal')}</div>`);
+ },{submit:'Importar en esta plataforma'});
+}
 function csvCell(text){let t=String(text??'');if(/^[=+@\-\t\r]/.test(t))t="'"+t;return '"'+t.replaceAll('"','""')+'"';}
 function bindForms() {
  document.getElementById('login-form')?.addEventListener('submit',ev=>{ev.preventDefault();submitForm(ev.currentTarget,async fd=>{const result=await post(state.loginMode==='activate'?'/auth/activate':'/auth/login',values(fd));state.user=result.user;state.assurance=result.assurance;state.currentCourse=null;await refresh();location.hash=admin()?'inicio':'mis-cursos';await render();toast('Bienvenido a tu aula');});});
@@ -196,6 +206,7 @@ document.addEventListener('click',async ev=>{
    case 'edit-student':studentForm(id);break;
    case 'activate-student':openModal('Generar un código nuevo','<p class="small-paragraph">Se invalidarán las sesiones y cualquier código anterior de este estudiante. Entrégale el nuevo código de forma privada.</p>',async()=>{const s=state.students.find(x=>x.id===id);const result=await post(`/admin/students/${id}/activation`);await saved('Código generado');showCode(result.activationCode,s.name);},{submit:'Generar código'});break;
    case 'import-students':importStudents();break;
+   case 'import-migration':importMigration();break;
    case 'csv-template':downloadText('plantilla-estudiantes.csv','\uFEFFcedula,nombre,correo\r\n');break;
    case 'export-codes':if(state.importResult)downloadText('codigos-estudiantes.csv','\uFEFFcedula,nombre,codigo\r\n'+state.importResult.created.map(s=>[s.document,s.name,s.activationCode].map(csvCell).join(',')).join('\r\n'));break;
    case 'new-enrollment':enrollmentForm();break;
