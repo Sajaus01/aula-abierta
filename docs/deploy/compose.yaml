@@ -1,0 +1,48 @@
+name: aula-abierta
+
+services:
+  app:
+    build:
+      context: ../..
+    restart: unless-stopped
+    init: true
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: '3000'
+      DATA_DIR: /app/data
+      APP_URL: https://${DOMAIN:?Completa DOMAIN en el archivo .env}
+    volumes:
+      - aula_data:/app/data
+    expose:
+      - '3000'
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  web:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:?Completa DOMAIN en el archivo .env}
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+
+volumes:
+  aula_data:
+    name: aula-abierta-data
+  caddy_data:
+  caddy_config:
+
+

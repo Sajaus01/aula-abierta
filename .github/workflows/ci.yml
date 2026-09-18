@@ -1,0 +1,29 @@
+name: Verificar plataforma
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Comprobar versión y ejecutar pruebas
+        run: |
+          node --version
+          node --test tests/*.test.mjs
+      - name: Construir contenedor
+        run: docker build --tag aula-abierta:ci .
+
+
