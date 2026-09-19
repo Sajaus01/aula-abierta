@@ -19,7 +19,7 @@ export function createAcademicUI({api,getState,openModal,toast,render,modal,btn,
  function dispose(){if(reportUrl){URL.revokeObjectURL(reportUrl);reportUrl=null;}}
  function courseRows(activities){return activities.map(a=>`<div class="resource-row academic-resource-row"><span class="resource-icon">${icon('edit')}</span><div class="spacer"><strong>${e(a.title)}</strong><small>${kind(a.kind)} · ${fmt(a.weight)} %${a.dueAt?' · Entrega: '+e(dateTime(a.dueAt)):' · Sin fecha límite'}</small></div>${admin()?`<span class="badge ${a.status==='published'?'green':'gray'}">${{draft:'Borrador',published:'Publicada',archived:'Archivada'}[a.status]}</span>`:getState().assurance==='password'?`<span class="badge ${a.submitted?'green':'amber'}">${a.submitted?'Entregada':'Sin entregar'}</span>`:''}<a class="btn secondary small" href="#actividad/${e(a.id)}" aria-label="Abrir ${e(a.title)}">Abrir ${icon('arrow')}</a>${admin()?`<button class="icon-btn" data-action="academic-edit:${e(a.id)}" aria-label="Editar actividad ${e(a.title)}">${icon('edit')}</button>`:''}</div>`).join('');}
  function generalSection(activities){return activities.length?`<article class="module"><div class="module-head"><div class="module-title"><h3>Actividades generales del curso</h3></div></div>${courseRows(activities)}</article>`:'';}
- function courseEntry(id){return `<section class="panel academic-entry"><div><h2>Actividades y calificaciones</h2><p class="small-paragraph">${admin()?'Crea tareas y cuestionarios, revisa entregas y organiza los porcentajes del curso.':'Consulta los plazos, entrega tus trabajos y revisa tus resultados.'}</p></div><div class="flex wrap">${link(admin()?'Gestionar actividades':'Ver actividades',`#actividades/${id}`)}${link(admin()?'Libro de notas':'Mis notas',`#calificaciones/${id}`)}</div></section>`;}
+ function courseLinks(id){return `<div class="course-academic-links">${link(admin()?'Gestionar actividades':'Ver actividades',`#actividades/${id}`)}${link(admin()?'Libro de notas':'Mis notas',`#calificaciones/${id}`)}</div>`;}
  async function pageHTML(route){const generation=++pageGeneration;dispose();page=null;
   if(getState().assurance!=='password')return heading('Actividades y notas','Para proteger tus entregas y calificaciones, ingresa con tu contraseña.')+btn('Ingresar con contraseña','password-login','','lock');
   if(route==='tareas'){
@@ -97,5 +97,5 @@ export function createAcademicUI({api,getState,openModal,toast,render,modal,btn,
    }catch(err){error.textContent=err.message;}finally{form.removeAttribute('aria-busy');controls.forEach(c=>c.disabled=false);}
   });
  }
- return {pageHTML,courseEntry,courseRows,generalSection,bind,action,dispose,cancelPending:()=>{pageGeneration++;}};
+ return {pageHTML,courseLinks,courseRows,generalSection,bind,action,dispose,cancelPending:()=>{pageGeneration++;}};
 }
