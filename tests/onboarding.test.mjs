@@ -141,9 +141,9 @@ test('la sesión inicial bloquea todas las rutas de contenido y otros caminos de
   for (const accessMode of ['public', 'document', 'password']) {
     const course = await create('/api/admin/courses', { title: `Curso ${accessMode}`, accessMode, published: true });
     courses.push(course);
-    const module = await create(`/api/admin/courses/${course.id}/modules`, { title: 'Unidad sintética' });
+    const module = await create(`/api/admin/courses/${course.id}/modules`, { published: true, title: 'Unidad sintética' });
     resources.push(await create(`/api/admin/modules/${module.id}/resources`, {
-      title: 'HTML sintético', kind: 'html', file: { name: 'contenido.html', base64: Buffer.from('<!doctype html><title>Prueba</title>').toString('base64') }
+      published: true, title: 'HTML sintético', kind: 'html', file: { name: 'contenido.html', base64: Buffer.from('<!doctype html><title>Prueba</title>').toString('base64') }
     }));
     if (accessMode !== 'public') await create('/api/admin/enrollments', { studentId: person.id, courseId: course.id });
   }
@@ -393,4 +393,3 @@ test('al reiniciar se preparan únicamente estudiantes antiguos sin clave y se c
   assert.equal(repeated.must_change_password, 1);
   assert.equal(f.db.prepare('SELECT password_hash FROM users WHERE id=?').get('legacy-personal').password_hash, chosenHash);
 });
-

@@ -79,10 +79,10 @@ export function validateMigrationBundle(bundle, validateFile) {
     if (!['public', 'document', 'password'].includes(row.accessMode)) invalid('El paquete contiene una modalidad de curso no válida.');
     return { id:id(row.id), title:text(row.title, 200, true), description:text(row.description, 10000), accessMode:row.accessMode, published:bool(row.published), coverUrl:url(row.coverUrl), createdAt:date(row.createdAt), updatedAt:date(row.updatedAt) };
   });
-  const modules = bundle.modules.map(row => ({ id:id(row.id), courseId:id(row.courseId), title:text(row.title, 200, true), position:order(row.position) }));
+  const modules = bundle.modules.map(row => ({ id:id(row.id), courseId:id(row.courseId), title:text(row.title, 200, true), published:row.published === undefined ? true : bool(row.published), position:order(row.position) }));
   const resources = bundle.resources.map(row => {
     if (!KINDS.has(row.kind)) invalid('El paquete contiene un tipo de recurso no válido.');
-    const result = { id:id(row.id), moduleId:id(row.moduleId), title:text(row.title, 200, true), kind:row.kind, url:url(row.url), content:text(row.content, 1000000), position:order(row.position), fileId:row.fileId === null ? null : id(row.fileId), createdAt:date(row.createdAt), updatedAt:date(row.updatedAt) };
+    const result = { id:id(row.id), moduleId:id(row.moduleId), published:row.published === undefined ? true : bool(row.published), title:text(row.title, 200, true), kind:row.kind, url:url(row.url), content:text(row.content, 1000000), position:order(row.position), fileId:row.fileId === null ? null : id(row.fileId), createdAt:date(row.createdAt), updatedAt:date(row.updatedAt) };
     if (!result.url && !result.content && !result.fileId) invalid('El paquete contiene un recurso sin contenido.');
     return result;
   });
@@ -167,12 +167,12 @@ export async function importMigration({ db, uploadsDir, bundle, validateFile, ac
     for (const row of data.students) studentInsert.run(row.id, row.document, row.name, row.email, row.passwordHash, row.mustChangePassword ? 1 : 0, row.active ? 1 : 0, row.createdAt, row.updatedAt);
     const courseInsert = db.prepare('INSERT INTO courses(id,title,description,access_mode,published,cover_url,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)');
     for (const row of data.courses) courseInsert.run(row.id, row.title, row.description, row.accessMode, row.published ? 1 : 0, row.coverUrl, row.createdAt, row.updatedAt);
-    const moduleInsert = db.prepare('INSERT INTO modules(id,course_id,title,position) VALUES (?,?,?,?)');
-    for (const row of data.modules) moduleInsert.run(row.id, row.courseId, row.title, row.position);
-    const resourceInsert = db.prepare('INSERT INTO resources(id,module_id,title,kind,url,content,position,file_key,file_name,file_mime,file_size,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)');
+    const moduleInsert = db.prepare('INSERT INTO modules(id,course_id,title,position,published) VALUES (?,?,?,?,?)');
+    for (const row of data.modules) moduleInsert.run(row.id, row.courseId, row.title, row.position, Number(row.published));
+    const resourceInsert = db.prepare('INSERT INTO resources(id,module_id,title,kind,url,content,position,file_key,file_name,file_mime,file_size,created_at,updated_at,published) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
     for (const row of data.resources) {
       const file = row.fileId ? filesById.get(row.fileId) : null;
-      resourceInsert.run(row.id, row.moduleId, row.title, row.kind, row.url, row.content, row.position, file?.key || null, file?.name || null, file?.mime || null, file?.size || null, row.createdAt, row.updatedAt);
+      resourceInsert.run(row.id, row.moduleId, row.title, row.kind, row.url, row.content, row.position, file?.key || null, file?.name || null, file?.mime || null, file?.size || null, row.createdAt, row.updatedAt, Number(row.published));
     }
     const enrollmentInsert = db.prepare('INSERT INTO enrollments(id,student_id,course_id,status,starts_at,expires_at,created_at) VALUES (?,?,?,?,?,?,?)');
     for (const row of data.enrollments) enrollmentInsert.run(row.id, row.studentId, row.courseId, row.status, row.startsAt, row.expiresAt, row.createdAt);
@@ -197,4 +197,3 @@ export async function importMigration({ db, uploadsDir, bundle, validateFile, ac
     try { rmdirSync(stageDir); } catch { /* An interrupted disk write can leave a private staging directory. */ }
   }
 }
-

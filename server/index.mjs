@@ -172,19 +172,28 @@ export async function createApp(options = {}) {
     if (!canAccess(course, auth)) fail(auth ? 403 : 401, course.access_mode === 'password' && auth?.assurance === 'document' ? 'Este curso requiere cédula y contraseña.' : 'Necesitas una matrícula vigente y el acceso requerido para consultar este curso.', 'COURSE_LOCKED');
     return course;
   }
+  function requirePublishedResource(row, auth) {
+    requireCourse(row.course_id, auth);
+    if (auth?.user.role !== 'admin' && (!row.published || !row.module_published)) fail(404, 'Material no disponible.', 'NOT_FOUND');
+  }
   function resourceView(row) {
-    return { id:row.id, moduleId:row.module_id, title:row.title, kind:row.kind, url:row.url, content:row.content, position:row.position, fileName:row.file_name, fileMime:row.file_mime, fileSize:row.file_size, fileUrl:row.file_key ? `/api/resources/${row.id}/file` : null, previewUrl:row.kind === 'html' && (row.content || row.file_key) ? `/api/resources/${row.id}/preview` : null, createdAt:row.created_at, updatedAt:row.updated_at };
+    return { id:row.id, moduleId:row.module_id, published:Boolean(row.published), title:row.title, kind:row.kind, url:row.url, content:row.content, position:row.position, fileName:row.file_name, fileMime:row.file_mime, fileSize:row.file_size, fileUrl:row.file_key ? `/api/resources/${row.id}/file` : null, previewUrl:row.kind === 'html' && (row.content || row.file_key) ? `/api/resources/${row.id}/preview` : null, createdAt:row.created_at, updatedAt:row.updated_at };
   }
   function courseView(course, auth, details = false) {
-    const result = { id:course.id, title:course.title, description:course.description, accessMode:course.access_mode, published:Boolean(course.published), coverUrl:course.cover_url, createdAt:course.created_at, updatedAt:course.updated_at, enrolled:isEnrolled(auth?.user.id, course.id), locked:!canAccess(course, auth), resourceCount:one('SELECT COUNT(*) AS count FROM resources r JOIN modules m ON m.id=r.module_id WHERE m.course_id=?', course.id).count, moduleCount:one('SELECT COUNT(*) AS count FROM modules WHERE course_id=?', course.id).count };
+    const teacher = auth?.user.role === 'admin' && auth.assurance === 'password';
+    const modules = query('SELECT * FROM modules WHERE course_id=? ORDER BY position,id', course.id).filter(m => teacher || m.published);
+    const resourceScope = 'FROM resources r JOIN modules m ON m.id=r.module_id WHERE m.course_id=? AND (?=1 OR (r.published=1 AND m.published=1))';
+    const resources = details ? query(`SELECT r.* ${resourceScope} ORDER BY r.position,r.id`, course.id, Number(teacher)) : [];
+    const resourceCount = details ? resources.length : one(`SELECT COUNT(*) AS count ${resourceScope}`, course.id, Number(teacher)).count;
+    const result = { id:course.id, title:course.title, description:course.description, accessMode:course.access_mode, published:Boolean(course.published), coverUrl:course.cover_url, createdAt:course.created_at, updatedAt:course.updated_at, enrolled:isEnrolled(auth?.user.id, course.id), locked:!canAccess(course, auth), resourceCount, moduleCount:modules.length };
     if (auth?.user.role === 'admin') result.enrollmentCount = one("SELECT COUNT(*) AS count FROM enrollments WHERE course_id=? AND status='active'", course.id).count;
-    if (details) result.modules = query('SELECT * FROM modules WHERE course_id=? ORDER BY position,id', course.id).map(module => ({ id:module.id, courseId:module.course_id, title:module.title, position:module.position, resources:query('SELECT * FROM resources WHERE module_id=? ORDER BY position,id', module.id).map(resourceView) }));
+    if (details) result.modules = modules.map(module => ({ id:module.id, courseId:module.course_id, title:module.title, position:module.position, published:Boolean(module.published), resources:resources.filter(r => r.module_id === module.id).map(resourceView) }));
     if (details) {
       const teacher = auth?.user.role === 'admin' && auth.assurance === 'password';
       // Course listings expose only activity metadata, never questions, keys or grades.
       result.activities = !result.locked && (teacher || result.enrolled) ? query('SELECT id,module_id,config FROM activities WHERE course_id=? ORDER BY created_at,id', course.id).flatMap(row => {
         const a = JSON.parse(row.config);
-        if (!teacher && a.status !== 'published') return [];
+        if (!teacher && (a.status !== 'published' || (row.module_id && !modules.some(m => m.id === row.module_id)))) return [];
         const submitted = !teacher && auth?.assurance === 'password' ? Boolean(one("SELECT id FROM submissions WHERE activity_id=? AND student_id=? AND state!='draft' LIMIT 1", row.id, auth.user.id)) : false;
         return [{id:row.id,moduleId:row.module_id,title:a.title,kind:a.kind,status:a.status,weight:a.weight,dueAt:a.dueAt,opensAt:a.opensAt,closesAt:a.closesAt,submitted}];
       }) : [];
@@ -205,7 +214,7 @@ export async function createApp(options = {}) {
         p.completed,p.updated_at,p.opened_at,p.last_opened_at
         FROM resources r JOIN modules m ON m.id=r.module_id
         LEFT JOIN progress p ON p.resource_id=r.id AND p.user_id=?
-        WHERE m.course_id=? ORDER BY m.position,m.id,r.position,r.id`, auth.user.id, course.id);
+        WHERE m.course_id=? AND m.published=1 AND r.published=1 ORDER BY m.position,m.id,r.position,r.id`, auth.user.id, course.id);
       const opened = resources.filter(row => row.opened_at || row.last_opened_at || row.completed);
       const history = opened.map(row => ({ ...resourceSummary(row), lastOpenedAt:row.last_opened_at || row.opened_at || row.updated_at })).sort(byRecent);
       const next = resources.find(row => !row.completed);
@@ -500,9 +509,9 @@ export async function createApp(options = {}) {
       if (match && method === 'GET') return json(res, courseView(requireCourse(match[1], auth), auth, true));
       match = /^\/api\/resources\/([^/]+)\/preview$/.exec(path);
       if (match && ['GET', 'HEAD'].includes(method)) {
-        const resource = one('SELECT r.*,m.course_id FROM resources r JOIN modules m ON m.id=r.module_id WHERE r.id=?', match[1]);
+        const resource = one('SELECT r.*,m.course_id,m.published AS module_published FROM resources r JOIN modules m ON m.id=r.module_id WHERE r.id=?', match[1]);
         if (!resource || resource.kind !== 'html') fail(404, 'Vista previa no encontrada.', 'NOT_FOUND');
-        requireCourse(resource.course_id, auth);
+        requirePublishedResource(resource, auth);
         let content = resource.content;
         if (!content && resource.file_key) {
           if (!['text/html', 'text/plain'].includes(resource.file_mime)) fail(415, 'La vista previa de capítulos requiere un archivo HTML o texto.');
@@ -523,17 +532,17 @@ export async function createApp(options = {}) {
       }
       match = /^\/api\/resources\/([^/]+)\/file$/.exec(path);
       if (match && ['GET', 'HEAD'].includes(method)) {
-        const resource = one('SELECT r.*,m.course_id FROM resources r JOIN modules m ON m.id=r.module_id WHERE r.id=?', match[1]);
+        const resource = one('SELECT r.*,m.course_id,m.published AS module_published FROM resources r JOIN modules m ON m.id=r.module_id WHERE r.id=?', match[1]);
         if (!resource?.file_key) fail(404, 'Archivo no encontrado.', 'NOT_FOUND');
-        requireCourse(resource.course_id, auth);
+        requirePublishedResource(resource, auth);
         const inline = ['application/pdf', 'image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(resource.file_mime);
         // HTML never executes on the application's authenticated origin.
         return fileResponse(req, res, join(uploadsDir, resource.file_key), resource.file_mime, resource.file_name, !inline || url.searchParams.get('download') === '1', true);
       }
       if (path === '/api/progress' && method === 'GET') {
         requireAuth(auth);
-        const rows = query('SELECT p.*,m.course_id FROM progress p JOIN resources r ON r.id=p.resource_id JOIN modules m ON m.id=r.module_id WHERE p.user_id=?', auth.user.id);
-        return json(res, rows.filter(row => canAccess(one('SELECT * FROM courses WHERE id=?', row.course_id), auth)).map(progressView));
+        const rows = query('SELECT p.*,m.course_id,r.published,m.published AS module_published FROM progress p JOIN resources r ON r.id=p.resource_id JOIN modules m ON m.id=r.module_id WHERE p.user_id=?', auth.user.id);
+        return json(res, rows.filter(row => (auth.user.role === 'admin' || (row.published && row.module_published)) && canAccess(one('SELECT * FROM courses WHERE id=?', row.course_id), auth)).map(progressView));
       }
       if (path === '/api/learning' && method === 'GET') {
         requireStudent(auth);
@@ -544,9 +553,9 @@ export async function createApp(options = {}) {
         requireStudent(auth);
         await readJson(req);
         const currentAuth = requireStudent(readSession(req));
-        const row = one('SELECT m.course_id FROM resources r JOIN modules m ON m.id=r.module_id WHERE r.id=?', match[1]);
+        const row = one('SELECT m.course_id,r.published,m.published AS module_published FROM resources r JOIN modules m ON m.id=r.module_id WHERE r.id=?', match[1]);
         if (!row) fail(404, 'Recurso no encontrado.', 'NOT_FOUND');
-        requireCourse(row.course_id, currentAuth);
+        requirePublishedResource(row, currentAuth);
         const at = now();
         run(`INSERT INTO progress(user_id,resource_id,completed,updated_at,opened_at,last_opened_at) VALUES (?,?,0,?,?,?)
           ON CONFLICT(user_id,resource_id) DO UPDATE SET updated_at=excluded.updated_at,
@@ -559,9 +568,9 @@ export async function createApp(options = {}) {
         requireStudent(auth);
         const body = await readJson(req), completed = boolean(body.completed, 'Completado');
         const currentAuth = requireStudent(readSession(req));
-        const row = one('SELECT m.course_id FROM resources r JOIN modules m ON m.id=r.module_id WHERE r.id=?', match[1]);
+        const row = one('SELECT m.course_id,r.published,m.published AS module_published FROM resources r JOIN modules m ON m.id=r.module_id WHERE r.id=?', match[1]);
         if (!row) fail(404, 'Recurso no encontrado.', 'NOT_FOUND');
-        requireCourse(row.course_id, currentAuth);
+        requirePublishedResource(row, currentAuth);
         const at = now(), opened = completed ? at : null;
         run(`INSERT INTO progress(user_id,resource_id,completed,updated_at,opened_at,last_opened_at) VALUES (?,?,?,?,?,?)
           ON CONFLICT(user_id,resource_id) DO UPDATE SET completed=excluded.completed,updated_at=excluded.updated_at,
@@ -731,9 +740,10 @@ export async function createApp(options = {}) {
           const course = existing('courses', match[1], 'Curso'), body = await readJson(req), id = randomUUID();
           const title = string(body.title, 'el título del capítulo', 200, true);
           const order = own(body, 'position') ? position(body.position) : one('SELECT COALESCE(MAX(position),-1)+1 AS next FROM modules WHERE course_id=?', course.id).next;
-          run('INSERT INTO modules(id,course_id,title,position) VALUES (?,?,?,?)', id, course.id, title, order);
+          const published = own(body, 'published') ? boolean(body.published, 'Publicado') : 0;
+          run('INSERT INTO modules(id,course_id,title,position,published) VALUES (?,?,?,?,?)', id, course.id, title, order, published);
           audit(auth.user, 'module.create', id);
-          return json(res, { id, courseId:course.id, title, position:order, resources:[] }, 201);
+          return json(res, { id, courseId:course.id, title, position:order, published:Boolean(published), resources:[] }, 201);
         }
         match = /^\/api\/admin\/modules\/([^/]+)$/.exec(path);
         if (match && ['PATCH', 'DELETE'].includes(method)) {
@@ -748,9 +758,10 @@ export async function createApp(options = {}) {
           const body = await readJson(req);
           const title = own(body, 'title') ? string(body.title, 'el título del capítulo', 200, true) : module.title;
           const order = own(body, 'position') ? position(body.position) : module.position;
-          run('UPDATE modules SET title=?,position=? WHERE id=?', title, order, module.id);
+          const published = own(body, 'published') ? boolean(body.published, 'Publicado') : module.published;
+          run('UPDATE modules SET title=?,position=?,published=? WHERE id=?', title, order, published, module.id);
           audit(auth.user, 'module.update', module.id);
-          return json(res, { id:module.id, courseId:module.course_id, title, position:order, resources:query('SELECT * FROM resources WHERE module_id=? ORDER BY position,id', module.id).map(resourceView) });
+          return json(res, { id:module.id, courseId:module.course_id, title, position:order, published:Boolean(published), resources:query('SELECT * FROM resources WHERE module_id=? ORDER BY position,id', module.id).map(resourceView) });
         }
         match = /^\/api\/admin\/modules\/([^/]+)\/resources$/.exec(path);
         if (match && method === 'POST') {
@@ -760,10 +771,11 @@ export async function createApp(options = {}) {
           if (!RESOURCE_KINDS.has(kind)) fail(400, 'El tipo de recurso no es válido.');
           const resourceUrl = webUrl(body.url), content = string(body.content, 'el contenido', 1000000);
           const order = own(body, 'position') ? position(body.position) : one('SELECT COALESCE(MAX(position),-1)+1 AS next FROM resources WHERE module_id=?', module.id).next;
+          const published = own(body, 'published') ? boolean(body.published, 'Publicado') : 0;
           const file = body.file ? validateFile(body.file) : null;
           if (!resourceUrl && !content && !file) fail(400, 'Agrega un archivo, un enlace o contenido al recurso.');
           if (file) writeFileSync(join(uploadsDir, file.key), file.buffer, { flag:'wx', mode:0o600 });
-          try { run('INSERT INTO resources(id,module_id,title,kind,url,content,position,file_key,file_name,file_mime,file_size,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)', id, module.id, title, kind, resourceUrl, content, order, file?.key || null, file?.name || null, file?.mime || null, file?.size || null, at, at); }
+          try { run('INSERT INTO resources(id,module_id,title,kind,url,content,position,file_key,file_name,file_mime,file_size,created_at,updated_at,published) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)', id, module.id, title, kind, resourceUrl, content, order, file?.key || null, file?.name || null, file?.mime || null, file?.size || null, at, at, published); }
           catch (error) { if (file) deleteFiles([{ file_key:file.key }]); throw error; }
           audit(auth.user, 'resource.create', id);
           return json(res, resourceView(existing('resources', id, 'Recurso')), 201);
@@ -785,11 +797,12 @@ export async function createApp(options = {}) {
           const content = own(body, 'content') ? string(body.content, 'el contenido', 1000000) : resource.content;
           const order = own(body, 'position') ? position(body.position) : resource.position;
           const file = own(body, 'file') && body.file !== null ? validateFile(body.file) : null;
+          const published = own(body, 'published') ? boolean(body.published, 'Publicado') : resource.published;
           const replaceFile = own(body, 'file');
           const fileKey = replaceFile ? file?.key || null : resource.file_key;
           if (!resourceUrl && !content && !fileKey) fail(400, 'Agrega un archivo, un enlace o contenido al recurso.');
           if (file) writeFileSync(join(uploadsDir, file.key), file.buffer, { flag:'wx', mode:0o600 });
-          try { run('UPDATE resources SET title=?,kind=?,url=?,content=?,position=?,file_key=?,file_name=?,file_mime=?,file_size=?,updated_at=? WHERE id=?', title, kind, resourceUrl, content, order, fileKey, replaceFile ? file?.name || null : resource.file_name, replaceFile ? file?.mime || null : resource.file_mime, replaceFile ? file?.size || null : resource.file_size, now(), resource.id); }
+          try { run('UPDATE resources SET title=?,kind=?,url=?,content=?,position=?,file_key=?,file_name=?,file_mime=?,file_size=?,updated_at=?,published=? WHERE id=?', title, kind, resourceUrl, content, order, fileKey, replaceFile ? file?.name || null : resource.file_name, replaceFile ? file?.mime || null : resource.file_mime, replaceFile ? file?.size || null : resource.file_size, now(), published, resource.id); }
           catch (error) { if (file) deleteFiles([{ file_key:file.key }]); throw error; }
           if (replaceFile) deleteFiles([resource]);
           audit(auth.user, 'resource.update', resource.id);

@@ -76,6 +76,11 @@ export function openDatabase(dataDir) {
   // intact. A completed legacy row is interpreted as opened by the read API.
   db.exec('BEGIN IMMEDIATE');
   try {
+    // Existing course content stays published; new content is explicitly drafted by the API.
+    for (const table of ['modules', 'resources']) {
+      const fields = db.prepare(`PRAGMA table_info(${table})`).all();
+      if (!fields.some(field => field.name === 'published')) db.exec(`ALTER TABLE ${table} ADD COLUMN published INTEGER NOT NULL DEFAULT 1 CHECK(published IN (0,1))`);
+    }
     const userColumns = new Set(db.prepare('PRAGMA table_info(users)').all().map(column => column.name));
     if (!userColumns.has('must_change_password')) db.exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0');
     const columns = new Set(db.prepare('PRAGMA table_info(progress)').all().map(column => column.name));

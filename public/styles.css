@@ -60,3 +60,12 @@ dialog.resource-viewer[open]{display:flex;flex-direction:column}
 @media(max-width:800px){.learning-overview{grid-template-columns:1fr}.learning-course-summary{flex-wrap:wrap}.learning-next{border-left:0;border-top:1px solid #d1ddc2;max-width:none;width:100%;padding:18px 0 0;grid-template-columns:1fr auto;align-items:center}.learning-next>small{grid-column:1}.learning-next>.btn{grid-column:2;grid-row:1/3}.learning-ring{width:108px;height:108px}.learning-ring>div{width:88px;height:88px}.learning-counts{gap:10px 14px}.learning-stats .stat-top{font-size:.75rem}}
 @media(max-width:500px){.learning-course-summary{gap:17px;padding:20px}.learning-summary-body h2{font-size:1rem}.learning-ring{width:86px;height:86px}.learning-ring>div{width:70px;height:70px}.learning-ring strong{font-size:1.3rem}.learning-ring span{font-size:.58rem}.learning-counts{font-size:.68rem;margin-top:13px}.learning-next{grid-template-columns:1fr}.learning-next>.btn{grid-column:1;grid-row:auto}.learner-course-aside{grid-template-columns:1fr}.learning-filter{padding:8px 10px}.module-progress{font-size:.65rem}.learning-resource>.spacer{min-width:130px}.learning-list .resource-row{gap:10px}.learning-list .resource-row .spacer{min-width:120px}.learning-stats .stat{padding:15px}.learning-stats .stat-top{align-items:flex-start;gap:6px}.learning-stats .stat-icon{display:none}}
 
+
+/* Publication controls are visible only in the teacher course view. */
+.publication-module .module-head{flex-wrap:wrap;gap:14px}
+.publication-module .module-title{flex-wrap:wrap;flex:1;min-width:220px}
+.publication-module.is-draft{border-style:dashed}
+.publication-hint{margin:0;padding:12px 24px;background:#f6f7f2;color:#647052;font-size:.8rem;line-height:1.6}
+.publication-state{font-weight:600}
+.publication-module .resource-row{flex-wrap:wrap}
+.publication-module .resource-row .spacer{min-width:140px}

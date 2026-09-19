@@ -2,6 +2,18 @@
 
 La plataforma separa el contenido académico del código de la aplicación. Agrega cursos, módulos y recursos desde el panel de administración: quedan guardados en la base de datos y en el directorio privado del servidor. No es necesario editar un archivo JavaScript para cada capítulo.
 
+## Publicar el curso por partes
+
+Los capítulos y materiales nuevos se guardan como **Borrador** por defecto. Puedes marcar **Publicar capítulo** o **Publicar material** al crearlos o editarlos. Desde el listado del curso también tienes **Publicar** y **Ocultar** en cada fila, junto al estado actual.
+
+Para que un material sea visible deben estar publicados el curso, su capítulo y el propio material. Publicar un capítulo no publica automáticamente sus borradores. Ocultar un capítulo oculta sus materiales y actividades, incluso desde enlaces directos del aula y desde la lista de actividades. Al publicarlo de nuevo, cada elemento conserva su estado anterior. Las actividades conservan además sus propios estados y fechas de apertura y entrega.
+
+Los borradores se pueden abrir y revisar desde la cuenta de administrador. Ocultarlos conserva archivos, entregas, calificaciones y avances. El progreso estudiantil cuenta solo los materiales disponibles en ese momento y puede cambiar al publicar u ocultar contenidos. Los porcentajes de evaluación y las notas no se recalculan por ocultar un capítulo.
+
+Los contenidos creados antes de esta función conservan su visibilidad. Los recursos rápidos de la barra lateral ya disponen de **Mostrar a los estudiantes**, en su formulario de edición.
+
+Ocultar un enlace en el aula no cambia los permisos del sitio externo ni retira archivos que alguien ya haya descargado.
+
 ## Formatos
 
 | Material | Formato recomendado | Consideración |

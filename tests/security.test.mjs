@@ -113,13 +113,13 @@ test('la API aplica permisos, sesiones, matrículas y controles de archivos', as
     documentCourse = await create('/api/admin/courses', { title: 'Curso con cédula', accessMode: 'document', published: true });
     openCourse = await create('/api/admin/courses', { title: 'Curso abierto', accessMode: 'public', published: true });
     draftCourse = await create('/api/admin/courses', { title: 'Borrador oculto', accessMode: 'public', published: false });
-    secureModule = await create(`/api/admin/courses/${secureCourse.id}/modules`, { title: 'Unidad privada' });
-    const draftModule = await create(`/api/admin/courses/${draftCourse.id}/modules`, { title: 'Unidad borrador' });
-    const openModule = await create(`/api/admin/courses/${openCourse.id}/modules`, { title: 'Unidad libre' });
+    secureModule = await create(`/api/admin/courses/${secureCourse.id}/modules`, { published: true, title: 'Unidad privada' });
+    const draftModule = await create(`/api/admin/courses/${draftCourse.id}/modules`, { published: true, title: 'Unidad borrador' });
+    const openModule = await create(`/api/admin/courses/${openCourse.id}/modules`, { published: true, title: 'Unidad libre' });
     const file = { name: 'apuntes.pdf', base64: Buffer.from('%PDF-1.7\nmaterial de prueba\n%%EOF').toString('base64') };
-    secureFile = await create(`/api/admin/modules/${secureModule.id}/resources`, { title: 'Archivo privado', kind: 'pdf', file });
-    draftFile = await create(`/api/admin/modules/${draftModule.id}/resources`, { title: 'Archivo borrador', kind: 'pdf', file });
-    openFile = await create(`/api/admin/modules/${openModule.id}/resources`, { title: 'Archivo abierto', kind: 'pdf', file });
+    secureFile = await create(`/api/admin/modules/${secureModule.id}/resources`, { published: true, title: 'Archivo privado', kind: 'pdf', file });
+    draftFile = await create(`/api/admin/modules/${draftModule.id}/resources`, { published: true, title: 'Archivo borrador', kind: 'pdf', file });
+    openFile = await create(`/api/admin/modules/${openModule.id}/resources`, { published: true, title: 'Archivo abierto', kind: 'pdf', file });
     enrollment = await create('/api/admin/enrollments', { studentId: alpha.id, courseId: secureCourse.id });
     await create('/api/admin/enrollments', { studentId: alpha.id, courseId: documentCourse.id });
     const catalogResponse = await anonymous.request('/api/courses');
@@ -220,7 +220,7 @@ test('la API aplica permisos, sesiones, matrículas y controles de archivos', as
       status(await admin.request(path, { method: 'POST', body: { title: 'Archivo no permitido', kind: 'html', file: { name, base64: Buffer.from('archivo').toString('base64') } } }), 400);
     }
     status(await admin.request(path, { method: 'POST', body: { title: 'PDF falso', kind: 'pdf', file: { name: 'falso.pdf', base64: Buffer.from('<script>alert(1)</script>').toString('base64') } } }), 400);
-    htmlResource = await create(path, { title: 'HTML descargable', kind: 'html', file: { name: 'pagina.html', base64: Buffer.from('<!doctype html><title>Archivo de prueba</title><script>window.lessonTest = 1;</script>').toString('base64') } });
+    htmlResource = await create(path, { published: true, title: 'HTML descargable', kind: 'html', file: { name: 'pagina.html', base64: Buffer.from('<!doctype html><title>Archivo de prueba</title><script>window.lessonTest = 1;</script>').toString('base64') } });
     const response = await student.request(htmlResource.fileUrl);
     status(response, 200);
     assert.match(response.headers.get('content-disposition'), /^attachment;/);
@@ -257,9 +257,9 @@ test('la API aplica permisos, sesiones, matrículas y controles de archivos', as
     status(await admin.request(`/api/admin/courses/${secureCourse.id}`, { method: 'PATCH', body: { published: false } }), 200);
     status(await student.request(htmlResource.previewUrl), 404);
     status(await admin.request(`/api/admin/courses/${secureCourse.id}`, { method: 'PATCH', body: { published: true } }), 200);
-    const openModule = await create(`/api/admin/courses/${openCourse.id}/modules`, { title: 'Capítulo interactivo público' });
+    const openModule = await create(`/api/admin/courses/${openCourse.id}/modules`, { published: true, title: 'Capítulo interactivo público' });
     const content = '<!doctype html><title>Capítulo libre</title><script>document.title = "Interactivo";</script>';
-    const openHtml = await create(`/api/admin/modules/${openModule.id}/resources`, { title: 'HTML público', kind: 'html', content });
+    const openHtml = await create(`/api/admin/modules/${openModule.id}/resources`, { published: true, title: 'HTML público', kind: 'html', content });
     assert.equal(status(await anonymous.request(`/api/courses/${openCourse.id}`), 200).locked, false);
     const publicPreview = await anonymous.request(openHtml.previewUrl);
     status(publicPreview, 200);
@@ -336,4 +336,3 @@ test('el primer administrador requiere configuración y no se reemplaza al reini
     db.close();
   }
 });
-
