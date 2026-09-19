@@ -6,11 +6,12 @@ import { fileURLToPath } from 'node:url';
 import { openDatabase, bootstrapAdmin, backfillStudentInitialPasswords } from './database.mjs';
 import { token, digest, hashPassword, verifyPassword, passwordError, RateLimiter } from './security.mjs';
 import { importMigration, MigrationError, MIGRATION_MAX_BYTES } from './migration.mjs';
+import { createAcademics } from './academics.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
 const RESOURCE_KINDS = new Set(['pdf', 'slides', 'video', 'book', 'image', 'exercise', 'html', 'link']);
-const FILE_TYPES = { '.pdf':'application/pdf', '.pptx':'application/vnd.openxmlformats-officedocument.presentationml.presentation', '.docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.gif':'image/gif', '.webp':'image/webp', '.txt':'text/plain', '.html':'text/html', '.htm':'text/html' };
+const FILE_TYPES = { '.xlsx':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.csv':'text/csv', '.pdf':'application/pdf', '.pptx':'application/vnd.openxmlformats-officedocument.presentationml.presentation', '.docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.gif':'image/gif', '.webp':'image/webp', '.txt':'text/plain', '.html':'text/html', '.htm':'text/html' };
 const STATIC_TYPES = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.mjs':'text/javascript; charset=utf-8', '.css':'text/css; charset=utf-8', '.json':'application/json; charset=utf-8', '.svg':'image/svg+xml', '.png':'image/png', '.jpg':'image/jpeg', '.ico':'image/x-icon', '.webp':'image/webp', '.woff2':'font/woff2' };
 const now = () => new Date().toISOString();
 class ApiError extends Error { constructor(status, message, code = 'INVALID_REQUEST') { super(message); this.status = status; this.code = code; } }
@@ -92,7 +93,7 @@ export function validateFile(file) {
   if (!buffer.length || buffer.length > UPLOAD_MAX_BYTES) fail(413, 'El archivo debe tener contenido y pesar como máximo 20 MB.');
   const head = buffer.subarray(0, 12);
   const signatureOK = extension === '.pdf' ? head.subarray(0, 5).toString() === '%PDF-'
-    : ['.pptx', '.docx'].includes(extension) ? head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04
+    : ['.pptx', '.docx', '.xlsx'].includes(extension) ? head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04
     : extension === '.png' ? head.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))
     : ['.jpg', '.jpeg'].includes(extension) ? head[0] === 255 && head[1] === 216 && head[2] === 255
     : extension === '.gif' ? ['GIF87a', 'GIF89a'].includes(head.subarray(0, 6).toString())
@@ -373,6 +374,7 @@ export async function createApp(options = {}) {
     stream.pipe(res);
   }
 
+  const academics = createAcademics({db,fail,json,readJson,readSession,requireAdmin,requireStudent,requireCourse,isEnrolled,validateFile,fileResponse,uploadsDir,audit,env});
   const handler = async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
@@ -389,6 +391,7 @@ export async function createApp(options = {}) {
       if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) csrf(req);
       const initialAllowed = (method === 'GET' && ['/api/status', '/api/settings', '/api/auth/me'].includes(path)) || (method === 'POST' && ['/api/auth/logout', '/api/auth/first-password'].includes(path));
       if (path.startsWith('/api/') && !initialAllowed) requirePersonalPassword(auth);
+      if (await academics.handler(req,res,path,method,auth)) return;
       if (path === '/api/status' && method === 'GET') return json(res, { setupRequired:!one("SELECT id FROM users WHERE role='admin'"), uploadMaxBytes:UPLOAD_MAX_BYTES });
       if (path === '/api/settings' && method === 'GET') return json(res, settings());
       if (path === '/api/auth/me' && method === 'GET') return json(res, auth ? { user:userView(auth.user), assurance:auth.assurance } : { user:null, assurance:null });
@@ -664,7 +667,7 @@ export async function createApp(options = {}) {
           const course = existing('courses', match[1], 'Curso');
           if (method === 'GET') return json(res, courseView(course, auth, true));
           if (method === 'DELETE') {
-            const files = query('SELECT r.file_key FROM resources r JOIN modules m ON m.id=r.module_id WHERE m.course_id=?', course.id);
+            const files = query('SELECT r.file_key FROM resources r JOIN modules m ON m.id=r.module_id WHERE m.course_id=?', course.id).concat(query("SELECT json_extract(s.payload,'$.file.key') AS file_key FROM submissions s JOIN activities a ON a.id=s.activity_id WHERE a.course_id=?", course.id));
             run('DELETE FROM courses WHERE id=?', course.id);
             deleteFiles(files);
             audit(auth.user, 'course.delete', course.id);

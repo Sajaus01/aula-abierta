@@ -55,7 +55,7 @@ Si olvidas la contraseña del administrador, la persona que administra el servid
 
 ## Materiales y publicación
 
-Agrupa los recursos en módulos. Un material puede ser un archivo, un enlace de video, un enlace externo o contenido de texto según el tipo elegido en el formulario. Los ejercicios en esta versión se publican como instrucciones o archivos; no hay un sistema de exámenes con corrección automática.
+Agrupa los recursos en módulos. Un material puede ser un archivo, enlace de video, enlace externo o contenido de texto. Para solicitar entregas o evaluar, abre **Gestionar actividades** dentro del curso. Puedes crear tareas y cuestionarios, indicar fechas, porcentajes e intentos, revisar trabajos y publicar notas. Consulta la [guía de actividades y calificaciones](ACTIVIDADES-Y-NOTAS.md).
 
 Antes de publicar, prueba el recorrido como estudiante en una sesión separada del navegador. El administrador puede revisar borradores, por lo que su vista por sí sola no demuestra qué ve un estudiante.
 

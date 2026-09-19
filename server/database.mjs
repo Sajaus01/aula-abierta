@@ -3,6 +3,7 @@ import { mkdirSync, chmodSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { hashPassword, passwordError } from './security.mjs';
+import { setupAcademics } from './academics.mjs';
 
 export function openDatabase(dataDir) {
   const directory = resolve(dataDir);
@@ -85,6 +86,7 @@ export function openDatabase(dataDir) {
     db.close();
     throw error;
   }
+  setupAcademics(db);
   const insert = db.prepare('INSERT OR IGNORE INTO settings(key,value) VALUES (?,?)');
   insert.run('name', 'Aula Abierta');
   insert.run('subtitle', 'Un lugar para aprender, a tu ritmo.');
@@ -127,4 +129,3 @@ export async function bootstrapAdmin(db, env = process.env) {
     .run(randomUUID(), document, name, '', 'admin', hash, now, now);
   return true;
 }
-

@@ -46,7 +46,7 @@ Una vez creado y comprobado el administrador, puedes borrar `ADMIN_PASSWORD` del
 
 ## Persistencia y copias
 
-El volumen Docker `aula-abierta-data` contiene la base de datos y los archivos subidos. Debe persistir al recrear o actualizar el contenedor. No uses almacenamiento efímero para este directorio. Una copia solo del código de GitHub no respalda estudiantes, matrículas ni materiales.
+El volumen Docker `aula-abierta-data` contiene la base de datos y los archivos subidos, incluidas actividades, entregas y calificaciones. Debe persistir al actualizar el contenedor. Una copia solo del código de GitHub no respalda estudiantes, matrículas, materiales ni notas. El traslado JSON heredado no incluye las tablas académicas: respalda siempre el directorio completo de datos.
 
 Para una copia coherente y sencilla, detén brevemente la aplicación y copia todo el directorio de datos. Ejecuta desde `docs/deploy` en el servidor Linux:
 
@@ -101,4 +101,3 @@ El primer comando puede ejecutarse desde `docs/deploy` porque pertenece al mismo
 ## Comprobación antes de compartir el enlace
 
 Verifica con un curso propio que un visitante solo vea contenido libre, que un estudiante acceda únicamente a sus matrículas vigentes, que un archivo privado no se abra al cerrar la sesión y que un curso de contraseña rechace una sesión creada solo con cédula. Comprueba también que los datos sobrevivan a `docker compose restart app`.
-
