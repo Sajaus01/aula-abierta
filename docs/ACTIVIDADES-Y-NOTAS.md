@@ -2,9 +2,9 @@
 
 ## Crear actividades
 
-Abre un curso y pulsa **Gestionar actividades → Crear actividad**. También puedes entrar por **Actividades y notas** en el menú. Los materiales se siguen cargando desde los capítulos, con **Material**.
+Abre un curso y pulsa **Actividad** en el capítulo donde quieras crearla: ese capítulo queda seleccionado automáticamente. También puedes usar **Gestionar actividades → Crear actividad** o **Actividades y notas** en el menú. Los materiales se siguen cargando desde los capítulos, con **Material**.
 
-Puedes crear una **tarea** con respuesta escrita, enlace o archivo; o un **cuestionario interactivo**. Completa el título, instrucciones y criterios de evaluación. Al relacionarla con un capítulo, sus materiales quedan accesibles desde la actividad.
+Puedes crear una **tarea** con respuesta escrita, enlace o archivo; o un **cuestionario interactivo**. Completa el título, instrucciones y criterios de evaluación. Al relacionarla con un capítulo, aparece junto a sus archivos y enlaces, con un botón **Abrir**. Las actividades sin capítulo aparecen en **Actividades generales del curso**. Las ya creadas se ubican automáticamente según el capítulo guardado; no debes crearlas de nuevo. Los borradores y las archivadas solo los ve el docente. Desde una actividad puedes **Volver al curso** y abrir sus materiales relacionados.
 
 - **Estado:** borrador para preparar, publicada para mostrar al grupo o archivada para retirarla conservando el historial. Archivar retira su porcentaje del cálculo.
 - **Porcentaje:** aporte a la nota final. Usa 0 % para práctica. Las actividades publicadas no pueden superar 100 % y deben sumar 100 % para cerrar la evaluación.

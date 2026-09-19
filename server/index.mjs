@@ -178,6 +178,16 @@ export async function createApp(options = {}) {
     const result = { id:course.id, title:course.title, description:course.description, accessMode:course.access_mode, published:Boolean(course.published), coverUrl:course.cover_url, createdAt:course.created_at, updatedAt:course.updated_at, enrolled:isEnrolled(auth?.user.id, course.id), locked:!canAccess(course, auth), resourceCount:one('SELECT COUNT(*) AS count FROM resources r JOIN modules m ON m.id=r.module_id WHERE m.course_id=?', course.id).count, moduleCount:one('SELECT COUNT(*) AS count FROM modules WHERE course_id=?', course.id).count };
     if (auth?.user.role === 'admin') result.enrollmentCount = one("SELECT COUNT(*) AS count FROM enrollments WHERE course_id=? AND status='active'", course.id).count;
     if (details) result.modules = query('SELECT * FROM modules WHERE course_id=? ORDER BY position,id', course.id).map(module => ({ id:module.id, courseId:module.course_id, title:module.title, position:module.position, resources:query('SELECT * FROM resources WHERE module_id=? ORDER BY position,id', module.id).map(resourceView) }));
+    if (details) {
+      const teacher = auth?.user.role === 'admin' && auth.assurance === 'password';
+      // Course listings expose only activity metadata, never questions, keys or grades.
+      result.activities = !result.locked && (teacher || result.enrolled) ? query('SELECT id,module_id,config FROM activities WHERE course_id=? ORDER BY created_at,id', course.id).flatMap(row => {
+        const a = JSON.parse(row.config);
+        if (!teacher && a.status !== 'published') return [];
+        const submitted = !teacher && auth?.assurance === 'password' ? Boolean(one("SELECT id FROM submissions WHERE activity_id=? AND student_id=? AND state!='draft' LIMIT 1", row.id, auth.user.id)) : false;
+        return [{id:row.id,moduleId:row.module_id,title:a.title,kind:a.kind,status:a.status,weight:a.weight,dueAt:a.dueAt,opensAt:a.opensAt,closesAt:a.closesAt,submitted}];
+      }) : [];
+    }
     return result;
   }
   function progressView(row) {

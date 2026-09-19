@@ -87,6 +87,20 @@ test('archivos validan formato, límite total y sustitución sin huérfanos',asy
  const key=randomUUID();let s=ok(await f.submit(a,{action:'draft',requestId:key,file:pdf}),201);s=ok(await f.submit(a,{action:'draft',requestId:key,version:s.version,file:{name:'tabla.xlsx',base64:Buffer.from([0x50,0x4b,3,4,1,2,3,4]).toString('base64')}}),201);assert.equal((await readdir(join(f.dir,'uploads'))).length,1);assert.equal(s.fileName,'tabla.xlsx');
  s=ok(await f.submit(a,{action:'draft',requestId:key,version:s.version,removeFile:true}),201);assert.equal(s.fileName,null);assert.equal((await readdir(join(f.dir,'uploads'))).length,0);
 });
+test('el contenido del curso ubica actividades por capítulo sin filtrar respuestas ni notas',async t=>{
+ const f=await fixture(t);for(const id of ['chapter-one','chapter-two'])f.db.prepare('INSERT INTO modules(id,course_id,title) VALUES (?,?,?)').run(id,f.course.id,id);
+ const a=await f.activity({title:'Tarea del capítulo',moduleId:'chapter-one'}),quiz=await f.activity({kind:'quiz',questions,moduleId:'chapter-two'}),draft=await f.activity({status:'draft',moduleId:'chapter-one'}),archived=await f.activity({status:'archived'}),general=await f.activity();
+ const detail=()=>f.student.call(`/courses/${f.course.id}`);
+ let c=ok(await detail());assert.equal(c.activities.length,3);assert.equal(c.activities.find(x=>x.id===a.id).moduleId,'chapter-one');assert.equal(c.activities.find(x=>x.id===general.id).moduleId,null);
+ assert.deepEqual(Object.keys(c.activities.find(x=>x.id===quiz.id)).sort(),['id','moduleId','title','kind','status','weight','dueAt','opensAt','closesAt','submitted'].sort());
+ assert.equal(ok(await f.admin.call(`/courses/${f.course.id}`)).activities.length,5);
+ const submitted=ok(await f.submit(a),201);ok(await f.grade(a,submitted,90,false));c=ok(await detail());assert.equal(c.activities.find(x=>x.id===a.id).submitted,true);assert.equal(ok(await f.other.call(`/courses/${f.course.id}`)).activities.find(x=>x.id===a.id).submitted,false);
+ ok(await f.admin.call(`/academics/activities/${a.id}`,'PATCH',{version:a.version,moduleId:'chapter-two'}));assert.equal(ok(await detail()).activities.find(x=>x.id===a.id).moduleId,'chapter-two');
+ ok(await f.admin.call(`/admin/courses/${f.course.id}`,'PATCH',{accessMode:'public'}));assert.deepEqual(ok(await f.client().call(`/courses/${f.course.id}`)).activities,[]);
+ f.db.prepare("UPDATE enrollments SET status='revoked' WHERE student_id=?").run(f.students[0].id);assert.deepEqual(ok(await detail()).activities,[]);
+ ok(await f.admin.call(`/admin/courses/${f.course.id}`,'PATCH',{accessMode:'document'}));f.db.prepare("UPDATE sessions SET assurance='document' WHERE user_id=?").run(f.students[1].id);const documentView=ok(await f.other.call(`/courses/${f.course.id}`));assert.equal(documentView.activities.length,3);assert.ok(documentView.activities.every(x=>!x.submitted));
+});
+
 test('reintentos simultáneos no duplican y versiones evitan sobrescribir calificaciones',async t=>{
  const f=await fixture(t),a=await f.activity(),key=randomUUID();const results=await Promise.all([f.submit(a,{requestId:key}),f.submit(a,{requestId:key})]);assert.deepEqual(results.map(r=>r.status).sort(),[200,201]);assert.equal(results[0].data.id,results[1].data.id);const s=results[0].data;ok(await f.grade(a,s,90));ok(await f.grade(a,s,10),409);
  const draft=await f.activity({status:'draft'});ok(await f.student.call(`/academics/activities/${draft.id}`),404);const r=await f.admin.call(`/academics/activities/${draft.id}`,'PATCH',{version:999,title:'Otro'});ok(r,409);
