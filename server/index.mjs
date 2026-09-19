@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { createReadStream, existsSync, statSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { resolve, join, extname, dirname, sep, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { openDatabase, bootstrapAdmin } from './database.mjs';
+import { openDatabase, bootstrapAdmin, backfillStudentInitialPasswords } from './database.mjs';
 import { token, digest, hashPassword, verifyPassword, passwordError, RateLimiter } from './security.mjs';
 import { importMigration, MigrationError, MIGRATION_MAX_BYTES } from './migration.mjs';
 
@@ -51,7 +51,7 @@ function timestamp(value, name) {
 }
 function validDates(starts, expires) { if (starts && expires && starts >= expires) fail(400, 'La fecha final debe ser posterior a la inicial.'); }
 function json(res, data, status = 200) { res.writeHead(status, { 'Content-Type':'application/json; charset=utf-8' }); res.end(JSON.stringify({ data })); }
-function userView(user) { return { id:user.id, document:user.document, name:user.name, email:user.email, role:user.role }; }
+function userView(user) { return { id:user.id, document:user.document, name:user.name, email:user.email, role:user.role, mustChangePassword:user.role === 'student' && Boolean(user.must_change_password) }; }
 
 async function readJson(req, limit = 1024 * 1024) {
   if (!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type'] || '')) fail(415, 'Envía los datos como application/json.');
@@ -101,6 +101,7 @@ export async function createApp(options = {}) {
   if (dataDir === publicDir || dataDir.startsWith(publicDir + sep)) throw new Error('DATA_DIR debe estar fuera de public.');
   const db = openDatabase(dataDir);
   await bootstrapAdmin(db, env);
+  await backfillStudentInitialPasswords(db);
   const configuredUrl = env.APP_URL || env.RENDER_EXTERNAL_URL;
   const appOrigin = configuredUrl ? new URL(configuredUrl).origin : null;
   if (env.NODE_ENV === 'production' && (!appOrigin || !appOrigin.startsWith('https://'))) throw new Error('En producción configura APP_URL con la URL pública HTTPS.');
@@ -113,9 +114,13 @@ export async function createApp(options = {}) {
   const audit = (actor, action, target) => run('INSERT INTO audit(actor_id,action,target_id,created_at) VALUES (?,?,?,?)', actor?.id || null, action, target || null, now());
   const requireAdmin = auth => { if (!auth || auth.user.role !== 'admin' || auth.assurance !== 'password') fail(403, 'Se requiere una sesión de administración.', 'ADMIN_REQUIRED'); };
   const requireAuth = auth => { if (!auth) fail(401, 'Inicia sesión para continuar.', 'LOGIN_REQUIRED'); return auth; };
+  const requirePersonalPassword = auth => {
+    if (auth?.user.role === 'student' && auth.user.must_change_password) fail(403, 'Configura tu contraseña personal antes de entrar al aula.', 'PASSWORD_CHANGE_REQUIRED');
+  };
   const requireStudent = auth => {
     requireAuth(auth);
     if (auth.user.role !== 'student') fail(403, 'Esta función está disponible para estudiantes.', 'STUDENT_REQUIRED');
+    requirePersonalPassword(auth);
     return auth;
   };
 
@@ -129,7 +134,7 @@ export async function createApp(options = {}) {
   }
   function issueSession(res, user, assurance) {
     const secret = token();
-    const seconds = assurance === 'password' ? 12 * 60 * 60 : 4 * 60 * 60;
+    const seconds = user.role === 'student' && user.must_change_password ? 15 * 60 : assurance === 'password' ? 12 * 60 * 60 : 4 * 60 * 60;
     run('DELETE FROM sessions WHERE expires_at<=?', now());
     run('INSERT INTO sessions(token_hash,user_id,assurance,expires_at,created_at) VALUES (?,?,?,?,?)', digest(secret), user.id, assurance, new Date(Date.now() + seconds * 1000).toISOString(), now());
     res.setHeader('Set-Cookie', `aula_session=${secret}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${seconds}${secure ? '; Secure' : ''}`);
@@ -142,6 +147,7 @@ export async function createApp(options = {}) {
     return Boolean(one("SELECT id FROM enrollments WHERE student_id=? AND course_id=? AND status='active' AND (starts_at IS NULL OR starts_at<=?) AND (expires_at IS NULL OR expires_at>?)", userId, courseId, at, at));
   }
   function canAccess(course, auth) {
+    if (auth?.user.role === 'student' && auth.user.must_change_password) return false;
     if (auth?.user.role === 'admin' && auth.assurance === 'password') return true;
     if (!course.published) return false;
     if (course.access_mode === 'public') return true;
@@ -149,6 +155,7 @@ export async function createApp(options = {}) {
     return course.access_mode === 'document' || auth.assurance === 'password';
   }
   function requireCourse(courseId, auth) {
+    requirePersonalPassword(auth);
     const course = one('SELECT * FROM courses WHERE id=?', courseId);
     if (!course || (!course.published && auth?.user.role !== 'admin')) fail(404, 'Curso no encontrado.', 'NOT_FOUND');
     if (!canAccess(course, auth)) fail(auth ? 403 : 401, course.access_mode === 'password' && auth?.assurance === 'document' ? 'Este curso requiere cédula y contraseña.' : 'Necesitas una matrícula vigente y el acceso requerido para consultar este curso.', 'COURSE_LOCKED');
@@ -204,14 +211,16 @@ export async function createApp(options = {}) {
     run('INSERT INTO activations(token_hash,user_id,expires_at,created_at) VALUES (?,?,?,?)', digest(code), userId, expiresAt, now());
     return { activationCode:code, activationExpiresAt:expiresAt };
   }
-  function addStudent(input) {
+  async function addStudent(input) {
     const document = documentNumber(input.document);
     const name = string(input.name, 'el nombre', 160, true);
     const email = emailAddress(input.email);
     if (one('SELECT id FROM users WHERE document=?', document)) fail(409, 'Ya existe un usuario con esa cédula.', 'DUPLICATE_DOCUMENT');
+    const hash = await hashPassword(document);
+    if (one('SELECT id FROM users WHERE document=?', document)) fail(409, 'Ya existe un usuario con esa cédula.', 'DUPLICATE_DOCUMENT');
     const id = randomUUID(), at = now();
-    run('INSERT INTO users(id,document,name,email,role,active,created_at,updated_at) VALUES (?,?,?,?,?,1,?,?)', id, document, name, email, 'student', at, at);
-    return { ...studentView(one('SELECT * FROM users WHERE id=?', id)), ...activation(id) };
+    run('INSERT INTO users(id,document,name,email,role,password_hash,must_change_password,active,created_at,updated_at) VALUES (?,?,?,?,?,?,1,1,?,?)', id, document, name, email, 'student', hash, at, at);
+    return studentView(one('SELECT * FROM users WHERE id=?', id));
   }
   function existing(table, id, label) { const row = one(`SELECT * FROM ${table} WHERE id=?`, id); if (!row) fail(404, `${label} no encontrado.`, 'NOT_FOUND'); return row; }
   function deleteFiles(rows) { for (const row of rows) if (row.file_key) { try { unlinkSync(join(uploadsDir, row.file_key)); } catch (error) { if (error.code !== 'ENOENT') console.error('No se pudo retirar un archivo huérfano.'); } } }
@@ -274,6 +283,8 @@ export async function createApp(options = {}) {
       const method = req.method;
       const auth = readSession(req);
       if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) csrf(req);
+      const initialAllowed = (method === 'GET' && ['/api/status', '/api/settings', '/api/auth/me'].includes(path)) || (method === 'POST' && ['/api/auth/logout', '/api/auth/first-password'].includes(path));
+      if (path.startsWith('/api/') && !initialAllowed) requirePersonalPassword(auth);
       if (path === '/api/status' && method === 'GET') return json(res, { setupRequired:!one("SELECT id FROM users WHERE role='admin'"), uploadMaxBytes:UPLOAD_MAX_BYTES });
       if (path === '/api/settings' && method === 'GET') return json(res, settings());
       if (path === '/api/auth/me' && method === 'GET') return json(res, auth ? { user:userView(auth.user), assurance:auth.assurance } : { user:null, assurance:null });
@@ -287,15 +298,16 @@ export async function createApp(options = {}) {
         if (hasPassword && body.password.length > 256) fail(400, 'Contraseña no válida.');
         const validPassword = hasPassword ? await verifyPassword(body.password, user?.password_hash) : false;
         const fresh = user ? one('SELECT * FROM users WHERE id=?', user.id) : null;
-        if (!fresh?.active || (hasPassword && (!validPassword || fresh.password_hash !== user.password_hash)) || (!hasPassword && user.role === 'admin')) fail(401, 'Los datos de acceso no son válidos.', 'INVALID_CREDENTIALS');
+        if (!fresh?.active || fresh.document !== document || (hasPassword && (!validPassword || fresh.password_hash !== user.password_hash)) || (!hasPassword && user.role === 'admin')) fail(401, 'Los datos de acceso no son válidos.', 'INVALID_CREDENTIALS');
         if (!hasPassword) {
+          requirePersonalPassword({ user:fresh });
           const at = now();
           const documentAccess = one("SELECT e.id FROM enrollments e JOIN courses c ON c.id=e.course_id WHERE e.student_id=? AND e.status='active' AND c.published=1 AND c.access_mode='document' AND (e.starts_at IS NULL OR e.starts_at<=?) AND (e.expires_at IS NULL OR e.expires_at>?) LIMIT 1", user.id, at, at);
           if (!documentAccess) fail(401, 'Los datos de acceso no son válidos o no hay una matrícula habilitada para ingresar solo con cédula.', 'INVALID_CREDENTIALS');
         }
         if (auth) run('DELETE FROM sessions WHERE token_hash=?', auth.tokenHash);
         audit(user, hasPassword ? 'auth.login.password' : 'auth.login.document', user.id);
-        return json(res, issueSession(res, user, hasPassword ? 'password' : 'document'));
+        return json(res, issueSession(res, fresh, hasPassword ? 'password' : 'document'));
       }
       if (path === '/api/auth/logout' && method === 'POST') {
         await readJson(req);
@@ -303,39 +315,58 @@ export async function createApp(options = {}) {
         clearSession(res);
         return json(res, { success:true });
       }
+      if (path === '/api/auth/first-password' && method === 'POST') {
+        requireAuth(auth);
+        if (auth.user.role !== 'student' || auth.assurance !== 'password' || !auth.user.must_change_password) fail(403, 'Ingresa con tu contraseña inicial para configurar la personal.', 'INITIAL_PASSWORD_REQUIRED');
+        const body = await readJson(req);
+        const error = passwordError(body.newPassword, 'student', auth.user.document);
+        if (error) fail(400, error);
+        if (body.confirmPassword !== body.newPassword) fail(400, 'Las contraseñas no coinciden.');
+        authLimit(req, auth.user.document);
+        const hash = await hashPassword(body.newPassword);
+        // Recheck after scrypt. A reset, document change, logout or parallel first
+        // password request must invalidate this attempt instead of overwriting it.
+        const current = readSession(req);
+        if (!current || current.tokenHash !== auth.tokenHash || current.user.id !== auth.user.id || !current.user.must_change_password || current.assurance !== 'password' || current.user.document !== auth.user.document || current.user.password_hash !== auth.user.password_hash) fail(401, 'La sesión ha cambiado. Vuelve a ingresar.', 'LOGIN_REQUIRED');
+        run('UPDATE users SET password_hash=?,must_change_password=0,updated_at=? WHERE id=?', hash, now(), auth.user.id);
+        run('DELETE FROM sessions WHERE user_id=?', auth.user.id);
+        run('DELETE FROM activations WHERE user_id=?', auth.user.id);
+        audit(auth.user, 'auth.password.first', auth.user.id);
+        return json(res, issueSession(res, one('SELECT * FROM users WHERE id=?', auth.user.id), 'password'));
+      }
       if (path === '/api/auth/activate' && method === 'POST') {
         const body = await readJson(req);
         const document = documentNumber(body.document);
         authLimit(req, document);
         const code = string(body.code, 'el código de activación', 128, true);
-        const error = passwordError(body.password);
+        const error = passwordError(body.password, 'student', document);
         if (error) fail(400, error);
         const user = one("SELECT * FROM users WHERE document=? AND role='student' AND active=1", document);
         const record = user ? one('SELECT * FROM activations WHERE token_hash=? AND user_id=? AND expires_at>?', digest(code), user.id, now()) : null;
-        if (!record) fail(401, 'El código de activación no es válido o ha vencido.', 'INVALID_ACTIVATION');
+        if (!record || user.must_change_password) fail(401, 'El código de activación no es válido o ha vencido.', 'INVALID_ACTIVATION');
         const hash = await hashPassword(body.password);
         // Recheck after the expensive asynchronous hash: a code is consumed once.
         db.exec('BEGIN IMMEDIATE');
         try {
-          if (!one('SELECT a.token_hash FROM activations a JOIN users u ON u.id=a.user_id WHERE a.token_hash=? AND a.user_id=? AND a.expires_at>? AND u.active=1', digest(code), user.id, now())) fail(401, 'El código de activación no es válido o ha vencido.', 'INVALID_ACTIVATION');
-          run('UPDATE users SET password_hash=?,updated_at=? WHERE id=?', hash, now(), user.id);
+          if (!one('SELECT a.token_hash FROM activations a JOIN users u ON u.id=a.user_id WHERE a.token_hash=? AND a.user_id=? AND a.expires_at>? AND u.active=1 AND u.must_change_password=0 AND u.document=?', digest(code), user.id, now(), document)) fail(401, 'El código de activación no es válido o ha vencido.', 'INVALID_ACTIVATION');
+          run('UPDATE users SET password_hash=?,must_change_password=0,updated_at=? WHERE id=?', hash, now(), user.id);
           run('DELETE FROM activations WHERE user_id=?', user.id);
           run('DELETE FROM sessions WHERE user_id=?', user.id);
           db.exec('COMMIT');
         } catch (error) { db.exec('ROLLBACK'); throw error; }
         audit(user, 'auth.activate', user.id);
-        return json(res, issueSession(res, user, 'password'));
+        return json(res, issueSession(res, one('SELECT * FROM users WHERE id=?', user.id), 'password'));
       }
       if (path === '/api/auth/password' && method === 'POST') {
         requireAuth(auth);
         if (auth.assurance !== 'password') fail(403, 'Debes ingresar con contraseña o usar un código de activación.', 'PASSWORD_REQUIRED');
         const body = await readJson(req);
-        const error = passwordError(body.newPassword);
+        const error = passwordError(body.newPassword, auth.user.role, auth.user.document);
         if (error) fail(400, error);
         authLimit(req, auth.user.document);
         if (typeof body.currentPassword !== 'string' || body.currentPassword.length > 256 || !await verifyPassword(body.currentPassword, auth.user.password_hash)) fail(401, 'La contraseña actual no es correcta.', 'INVALID_CREDENTIALS');
         const hash = await hashPassword(body.newPassword);
-        if (!one('SELECT u.id FROM users u JOIN sessions s ON s.user_id=u.id WHERE u.id=? AND u.active=1 AND u.password_hash=? AND s.token_hash=? AND s.expires_at>?', auth.user.id, auth.user.password_hash, auth.tokenHash, now())) fail(401, 'La sesión ha cambiado. Vuelve a ingresar.', 'LOGIN_REQUIRED');
+        if (!one('SELECT u.id FROM users u JOIN sessions s ON s.user_id=u.id WHERE u.id=? AND u.active=1 AND u.password_hash=? AND u.document=? AND u.must_change_password=0 AND s.token_hash=? AND s.expires_at>?', auth.user.id, auth.user.password_hash, auth.user.document, auth.tokenHash, now())) fail(401, 'La sesión ha cambiado. Vuelve a ingresar.', 'LOGIN_REQUIRED');
         run('UPDATE users SET password_hash=?,updated_at=? WHERE id=?', hash, now(), auth.user.id);
         run('DELETE FROM sessions WHERE user_id=?', auth.user.id);
         run('DELETE FROM activations WHERE user_id=?', auth.user.id);
@@ -422,7 +453,7 @@ export async function createApp(options = {}) {
         requireAdmin(auth);
         if (path === '/api/admin/migration' && method === 'POST') {
           const bundle = await readJson(req, MIGRATION_MAX_BYTES);
-          return json(res, importMigration({ db, uploadsDir, bundle, validateFile, actorId:auth.user.id }), 201);
+          return json(res, await importMigration({ db, uploadsDir, bundle, validateFile, actorId:auth.user.id }), 201);
         }
         if (path === '/api/admin/settings' && method === 'GET') return json(res, settings());
         if (path === '/api/admin/settings' && method === 'PATCH') {
@@ -437,7 +468,7 @@ export async function createApp(options = {}) {
         if (path === '/api/admin/students' && method === 'GET') return json(res, query("SELECT * FROM users WHERE role='student' ORDER BY name COLLATE NOCASE").map(studentView));
         if (path === '/api/admin/students' && method === 'POST') {
           const body = await readJson(req);
-          const student = addStudent(body);
+          const student = await addStudent(body);
           audit(auth.user, 'student.create', student.id);
           return json(res, student, 201);
         }
@@ -449,17 +480,32 @@ export async function createApp(options = {}) {
             try {
               const input = body.students[index];
               if (!input || Array.isArray(input) || typeof input !== 'object') fail(400, 'Fila no válida.');
-              created.push(addStudent(input));
+              created.push(await addStudent(input));
             } catch (error) { if (!(error instanceof ApiError)) throw error; errors.push({ row:index + 1, document:typeof body.students[index]?.document === 'string' ? body.students[index].document : '', error:error.message }); }
           }
           audit(auth.user, 'student.bulk.create', String(created.length));
           return json(res, { created, errors }, 201);
+        }
+        match = /^\/api\/admin\/students\/([^/]+)\/reset-password$/.exec(path);
+        if (match && method === 'POST') {
+          await readJson(req);
+          const user = existing('users', match[1], 'Estudiante');
+          if (user.role !== 'student') fail(403, 'No puedes restablecer administradores desde estudiantes.');
+          const hash = await hashPassword(user.document);
+          const fresh = existing('users', user.id, 'Estudiante');
+          if (fresh.document !== user.document) fail(409, 'La cédula cambió. Repite el restablecimiento.');
+          run('UPDATE users SET password_hash=?,must_change_password=1,updated_at=? WHERE id=?', hash, now(), user.id);
+          run('DELETE FROM sessions WHERE user_id=?', user.id);
+          run('DELETE FROM activations WHERE user_id=?', user.id);
+          audit(auth.user, 'student.password.reset', user.id);
+          return json(res, { success:true, mustChangePassword:true });
         }
         match = /^\/api\/admin\/students\/([^/]+)\/activation$/.exec(path);
         if (match && method === 'POST') {
           await readJson(req);
           const user = existing('users', match[1], 'Estudiante');
           if (user.role !== 'student' || !user.active) fail(400, 'Solo puedes activar estudiantes habilitados.');
+          if (user.must_change_password) fail(400, 'Este estudiante debe ingresar con su cédula como contraseña inicial.');
           run('DELETE FROM sessions WHERE user_id=?', user.id);
           audit(auth.user, 'student.activation.issue', user.id);
           return json(res, activation(user.id));
@@ -482,7 +528,13 @@ export async function createApp(options = {}) {
           const name = own(body, 'name') ? string(body.name, 'el nombre', 160, true) : user.name;
           const email = own(body, 'email') ? emailAddress(body.email) : user.email;
           const active = own(body, 'active') ? boolean(body.active, 'Activo') : user.active;
-          run('UPDATE users SET document=?,name=?,email=?,active=?,updated_at=? WHERE id=?', document, name, email, active, now(), user.id);
+          if (document !== user.document) {
+            const initialHash = await hashPassword(document);
+            if (one('SELECT id FROM users WHERE document=? AND id<>?', document, user.id)) fail(409, 'Ya existe un usuario con esa cédula.', 'DUPLICATE_DOCUMENT');
+            run('UPDATE users SET document=?,name=?,email=?,active=?,password_hash=CASE WHEN must_change_password=1 THEN ? ELSE password_hash END,updated_at=? WHERE id=?', document, name, email, active, initialHash, now(), user.id);
+          } else {
+            run('UPDATE users SET document=?,name=?,email=?,active=?,updated_at=? WHERE id=?', document, name, email, active, now(), user.id);
+          }
           if (!active || document !== user.document) { run('DELETE FROM sessions WHERE user_id=?', user.id); run('DELETE FROM activations WHERE user_id=?', user.id); }
           audit(auth.user, 'student.update', user.id);
           return json(res, studentView(existing('users', user.id, 'Estudiante')));

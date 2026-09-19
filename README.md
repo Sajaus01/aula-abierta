@@ -42,10 +42,12 @@ La cédula identifica a una persona, pero no es un secreto. En un curso con acce
 2. Organiza módulos y agrega materiales desde el panel.
 3. Registra estudiantes individualmente o importa un CSV con `cedula,nombre,correo`.
 4. Matricula los estudiantes en cada curso privado y define vigencia cuando corresponda.
-5. Para acceso con contraseña, entrega a cada estudiante su código de activación por un canal privado: con ese código configura su propia contraseña.
+5. Indica a los estudiantes nuevos que ingresen en **Con contraseña**, usando su cédula como usuario y contraseña inicial. El aula les exigirá crear una contraseña personal antes de acceder a los cursos. No necesitas repartir códigos.
 6. Publica el curso y comparte la dirección de tu plataforma.
 
 Consulta [la guía de administración](docs/ADMINISTRACION.md) y [las recomendaciones para preparar contenido](docs/CONTENIDOS.md). También puedes agregar capítulos HTML con CSS y JavaScript incluidos en el mismo documento; se muestran en un visor aislado con control de matrícula. Hay una [plantilla CSV vacía](docs/plantilla-estudiantes.csv), sin datos de personas ni cursos de ejemplo.
+
+Las contraseñas personales de estudiantes admiten de 4 a 256 caracteres, incluidos cuatro dígitos, y deben ser diferentes de su cédula. El administrador conserva el mínimo de 12 caracteres. La cédula inicial es predecible: quien la conozca podría completar el primer ingreso antes que su titular. Si ocurre, verifica la identidad del estudiante y restablece su acceso desde **Estudiantes**. Las contraseñas personales ya elegidas se conservan al actualizar o reimportar una lista.
 
 ## Desarrollo y comprobaciones
 

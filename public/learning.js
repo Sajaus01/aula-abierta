@@ -24,7 +24,7 @@ export function quickGuide(role) {
     ['Crea el curso', 'Elige su modalidad: libre, solo cédula o cédula y contraseña. Puedes empezar con un borrador.'],
     ['Organiza el contenido', 'Dentro del curso, crea capítulos y añade archivos, enlaces, ejercicios o HTML.'],
     ['Registra y matricula', 'Añade estudiantes desde una lista CSV o de forma individual. Asígnales cursos y, si quieres, fechas de acceso.'],
-    ['Comparte el acceso', 'Entrega cada código de activación de forma privada para que el estudiante cree su contraseña. Publica el curso cuando esté listo.']
+    ['Comparte el acceso', 'Los estudiantes nuevos ingresan con su cédula como usuario y contraseña inicial. El aula les pedirá crear una contraseña personal. Publica el curso cuando esté listo.']
   ] : [
     ['Encuentra tus cursos', 'En Mi aprendizaje están tus cursos y tus pendientes. En Explorar cursos puedes consultar el catálogo.'],
     ['Retoma tu aprendizaje', 'Usa Continuar curso o vuelve a los materiales que abriste recientemente.'],

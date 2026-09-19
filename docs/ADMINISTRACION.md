@@ -18,15 +18,19 @@ cedula,nombre,correo
 
 Guarda el archivo en UTF-8 y separado por comas. Si lo preparas en Excel, configura primero la columna de cédula como texto para evitar notación científica, pérdida de dígitos o eliminación de ceros. Un valor que incluya comas debe ir entre comillas dobles según el formato CSV. No incluyas contraseñas en la hoja.
 
-Importa hasta 500 estudiantes por lote. La importación registra las filas válidas e informa cuáles fallaron; una cédula ya existente no se sobrescribe. Revisa el resultado y corrige únicamente las filas pendientes antes de volver a importarlas. Los códigos de activación se muestran al crear las cuentas o al emitir un código nuevo; entrega cada código individualmente por un canal privado.
+Importa hasta 500 estudiantes por lote. La importación registra las filas válidas e informa cuáles fallaron; una cédula ya existente no se sobrescribe. Revisa el resultado y corrige únicamente las filas pendientes antes de volver a importarlas. Cada estudiante nuevo recibe automáticamente su cédula como usuario y contraseña inicial, tanto en el registro individual como en CSV. No debes entregar códigos ni contraseñas distintas a cada persona.
 
 Después del registro, asigna la matrícula del estudiante en el curso correspondiente. Configura su vigencia cuando quieras que el acceso termine en una fecha determinada. Revisa la modalidad del curso antes de comunicar cómo ingresar.
 
 ## Contraseñas
 
-Para cursos con contraseña, el administrador entrega al estudiante un código de activación de un solo uso. El estudiante entra en la opción de activar/configurar su contraseña, indica cédula y código, y elige su propia contraseña. El código caduca a los siete días.
+El estudiante elige **Con contraseña** e ingresa su cédula en ambos campos. El aula le muestra **Crea tu contraseña personal**. Debe escribir la nueva contraseña dos veces; se aceptan de 4 a 256 caracteres (incluidos cuatro dígitos), siempre que sea diferente de su cédula. Hasta guardarla no puede entrar al aula ni usar el ingreso solo con cédula. Cerrar o recargar la página no elimina este requisito.
 
-Si un estudiante olvida su contraseña o el código caduca, verifica su identidad por tu canal habitual y genera un nuevo código desde administración. Entrega cada código solo a su titular. Emitir un código nuevo invalida el anterior y las sesiones existentes de esa cuenta.
+En **Estudiantes** puedes ver **Primer ingreso pendiente** o **Contraseña personal**. Si alguien olvida su contraseña, verifica su identidad y usa **Restablecer**. Al confirmar, su contraseña vuelve a ser la cédula, se cierran sus sesiones y deberá crear una nueva al ingresar. Esto conserva matrículas y avances. No se envían correos automáticos.
+
+Las cuentas existentes con contraseña personal conservan su acceso. Las cuentas antiguas que nunca configuraron contraseña reciben el flujo inicial con cédula. Actualizar la plataforma o reimportar estudiantes no restablece contraseñas personales. La contraseña del administrador mantiene un mínimo de 12 caracteres.
+
+La contraseña inicial es conocida por quien tenga la cédula y no comprueba quién está configurando la cuenta. Esta facilidad de acceso implica que otra persona podría activar una cuenta primero. Las contraseñas cortas también son más fáciles de adivinar. La aplicación limita los intentos y guarda hashes, pero esos controles no convierten la cédula en un secreto.
 
 En cursos de cédula, ingresar por cédula no debe confundirse con comprobar identidad: esa modalidad es apropiada únicamente cuando aceptas que alguien que conozca una cédula matriculada pueda consultar el material. El acceso por contraseña exige que la sesión haya sido creada usando contraseña.
 

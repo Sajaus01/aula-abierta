@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync, renameSync, unlinkSync, rmdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { hashPassword } from './security.mjs';
 
 export const MIGRATION_MAX_BYTES = 64 * 1024 * 1024;
 export class MigrationError extends Error {
@@ -70,7 +71,8 @@ export function validateMigrationBundle(bundle, validateFile) {
     const email = text(row.email, 254);
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) invalid('El paquete contiene un correo no válido.');
     if (row.passwordHash !== null && (typeof row.passwordHash !== 'string' || !HASH.test(row.passwordHash))) invalid('El paquete contiene un hash de contraseña no compatible.');
-    return { id:id(row.id), document, name:text(row.name, 160, true), email, active:bool(row.active), passwordHash:row.passwordHash, createdAt:date(row.createdAt), updatedAt:date(row.updatedAt) };
+    const mustChangePassword = row.mustChangePassword === undefined ? row.passwordHash === null : bool(row.mustChangePassword) || row.passwordHash === null;
+    return { id:id(row.id), document, name:text(row.name, 160, true), email, active:bool(row.active), passwordHash:row.passwordHash, mustChangePassword, createdAt:date(row.createdAt), updatedAt:date(row.updatedAt) };
   });
   if (new Set(students.map(row => row.document)).size !== students.length) invalid('El paquete contiene cédulas repetidas.');
   const courses = bundle.courses.map(row => {
@@ -137,7 +139,7 @@ function requireEmpty(db) {
   }
 }
 
-export function importMigration({ db, uploadsDir, bundle, validateFile, actorId }) {
+export async function importMigration({ db, uploadsDir, bundle, validateFile, actorId }) {
   requireEmpty(db);
   const data = validateMigrationBundle(bundle, validateFile);
   for (const student of data.students) {
@@ -145,6 +147,9 @@ export function importMigration({ db, uploadsDir, bundle, validateFile, actorId 
       throw new MigrationError('Un estudiante del paquete coincide con una cuenta existente en el destino.', 409, 'MIGRATION_CONFLICT');
     }
   }
+  // Legacy null passwords and explicit pending accounts both use the same initial
+  // password flow. Personal hashes from older v1 bundles are preserved unchanged.
+  for (const student of data.students) if (student.mustChangePassword) student.passwordHash = await hashPassword(student.document);
   const filesById = new Map(data.files.map(file => [file.id, file]));
   const stageDir = join(uploadsDir, `.migration-${randomUUID()}`);
   const staged = [], moved = [];
@@ -158,8 +163,8 @@ export function importMigration({ db, uploadsDir, bundle, validateFile, actorId 
     db.exec('BEGIN IMMEDIATE');
     transaction = true;
     requireEmpty(db);
-    const studentInsert = db.prepare("INSERT INTO users(id,document,name,email,role,password_hash,active,created_at,updated_at) VALUES (?,?,?,?,'student',?,?,?,?)");
-    for (const row of data.students) studentInsert.run(row.id, row.document, row.name, row.email, row.passwordHash, row.active ? 1 : 0, row.createdAt, row.updatedAt);
+    const studentInsert = db.prepare("INSERT INTO users(id,document,name,email,role,password_hash,must_change_password,active,created_at,updated_at) VALUES (?,?,?,?,'student',?,?,?,?,?)");
+    for (const row of data.students) studentInsert.run(row.id, row.document, row.name, row.email, row.passwordHash, row.mustChangePassword ? 1 : 0, row.active ? 1 : 0, row.createdAt, row.updatedAt);
     const courseInsert = db.prepare('INSERT INTO courses(id,title,description,access_mode,published,cover_url,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)');
     for (const row of data.courses) courseInsert.run(row.id, row.title, row.description, row.accessMode, row.published ? 1 : 0, row.coverUrl, row.createdAt, row.updatedAt);
     const moduleInsert = db.prepare('INSERT INTO modules(id,course_id,title,position) VALUES (?,?,?,?)');

@@ -19,6 +19,7 @@ export function openDatabase(dataDir) {
       id TEXT PRIMARY KEY, document TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
       email TEXT NOT NULL DEFAULT '', role TEXT NOT NULL CHECK(role IN ('admin','student')),
       password_hash TEXT, active INTEGER NOT NULL DEFAULT 1,
+      must_change_password INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL, updated_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS sessions (
@@ -73,6 +74,8 @@ export function openDatabase(dataDir) {
   // intact. A completed legacy row is interpreted as opened by the read API.
   db.exec('BEGIN IMMEDIATE');
   try {
+    const userColumns = new Set(db.prepare('PRAGMA table_info(users)').all().map(column => column.name));
+    if (!userColumns.has('must_change_password')) db.exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0');
     const columns = new Set(db.prepare('PRAGMA table_info(progress)').all().map(column => column.name));
     if (!columns.has('opened_at')) db.exec('ALTER TABLE progress ADD COLUMN opened_at TEXT');
     if (!columns.has('last_opened_at')) db.exec('ALTER TABLE progress ADD COLUMN last_opened_at TEXT');
@@ -87,6 +90,25 @@ export function openDatabase(dataDir) {
   insert.run('subtitle', 'Un lugar para aprender, a tu ritmo.');
   insert.run('contactEmail', '');
   return db;
+}
+
+// Initialize only legacy accounts that never selected a password. The conditional
+// update preserves a personal password selected by another process during scrypt.
+export async function backfillStudentInitialPasswords(db) {
+  const pending = db.prepare("SELECT id,document FROM users WHERE role='student' AND password_hash IS NULL").all();
+  for (const user of pending) {
+    const hash = await hashPassword(user.document);
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const result = db.prepare("UPDATE users SET password_hash=?,must_change_password=1,updated_at=? WHERE id=? AND document=? AND role='student' AND password_hash IS NULL")
+        .run(hash, new Date().toISOString(), user.id, user.document);
+      if (result.changes) {
+        db.prepare('DELETE FROM sessions WHERE user_id=?').run(user.id);
+        db.prepare('DELETE FROM activations WHERE user_id=?').run(user.id);
+      }
+      db.exec('COMMIT');
+    } catch (error) { db.exec('ROLLBACK'); throw error; }
+  }
 }
 
 export async function bootstrapAdmin(db, env = process.env) {

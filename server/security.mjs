@@ -20,9 +20,11 @@ export async function verifyPassword(password, encoded) {
   return Boolean(encoded) && expected.length === candidate.length && timingSafeEqual(expected, candidate);
 }
 
-export function passwordError(value) {
-  return typeof value !== 'string' || value.length < 12 || value.length > 256
-    ? 'La contraseña debe tener entre 12 y 256 caracteres.' : null;
+export function passwordError(value, role = 'admin', document = '') {
+  const minimum = role === 'student' ? 4 : 12;
+  if (typeof value !== 'string' || value.length < minimum || value.length > 256) return `La contraseña debe tener entre ${minimum} y 256 caracteres.`;
+  if (role === 'student' && value === document) return 'La contraseña personal debe ser diferente de tu cédula.';
+  return null;
 }
 
 export class RateLimiter {

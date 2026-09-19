@@ -68,7 +68,7 @@ Con la sesión de administrador abierta, ve a **Configuración → Importar tras
 
 La importación inicial solo admite un destino sin cursos ni estudiantes y se ejecuta una vez. El límite del archivo es 64 MB. La herramienta valida el paquete antes de guardarlo y rechaza una importación que sobrescribiría datos. No es una herramienta de sincronización ni reemplaza un sistema de respaldos.
 
-Las contraseñas de estudiantes que ya estaban configuradas conservan su hash; las sesiones y los códigos de activación del origen no se trasladan. Si un estudiante necesita activar su cuenta, genera un código nuevo desde **Estudiantes**. La cuenta de prueba de administrador local no se copia.
+Las contraseñas de estudiantes que ya estaban configuradas conservan su hash; las sesiones y los códigos de activación del origen no se trasladan. Los estudiantes sin contraseña personal ingresan inicialmente con su cédula como usuario y contraseña y deben elegir una nueva antes de acceder al aula. La cuenta de prueba de administrador local no se copia.
 
 **La copia de migración contiene datos privados.** Consérvala fuera del repositorio, de las carpetas públicas y de las páginas del curso. Súbela únicamente mediante el importador administrativo de tu propia plataforma usando HTTPS.
 

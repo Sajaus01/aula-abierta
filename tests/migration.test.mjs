@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { createApp } from '../server/index.mjs';
-import { digest, hashPassword } from '../server/security.mjs';
+import { digest, hashPassword, verifyPassword } from '../server/security.mjs';
 
 const freshPassword = () => `Migration-${randomBytes(24).toString('base64url')}`;
 const at = '2026-01-15T10:00:00.000Z';
@@ -116,8 +116,9 @@ test('migra relaciones, contraseñas y archivos sin reemplazar al administrador 
   assert.equal(app.db.prepare("SELECT COUNT(*) AS count FROM users WHERE role='admin'").get().count, 1);
   assert.equal(app.db.prepare('SELECT role FROM users WHERE id=?').get(value.students[0].id).role, 'student');
   assert.equal(app.db.prepare('SELECT password_hash FROM users WHERE id=?').get(value.students[0].id).password_hash, value.students[0].passwordHash);
-  const pending = app.db.prepare('SELECT password_hash,active FROM users WHERE id=?').get(value.students[1].id);
-  assert.equal(pending.password_hash, null);
+  const pending = app.db.prepare('SELECT password_hash,active,must_change_password FROM users WHERE id=?').get(value.students[1].id);
+  assert.equal(await verifyPassword(value.students[1].document, pending.password_hash), true);
+  assert.equal(pending.must_change_password, 1);
   assert.equal(pending.active, 0);
   for (const row of originalSettings) assert.equal(app.db.prepare('SELECT value FROM settings WHERE key=?').get(row.key).value, row.value);
   assert.deepEqual(app.db.prepare('SELECT * FROM sessions').all(), originalSessions);
@@ -165,6 +166,27 @@ test('la migración exige administrador y rechaza solicitudes de otro origen ant
   status(await importBundle(app.admin, value, { 'Sec-Fetch-Site': 'cross-site' }), 403);
   assert.deepEqual(snapshot(app.db), initial);
   assert.deepEqual(await readdir(join(app.dataDir, 'uploads')), []);
+});
+
+test('la migración conserva onboarding explícito y no permite omitirlo en hashes nulos antiguos', async t => {
+  const app = await fixture(t);
+  const { value } = await bundle();
+  value.students[0].mustChangePassword = true;
+  value.students[1].mustChangePassword = false;
+  status(await importBundle(app.admin, value), 201);
+  for (const student of value.students) {
+    const stored = app.db.prepare('SELECT password_hash,must_change_password FROM users WHERE id=?').get(student.id);
+    assert.equal(stored.must_change_password, 1);
+    assert.equal(await verifyPassword(student.document, stored.password_hash), true);
+  }
+  const student = app.client();
+  const login = status(await student.request('/api/auth/login', { method:'POST', body:{ document:value.students[0].document, password:value.students[0].document } }), 200);
+  assert.equal(login.user.mustChangePassword, true);
+  status(await student.request(`/api/courses/${value.courses[0].id}`), 403);
+  status(await student.request(`/api/resources/${value.resources[0].id}/file`), 403);
+  const changed = status(await student.request('/api/auth/first-password', { method:'POST', body:{ newPassword:'6824', confirmPassword:'6824' } }), 200);
+  assert.equal(changed.user.mustChangePassword, false);
+  status(await student.request(`/api/courses/${value.courses[0].id}`), 200);
 });
 
 test('un fallo al confirmar revierte las filas y retira archivos ya movidos, permitiendo reintentar', async t => {

@@ -104,7 +104,11 @@ test('la API aplica permisos, sesiones, matrículas y controles de archivos', as
   await t.test('prepara matrículas y materiales sin datos privados en el catálogo público', async () => {
     alpha = await create('/api/admin/students', { document: '20000001', name: 'Estudiante Uno', email: 'uno@example.test' });
     beta = await create('/api/admin/students', { document: '20000002', name: 'Estudiante Dos' });
-    assert.ok(alpha.activationCode);
+    assert.equal(alpha.mustChangePassword, true);
+    assert.equal(alpha.activationCode, undefined);
+    status(await student.request('/api/auth/login', { method: 'POST', body: { document: alpha.document, password: alpha.document } }), 200);
+    status(await student.request('/api/auth/first-password', { method: 'POST', body: { newPassword: studentPassword, confirmPassword: studentPassword } }), 200);
+    status(await student.request('/api/auth/logout', { method: 'POST', body: {} }), 200);
     secureCourse = await create('/api/admin/courses', { title: 'Curso con contraseña', accessMode: 'password', published: true });
     documentCourse = await create('/api/admin/courses', { title: 'Curso con cédula', accessMode: 'document', published: true });
     openCourse = await create('/api/admin/courses', { title: 'Curso abierto', accessMode: 'public', published: true });
@@ -147,6 +151,7 @@ test('la API aplica permisos, sesiones, matrículas y controles de archivos', as
 
   await t.test('la activación es de un solo uso e invalida la sesión de cédula anterior', async () => {
     const priorDocumentCookie = student.cookie;
+    alpha.activationCode = status(await admin.request(`/api/admin/students/${alpha.id}/activation`, { method: 'POST', body: {} }), 200).activationCode;
     const activated = status(await student.request('/api/auth/activate', { method: 'POST', body: { document: alpha.document, code: alpha.activationCode, password: studentPassword } }), 200);
     assert.equal(activated.assurance, 'password');
     status(await anonymous.request('/api/auth/activate', { method: 'POST', body: { document: alpha.document, code: alpha.activationCode, password: freshPassword() } }), 401);
@@ -165,7 +170,9 @@ test('la API aplica permisos, sesiones, matrículas y controles de archivos', as
   });
 
   await t.test('la matrícula de otra cuenta no permite consultar materiales ni escribir progreso', async () => {
-    status(await otherStudent.request('/api/auth/activate', { method: 'POST', body: { document: beta.document, code: beta.activationCode, password: freshPassword() } }), 200);
+    status(await otherStudent.request('/api/auth/login', { method: 'POST', body: { document: beta.document, password: beta.document } }), 200);
+    const betaPassword = freshPassword();
+    status(await otherStudent.request('/api/auth/first-password', { method: 'POST', body: { newPassword: betaPassword, confirmPassword: betaPassword } }), 200);
     status(await otherStudent.request(`/api/courses/${secureCourse.id}`), 403);
     status(await otherStudent.request(secureFile.fileUrl), 403);
     status(await otherStudent.request(`/api/progress/${secureFile.id}`, { method: 'PUT', body: { completed: true } }), 403);

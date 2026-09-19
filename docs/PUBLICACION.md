@@ -96,7 +96,7 @@ El primer comando puede ejecutarse desde `docs/deploy` porque pertenece al mismo
 - Planifica el espacio del volumen y el tamaño de los respaldos. Los archivos tienen un máximo de 20 MiB cada uno; para videos grandes, utiliza enlaces a un proveedor de video.
 - Guarda cédulas, correos, contraseñas, códigos de activación y materiales de cursos privados fuera del repositorio.
 - El proxy o el proveedor de video no añade permisos de matrícula a enlaces externos. Si un video debe ser privado, configura también su privacidad en el proveedor.
-- El correo de los estudiantes se almacena como dato de contacto. Esta versión no envía correos ni recupera contraseñas por correo; el administrador emite un nuevo código.
+- El correo de los estudiantes se almacena como dato de contacto. Esta versión no envía correos ni recupera contraseñas por correo; el administrador puede restablecer el acceso a la cédula con cambio obligatorio posterior.
 
 ## Comprobación antes de compartir el enlace
 
