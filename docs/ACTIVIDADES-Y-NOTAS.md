@@ -34,7 +34,15 @@ Selecciona **Cuestionario interactivo → Añadir pregunta**. Admite hasta 50 pr
 
 Los cuestionarios que solo contienen selección se califican automáticamente al enviarlos. Si incluyen alguna respuesta abierta, el docente asigna la puntuación total. En ambos casos, las notas se ocultan hasta su publicación y las claves correctas no se envían al estudiante.
 
-Con borradores o entregas existentes, quedan protegidos el tipo, las preguntas y los puntos máximos. Para modificarlos, crea otra actividad. Sí puedes ajustar instrucciones, fechas, intentos y porcentajes.
+Puedes modificar todos los campos aunque ya existan borradores, respuestas o notas. Cambiar el título, las instrucciones, el enlace o los archivos del enunciado, el tipo, las preguntas o sus puntos crea una nueva versión: las respuestas anteriores pasan al historial, dejan de contar para las notas y no consumen intentos de la versión nueva. La actividad vuelve a aparecer pendiente para cada estudiante que ya había respondido. Las preguntas y notas antiguas se muestran con los datos de su versión, sin revelar claves de respuesta.
+
+Cambiar solo fechas, porcentaje, intentos, capítulo o publicación conserva las respuestas actuales. Marca **Solicitar nuevas entregas aunque solo cambie fechas, porcentaje o publicación** si también quieres reiniciarlas. Si solicitas nuevas entregas y la fecha límite o el cierre ya vencieron, se retiran esos límites para que los estudiantes puedan responder: puedes establecer fechas futuras en la misma edición. Las fechas de apertura y la visibilidad se siguen respetando.
+
+El historial anterior es de consulta: no se puede volver a calificar ni republicar como nota vigente. Sus archivos siguen ocupando almacenamiento hasta eliminar la actividad o el curso. Si un estudiante tenía la actividad abierta mientras la modificabas, se le pedirá recargar antes de enviar para que no entregue respuestas a un enunciado anterior.
+
+## Eliminar actividades
+
+El botón **Eliminar actividad** aparece junto a cada actividad en el listado de materiales del capítulo y dentro de la actividad. También está disponible en la lista de actividades. La confirmación identifica la actividad y explica el alcance: se eliminan definitivamente sus enunciados adjuntos, entregas, borradores, archivos de respuesta, calificaciones, comentarios e historial. Se retira del capítulo y del libro de notas; los demás materiales y las matrículas se conservan. La publicación de la nota final del curso queda retirada para que revises los porcentajes y resultados. El registro administrativo de la operación se conserva para auditoría.
 
 ## Entregar trabajos
 

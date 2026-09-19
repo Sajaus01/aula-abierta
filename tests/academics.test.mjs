@@ -76,7 +76,7 @@ async function fixture(t,env={}){
  const hash=await hashPassword(password);const students=[];for(let i=0;i<2;i++){const id=randomUUID(),document=String(60000001+i),at=new Date().toISOString();app.db.prepare("INSERT INTO users(id,document,name,role,password_hash,created_at,updated_at) VALUES (?,?,?,'student',?,?,?)").run(id,document,'Estudiante '+i,hash,at,at);ok(await admin.call('/admin/enrollments','POST',{studentId:id,courseId:course.id}),201);const c=client();ok(await c.call('/auth/login','POST',{document,password}));students.push({id,document,client:c});}
  return {...app,dir,admin,client,course,students,student:students[0].client,other:students[1].client,
   async activity(body={}){return ok(await admin.call(`/academics/courses/${course.id}/activities`,'POST',{title:'Actividad',kind:'task',status:'published',...body}),201);},
-  submit(a,body={},who=students[0].client){return who.call(`/academics/activities/${a.id}/submit`,'POST',{requestId:randomUUID(),action:'submit',text:'Mi respuesta',...body});},
+  submit(a,body={},who=students[0].client){return who.call(`/academics/activities/${a.id}/submit`,'POST',{activityRevision:a.revision??1,requestId:randomUUID(),action:'submit',text:'Mi respuesta',...body});},
   grade(a,s,points,published=true){return admin.call(`/academics/submissions/${s.id}/grade`,'PATCH',{points,feedback:'Revisión del docente',published,version:s.version});},
   book(){return admin.call(`/academics/courses/${course.id}/gradebook`);}
  };
@@ -98,7 +98,7 @@ test('cuestionarios se corrigen en servidor y nunca entregan claves ni notas sin
  const teacher=ok(await f.admin.call(`/academics/activities/${a.id}/submissions`));assert.equal(teacher.submissions[0].points,2);assert.equal(teacher.submissions[0].published,false);
  ok(await f.other.call(`/academics/submissions/${s.id}/grade`,'PATCH',{points:2,published:true,version:1}),403);
  ok(await f.admin.call(`/academics/courses/${f.course.id}/release`,'POST',{}));const studentView=ok(await f.student.call(`/academics/activities/${a.id}`));assert.equal(studentView.mine[0].points,2);assert.equal(studentView.activity.questions[0].correct,undefined);
- ok(await f.admin.call(`/academics/activities/${a.id}`,'PATCH',{version:a.version,questions:[{...questions[0],correct:[1]}]}),409);
+ const edited=ok(await f.admin.call(`/academics/activities/${a.id}`,'PATCH',{version:a.version,questions:[{...questions[0],correct:[1]}]}));assert.equal(edited.resubmissionRequired,true);
 });
 test('preguntas abiertas requieren revisión manual; múltiples requieren coincidencia completa',async t=>{
  const f=await fixture(t),a=await f.activity({kind:'quiz',questions:[...questions,{id:'q3',type:'text',prompt:'Explica',points:3}]});ok(await f.submit(a,{text:'',answers:{q1:[0],q2:[0]}}),400);
@@ -160,3 +160,55 @@ test('reintentos simultáneos no duplican y versiones evitan sobrescribir califi
  const f=await fixture(t),a=await f.activity(),key=randomUUID();const results=await Promise.all([f.submit(a,{requestId:key}),f.submit(a,{requestId:key})]);assert.deepEqual(results.map(r=>r.status).sort(),[200,201]);assert.equal(results[0].data.id,results[1].data.id);const s=results[0].data;ok(await f.grade(a,s,90));ok(await f.grade(a,s,10),409);
  const draft=await f.activity({status:'draft'});ok(await f.student.call(`/academics/activities/${draft.id}`),404);const r=await f.admin.call(`/academics/activities/${draft.id}`,'PATCH',{version:999,title:'Otro'});ok(r,409);
 });
+
+test('editar una actividad respondida conserva historial privado y exige una nueva entrega',async t=>{
+ const f=await fixture(t);let a=await f.activity({kind:'quiz',questions,weight:100});
+ const s=ok(await f.submit(a,{text:'',answers:{q1:[0],q2:[0,2]}}),201);ok(await f.grade(a,s,2));
+ const draft=ok(await f.submit(a,{text:'',action:'draft',answers:{q1:[0]}},f.other),201);
+ const oldVersion=a.version;
+ a=ok(await f.admin.call(`/academics/activities/${a.id}`,'PATCH',{version:a.version,kind:'task',maxPoints:50,description:'Nuevo enunciado',attachments:[pdf]}));
+ assert.equal(a.revision,2);assert.equal(a.resubmissionRequired,true);assert.equal(a.activeResponseCount,0);
+ const data=ok(await f.student.call(`/academics/activities/${a.id}`));assert.equal(data.mine.length,0);assert.equal(data.previous.length,1);assert.equal(data.previous[0].previousActivity.maxPoints,2);assert.equal(data.previous[0].previousActivity.questions[0].correct,undefined);assert.equal(data.previous[0].points,2);
+ const other=ok(await f.other.call(`/academics/activities/${a.id}`));assert.equal(other.previous[0].id,draft.id);assert.equal(other.mine.length,0);
+ const g=ok(await f.student.call(`/academics/courses/${f.course.id}`)).grade;assert.equal(g.cells[0].state,'pending');assert.equal(g.provisional,null);
+ assert.equal(ok(await f.student.call(`/courses/${f.course.id}`)).activities[0].submitted,false);
+ assert.equal(ok(await f.student.call('/academics/courses'))[0].activities[0].state,'Pendiente');
+ ok(await f.submit(a,{activityRevision:1,requestId:s.requestId}),409);ok(await f.submit(a,{requestId:s.requestId}),409);ok(await f.grade(a,s,20),409);
+ ok(await f.admin.call(`/academics/activities/${a.id}`,'PATCH',{version:oldVersion,title:'Edición atrasada'}),409);
+ const fresh=ok(await f.submit(a,{files:[photo]}),201);assert.equal(fresh.attempt,1);assert.equal(fresh.revision,2);ok(await f.grade(a,fresh,40));
+ assert.equal(ok(await f.student.call(`/academics/courses/${f.course.id}`)).grade.provisional,4);
+ a=ok(await f.admin.call(`/academics/activities/${a.id}`,'PATCH',{version:a.version,description:'Tercer enunciado'}));assert.equal(a.revision,3);assert.equal(ok(await f.student.call(`/academics/activities/${a.id}`)).previous.length,2);assert.equal(ok(await f.submit(a),201).attempt,1);
+});
+
+test('cambios administrativos conservan respuestas; nueva entrega explícita reabre plazos vencidos',async t=>{
+ const f=await fixture(t);let a=await f.activity({attachments:[pdf]});const s=ok(await f.submit(a),201);
+ a=ok(await f.admin.call(`/academics/activities/${a.id}`,'PATCH',{version:a.version,weight:50,dueAt:past(),closesAt:past()}));assert.equal(a.resubmissionRequired,false);assert.equal(a.revision,1);assert.equal(ok(await f.student.call(`/academics/activities/${a.id}`)).mine[0].id,s.id);
+ a=ok(await f.admin.call(`/academics/activities/${a.id}`,'PATCH',{version:a.version,requestResubmission:true}));assert.equal(a.reopened,true);assert.equal(a.dueAt,null);assert.equal(a.closesAt,null);assert.equal(a.revision,2);ok(await f.submit(a),201);
+ a=ok(await f.admin.call(`/academics/activities/${a.id}`,'PATCH',{version:a.version,retainAttachmentIds:[]}));assert.equal(a.resubmissionRequired,true);assert.equal(a.revision,3);
+});
+
+test('eliminar actividad borra entregas vigentes e históricas, adjuntos y nota; conserva el resto del curso',async t=>{
+ const f=await fixture(t);let a=await f.activity({weight:100,attachments:[pdf,photo]});const keep=await f.activity({attachments:[photo]});
+ let s=ok(await f.submit(a,{files:[pdf,photo]}),201);const oldFile=s.files[0].url.slice(4);ok(await f.grade(a,s,80));
+ a=ok(await f.admin.call(`/academics/activities/${a.id}`,'PATCH',{version:a.version,description:'Versión nueva'}));s=ok(await f.submit(a,{files:[pdf]}),201);ok(await f.grade(a,s,90));
+ ok(await f.submit(a,{action:'draft',files:[photo]},f.other),201);
+ const endpoint=`/academics/activities/${a.id}`;
+ ok(await f.student.call(endpoint,'DELETE',{version:a.version}),403);ok(await f.admin.call(endpoint,'DELETE',{version:0}),409);ok(await f.admin.call(endpoint,'DELETE',{version:a.version},{Origin:'https://other.example'}),403);
+ f.db.exec("CREATE TRIGGER reject_activity_delete BEFORE DELETE ON activities BEGIN SELECT RAISE(ABORT,'synthetic failure'); END");
+ ok(await f.admin.call(endpoint,'DELETE',{version:a.version}),500);ok(await f.student.call(oldFile));assert.equal(f.db.prepare('SELECT COUNT(*) n FROM submissions WHERE activity_id=?').get(a.id).n,3);
+ f.db.exec('DROP TRIGGER reject_activity_delete');
+ ok(await f.admin.call(endpoint,'DELETE',{version:a.version}));ok(await f.admin.call(endpoint),404);ok(await f.student.call(oldFile),404);
+ assert.equal(f.db.prepare('SELECT COUNT(*) n FROM submissions WHERE activity_id=?').get(a.id).n,0);assert.equal(f.db.prepare('SELECT COUNT(*) n FROM activity_files WHERE activity_id=?').get(a.id).n,0);
+ assert.equal((await readdir(join(f.dir,'uploads'))).length,1);assert.equal(ok(await f.admin.call('/academics/storage')).usedBytes,0);assert.equal(ok(await f.book()).activities.length,1);assert.equal(ok(await f.book()).settings.finalPublished,false);ok(await f.admin.call(`/academics/activities/${keep.id}`));
+});
+
+test('edición fallida no archiva respuestas y publicar notas no altera historial',async t=>{
+ const f=await fixture(t);let a=await f.activity({attachments:[pdf]});const s=ok(await f.submit(a,{files:[photo]}),201);ok(await f.grade(a,s,90,false));
+ f.db.exec("CREATE TRIGGER reject_revision BEFORE INSERT ON activity_files BEGIN SELECT RAISE(ABORT,'synthetic failure'); END");
+ ok(await f.admin.call(`/academics/activities/${a.id}`,'PATCH',{version:a.version,title:'Cambiar',attachments:[photo]}),500);
+ assert.equal(ok(await f.student.call(`/academics/activities/${a.id}`)).mine.length,1);assert.equal((await readdir(join(f.dir,'uploads'))).length,2);
+ f.db.exec('DROP TRIGGER reject_revision');
+ a=ok(await f.admin.call(`/academics/activities/${a.id}`,'PATCH',{version:a.version,title:'Cambiar'}));ok(await f.admin.call(`/academics/courses/${f.course.id}/release`,'POST',{}));
+ const pastView=ok(await f.student.call(`/academics/activities/${a.id}`)).previous[0];assert.equal(pastView.points,null);assert.equal(pastView.feedback,'');assert.equal(pastView.published,false);
+});
+

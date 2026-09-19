@@ -194,7 +194,7 @@ export async function createApp(options = {}) {
       result.activities = !result.locked && (teacher || result.enrolled) ? query('SELECT id,module_id,config FROM activities WHERE course_id=? ORDER BY created_at,id', course.id).flatMap(row => {
         const a = JSON.parse(row.config);
         if (!teacher && (a.status !== 'published' || (row.module_id && !modules.some(m => m.id === row.module_id)))) return [];
-        const submitted = !teacher && auth?.assurance === 'password' ? Boolean(one("SELECT id FROM submissions WHERE activity_id=? AND student_id=? AND state!='draft' LIMIT 1", row.id, auth.user.id)) : false;
+        const submitted = !teacher && auth?.assurance === 'password' ? Boolean(one("SELECT id FROM submissions WHERE activity_id=? AND student_id=? AND state!='draft' AND superseded=0 LIMIT 1", row.id, auth.user.id)) : false;
         return [{id:row.id,moduleId:row.module_id,title:a.title,kind:a.kind,status:a.status,weight:a.weight,dueAt:a.dueAt,opensAt:a.opensAt,closesAt:a.closesAt,submitted}];
       }) : [];
     }
