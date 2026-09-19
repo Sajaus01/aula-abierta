@@ -27,9 +27,18 @@ Un curso contiene módulos; cada módulo reúne sus recursos en el orden que dec
 
 Usa títulos que permitan reconocer el recurso sin abrirlo y nombres de archivo breves. En imágenes, describe la información relevante en el texto del material; en videos, utiliza subtítulos cuando estén disponibles. Para libros largos, agrega la referencia de los capítulos o páginas que se deben leer.
 
-## Contenido privado
+## Recursos rápidos en la barra lateral
+
+Dentro de un curso, busca **Recursos rápidos → Añadir recurso** en la barra lateral derecha. Escribe el título o rótulo y una descripción; selecciona **Video**, **Descarga** o **Enlace**. Puedes pegar una dirección de YouTube, Drive, un sitio de aplicaciones o un libro; o elegir **Subir archivo** para PDF, documentos, hojas de cálculo e imágenes de hasta 20 MB. Los videos y las aplicaciones se enlazan, no se suben al disco del aula.
+
+Los videos de YouTube muestran una miniatura automática. También puedes indicar una URL de imagen de portada. Los videos compatibles se abren en el visor grande, con un botón para volver al curso y un enlace al original. Algunos proveedores o autores pueden restringir la reproducción integrada; en ese caso utiliza el enlace original.
+
+Puedes editar, ordenar con las flechas, ocultar mediante **Mostrar a los estudiantes** o eliminar cada recurso. El máximo es de 30 por curso. Si la sección está vacía, no aparece al estudiante. Los enlaces externos mantienen los permisos de su servicio de origen; por ejemplo, debes permitir el acceso al archivo de Drive. Los PDF subidos se descargan con los mismos permisos que el curso. Los recursos rápidos no alteran el progreso ni las calificaciones.
+
+Los archivos subidos ocupan el disco persistente actual y se incluyen en el respaldo de la base de datos completa y `uploads/`. El traslado JSON inicial no incluye esta sección. Eliminar un recurso con archivo también elimina ese archivo; ocultarlo lo conserva.
+
+## Acceso a los materiales
 
 Sube los archivos de cursos restringidos mediante el panel. Así, el servidor comprueba el acceso antes de entregarlos. Los archivos que coloques directamente en `public/`, en GitHub Pages o en otro enlace público no obtienen protección de matrícula por estar enlazados desde un curso privado.
 
 No guardes bases de datos, listas de estudiantes ni materiales privados en el repositorio. GitHub versiona el código del sitio; el volumen de datos del servidor guarda lo que subes desde el panel.
-

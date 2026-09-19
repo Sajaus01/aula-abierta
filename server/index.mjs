@@ -7,6 +7,7 @@ import { openDatabase, bootstrapAdmin, backfillStudentInitialPasswords } from '.
 import { token, digest, hashPassword, verifyPassword, passwordError, RateLimiter } from './security.mjs';
 import { importMigration, MigrationError, MIGRATION_MAX_BYTES } from './migration.mjs';
 import { createAcademics } from './academics.mjs';
+import { createQuickResources } from './quick-resources.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
@@ -188,6 +189,7 @@ export async function createApp(options = {}) {
         return [{id:row.id,moduleId:row.module_id,title:a.title,kind:a.kind,status:a.status,weight:a.weight,dueAt:a.dueAt,opensAt:a.opensAt,closesAt:a.closesAt,submitted}];
       }) : [];
     }
+    if (details) result.quickResources = result.locked ? [] : quickResources.list(course.id, auth);
     return result;
   }
   function progressView(row) {
@@ -385,6 +387,7 @@ export async function createApp(options = {}) {
   }
 
   const academics = createAcademics({db,fail,json,readJson,readSession,requireAdmin,requireStudent,requireCourse,isEnrolled,validateFile,fileResponse,uploadsDir,audit,env});
+  const quickResources = createQuickResources({db,fail,json,readJson,readSession,requireAdmin,requireCourse,validateFile,fileResponse,uploadsDir,audit,string,webUrl,boolean});
   const handler = async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
@@ -402,6 +405,7 @@ export async function createApp(options = {}) {
       const initialAllowed = (method === 'GET' && ['/api/status', '/api/settings', '/api/auth/me'].includes(path)) || (method === 'POST' && ['/api/auth/logout', '/api/auth/first-password'].includes(path));
       if (path.startsWith('/api/') && !initialAllowed) requirePersonalPassword(auth);
       if (await academics.handler(req,res,path,method,auth)) return;
+      if (await quickResources.handler(req,res,path,method,auth)) return;
       if (path === '/api/status' && method === 'GET') return json(res, { setupRequired:!one("SELECT id FROM users WHERE role='admin'"), uploadMaxBytes:UPLOAD_MAX_BYTES });
       if (path === '/api/settings' && method === 'GET') return json(res, settings());
       if (path === '/api/auth/me' && method === 'GET') return json(res, auth ? { user:userView(auth.user), assurance:auth.assurance } : { user:null, assurance:null });
@@ -678,6 +682,7 @@ export async function createApp(options = {}) {
           if (method === 'GET') return json(res, courseView(course, auth, true));
           if (method === 'DELETE') {
             const files = query('SELECT r.file_key FROM resources r JOIN modules m ON m.id=r.module_id WHERE m.course_id=?', course.id).concat(query("SELECT json_extract(s.payload,'$.file.key') AS file_key FROM submissions s JOIN activities a ON a.id=s.activity_id WHERE a.course_id=?", course.id));
+            files.push(...query('SELECT file_key FROM quick_resources WHERE course_id=?', course.id));
             run('DELETE FROM courses WHERE id=?', course.id);
             deleteFiles(files);
             audit(auth.user, 'course.delete', course.id);
