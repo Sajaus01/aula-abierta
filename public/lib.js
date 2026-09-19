@@ -13,7 +13,7 @@ export function videoEmbed(value) {
   } catch { /* Unsupported links remain ordinary links. */ }
   return null;
 }
-export function parseStudentsCsv(text) {
+export function parseStudentsCsv(text, { allowDuplicates = false } = {}) {
   const rows = []; let row = [], cell = '', quoted = false;
   text = text.replace(/^\uFEFF/, '');
   const delimiter = text.split(/\r?\n/)[0].includes(';') ? ';' : ',';
@@ -32,9 +32,8 @@ export function parseStudentsCsv(text) {
   return rows.map((r, i) => {
     const document = r[header.indexOf('cedula')] || '', name = r[header.indexOf('nombre')] || '', email = r[header.indexOf('correo')] || '';
     if (!/^\d{4,20}$/.test(document) || !name) throw new Error(`Revisa la cédula y el nombre de la fila ${i + 2}. Conserva la cédula como texto.`);
-    if (seen.has(document)) throw new Error(`La cédula de la fila ${i + 2} está repetida.`);
+    if (!allowDuplicates && seen.has(document)) throw new Error(`La cédula de la fila ${i + 2} está repetida.`);
     seen.add(document); return {document,name,email};
   });
 }
-
 

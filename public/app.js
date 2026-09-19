@@ -1,5 +1,6 @@
 import { escapeHtml as e, safeUrl, videoEmbed, parseStudentsCsv } from './lib.js';
 import { materialStatus, summarizeLearning, quickGuide } from './learning.js';
+import { enrollmentPreview, enrollmentResultLabel } from './enrollment-import.js';
 
 const icons = {
  book:'M4 4h6a3 3 0 0 1 3 3v14a4 4 0 0 0-4-2H3V4h1zm9 3a3 3 0 0 1 3-3h6v15h-5a4 4 0 0 0-4 2',
@@ -82,8 +83,8 @@ function studentsPage() {
  (list.length?`<div class="panel table-panel table-wrap"><table><thead><tr><th>ESTUDIANTE</th><th>CÉDULA</th><th>ESTADO</th><th>GESTIONAR</th></tr></thead><tbody>${list.map(s=>`<tr><td><strong>${e(s.name)}</strong><span class="muted">${e(s.email||'Sin correo registrado')}</span></td><td>${e(s.document)}</td><td><span class="badge ${s.active?'green':'gray'}">${s.active?'Activo':'Suspendido'}</span><span class="muted">${s.mustChangePassword?'Primer ingreso pendiente':'Contraseña personal'}</span></td><td class="actions">${btn('Editar',`edit-student:${s.id}`,'ghost small','edit')}${btn('Restablecer',`reset-student:${s.id}`,'ghost small','lock')}</td></tr>`).join('')}</tbody></table></div>`:empty('Conoce a tu comunidad','Añade estudiantes uno a uno o importa una lista CSV. Su cédula será su nombre de usuario.',btn('Añadir estudiante','new-student','','plus'),'users'));
 }
 function enrollmentsPage() {
- return heading('Matrículas','Decide quién puede acceder a cada curso y durante cuánto tiempo.',btn('Nueva matrícula','new-enrollment','','plus'))+
- (state.enrollments.length?`<div class="panel table-panel table-wrap"><table><thead><tr><th>ESTUDIANTE</th><th>CURSO</th><th>VIGENCIA</th><th>ESTADO</th><th></th></tr></thead><tbody>${state.enrollments.map(x=>{const s=state.students.find(y=>y.id===x.studentId),c=state.courses.find(y=>y.id===x.courseId);const expired=x.expiresAt&&new Date(x.expiresAt)<new Date();return `<tr><td><strong>${e(s?.name||x.studentName||'Estudiante')}</strong><span class="muted">${e(s?.document||'')}</span></td><td>${e(c?.title||x.courseTitle||'Curso')}</td><td>${date(x.expiresAt)}<span class="muted">${x.startsAt?'Desde '+date(x.startsAt):'Acceso inmediato'}</span></td><td><span class="badge ${x.status==='active'&&!expired?'green':'gray'}">${x.status==='revoked'?'Revocada':expired?'Vencida':x.startsAt&&new Date(x.startsAt)>new Date()?'Programada':'Activa'}</span></td><td class="actions">${btn('Editar',`edit-enrollment:${x.id}`,'ghost small','edit')}${btn(x.status==='active'?'Revocar':'Reactivar',`toggle-enrollment:${x.id}`,'ghost small')}</td></tr>`;}).join('')}</tbody></table></div>`:empty('Abre las puertas a tus estudiantes','Primero crea un curso y registra estudiantes. Luego asígnales una matrícula.',btn('Crear una matrícula','new-enrollment','','plus'),'cap'));
+ return heading('Matrículas','Matricula estudiantes de forma individual o registra un grupo con una lista.',`<div class="flex wrap">${btn('Subir lista y matricular','bulk-enrollment','secondary','upload')}${btn('Nueva matrícula','new-enrollment','','plus')}</div>`)+
+ (state.enrollments.length?`<div class="panel table-panel table-wrap"><table><thead><tr><th>ESTUDIANTE</th><th>CURSO</th><th>VIGENCIA</th><th>ESTADO</th><th></th></tr></thead><tbody>${state.enrollments.map(x=>{const s=state.students.find(y=>y.id===x.studentId),c=state.courses.find(y=>y.id===x.courseId);const expired=x.expiresAt&&new Date(x.expiresAt)<new Date();return `<tr><td><strong>${e(s?.name||x.studentName||'Estudiante')}</strong><span class="muted">${e(s?.document||'')}</span></td><td>${e(c?.title||x.courseTitle||'Curso')}</td><td>${date(x.expiresAt)}<span class="muted">${x.startsAt?'Desde '+date(x.startsAt):'Acceso inmediato'}</span></td><td><span class="badge ${x.status==='active'&&!expired?'green':'gray'}">${x.status==='revoked'?'Revocada':expired?'Vencida':x.startsAt&&new Date(x.startsAt)>new Date()?'Programada':'Activa'}</span></td><td class="actions">${btn('Editar',`edit-enrollment:${x.id}`,'ghost small','edit')}${btn(x.status==='active'?'Revocar':'Reactivar',`toggle-enrollment:${x.id}`,'ghost small')}</td></tr>`;}).join('')}</tbody></table></div>`:empty('Abre las puertas a tus estudiantes','Elige un curso y sube una lista para crear estudiantes y matricularlos en un solo paso.',btn('Subir lista y matricular','bulk-enrollment','','upload'),'cap'));
 }
 function libraryPage() {
  const resources=state.courses.flatMap(c=>(c.modules||[]).flatMap(m=>(m.resources||[]).map(r=>({...r,courseTitle:c.title,courseId:c.id,moduleTitle:m.title})))).filter(r=>`${r.title} ${r.courseTitle}`.toLowerCase().includes(state.query.toLowerCase()));
@@ -214,10 +215,65 @@ function resetStudentPassword(id) {
 }
 
 function enrollmentForm(id,courseId) {
- if(!state.students.length||!state.courses.length){openModal('Primero prepara tu aula','<p class="small-paragraph">Necesitas al menos un estudiante y un curso para crear una matrícula.</p><div class="form-actions">'+btn('Entendido','close-modal')+'</div>');return;}
+ if(!state.courses.length){openModal('Crea primero un curso','<p class="small-paragraph">Necesitas un curso para matricular estudiantes.</p><div class="form-actions">'+btn('Entendido','close-modal')+'</div>');return;}
+ if(!state.students.length){openModal('Matricula tu primer grupo','<p class="small-paragraph">Puedes subir una lista para crear las cuentas y matricularlas en un solo paso. Para una matrícula individual, registra primero al estudiante.</p><div class="form-actions">'+btn('Subir lista y matricular',`bulk-enrollment:${courseId||''}`,'','upload')+btn('Cerrar','close-modal','secondary')+'</div>');return;}
  const x=id?state.enrollments.find(y=>y.id===id):{courseId};
  openModal(id?'Editar matrícula':'Nueva matrícula',`<div class="form-stack"><label>Estudiante<select name="studentId" ${id?'disabled':''}>${state.students.map(s=>`<option value="${s.id}" ${s.id===x.studentId?'selected':''}>${e(s.name)} · ${e(s.document)}</option>`).join('')}</select></label><label>Curso<select name="courseId" ${id?'disabled':''}>${state.courses.map(c=>`<option value="${c.id}" ${c.id===x.courseId?'selected':''}>${e(c.title)}</option>`).join('')}</select></label><div class="form-grid"><label>Inicio (opcional)<input type="date" name="startsAt" value="${x.startsAt?.slice(0,10)||''}"></label><label>Último día de acceso<input type="date" name="expiresAt" value="${x.expiresAt?.slice(0,10)||''}"></label></div><span class="field-hint">Sin fechas, el acceso comienza ahora y no vence. Las fechas usan el horario del servidor (UTC).</span></div>`,async fd=>{const data=values(fd);data.startsAt=data.startsAt?`${data.startsAt}T00:00:00.000Z`:null;data.expiresAt=data.expiresAt?`${data.expiresAt}T23:59:59.999Z`:null;await(id?patch(`/admin/enrollments/${id}`,data):post('/admin/enrollments',data));await saved('Matrícula guardada');});
 }
+function enrollmentOptions(courseId) {
+ const course=state.courses.find(c=>c.id===courseId);if(!course)return;
+ openModal('Matricular estudiantes',`<p class="small-paragraph">Curso: <strong>${e(course.title)}</strong></p><div class="enrollment-options"><section><span class="resource-icon">${icon('users')}</span><h3>Matrícula individual</h3><p>Selecciona una cuenta ya registrada y asígnale acceso a este curso.</p>${btn('Elegir estudiante',`single-enrollment:${courseId}`,'secondary')}</section><section><span class="resource-icon">${icon('upload')}</span><h3>Un grupo completo</h3><p>Sube una lista CSV. Crearemos las cuentas que falten y las matricularemos en este curso.</p>${btn('Subir lista y matricular',`bulk-enrollment:${courseId}`,'','upload')}</section></div>`,null,{wide:true});
+}
+function enrollmentSummary(summary,preview=false) {
+ const items=[[summary.createdStudents,preview?'Cuentas nuevas previstas':'Cuentas creadas'],[summary.enrolled,preview?'Matrículas nuevas previstas':'Matrículas creadas'],[summary.alreadyEnrolled,'Ya matriculados'],[summary.reactivated,preview?'Por reactivar':'Reactivadas'],[summary.skipped,'Omitidos'],[summary.errors,'Por revisar']];
+ return `<div class="enrollment-summary">${items.map(([n,label])=>`<div><strong>${Number(n)||0}</strong><span>${label}</span></div>`).join('')}</div>`;
+}
+function enrollmentRows(rows,preview=false) {
+ return `<div class="table-wrap enrollment-results"><table><thead><tr><th>REGISTRO</th><th>ESTUDIANTE</th><th>CÉDULA</th><th>${preview?'ACCIÓN PREVISTA':'RESULTADO'}</th></tr></thead><tbody>${rows.map(row=>`<tr><td>${Number(row.row)}</td><td>${e(row.name)}</td><td>${e(row.document)}</td><td><span class="badge ${row.status==='error'?'amber':row.status==='skipped'?'gray':'green'}">${e(enrollmentResultLabel(row))}</span>${row.error||row.reason?`<span class="muted">${e(row.error||row.reason)}</span>`:''}</td></tr>`).join('')}</tbody></table></div>`;
+}
+async function readEnrollmentList(file) {
+ if(!file?.size)throw new Error('Selecciona un archivo CSV con estudiantes.');
+ if(file.size>1024*1024)throw new Error('La lista debe pesar menos de 1 MB.');
+ const students=parseStudentsCsv(await file.text(),{allowDuplicates:true});
+ if(!students.length)throw new Error('La lista no contiene estudiantes.');
+ if(students.length>500)throw new Error('Importa hasta 500 registros por lista.');
+ return students;
+}
+function bulkEnrollmentForm(courseId) {
+ if(!state.courses.length){openModal('Crea primero un curso','<p class="small-paragraph">Crea un curso y luego podrás subir la lista de sus estudiantes.</p><div class="form-actions">'+btn('Entendido','close-modal')+'</div>');return;}
+ const course=state.courses.find(c=>c.id===courseId);let previewVersion=0;
+ openModal('Subir lista y matricular',`<div class="form-stack">${course?`<div class="enrollment-target"><small>CURSO SELECCIONADO</small><strong>${e(course.title)}</strong></div><input type="hidden" name="courseId" value="${e(course.id)}">`:`<label>Curso<select name="courseId" required><option value="">Selecciona el curso</option>${state.courses.map(c=>`<option value="${e(c.id)}">${e(c.title)}${c.published?'':' · Borrador'}</option>`).join('')}</select></label>`}<p class="small-paragraph">Sube un CSV con las columnas <strong>cedula,nombre,correo</strong>. El correo es opcional. Se crearán las cuentas que falten y se matricularán en el curso elegido.</p><label>Lista de estudiantes (CSV)<input type="file" name="csv" accept=".csv,text/csv" required><span class="field-hint">Hasta 500 registros y 1 MB. Desde Excel, guarda la lista como CSV UTF-8 y conserva las cédulas como texto.</span></label>${btn('Descargar plantilla vacía','csv-template','secondary small','download')}<div class="form-grid"><label>Inicio (opcional)<input type="date" name="startsAt"></label><label>Último día de acceso (opcional)<input type="date" name="expiresAt"></label></div><span class="field-hint">Estas fechas se aplican a matrículas nuevas y reactivadas. Sin fechas, el acceso comienza ahora y no vence. Horario UTC.</span><label class="check-label"><input type="checkbox" name="reactivate">Reactivar matrículas vencidas o revocadas de esta lista</label><span class="field-hint">Las matrículas vigentes o programadas conservan sus fechas. Las cuentas suspendidas aparecerán para revisión.</span><div id="enrollment-preview" aria-live="polite"><p class="field-hint">Al elegir el archivo verás una vista previa de la lista.</p></div><div class="notice">Los estudiantes nuevos ingresan con su cédula como usuario y contraseña inicial, y deberán crear una contraseña personal. Las cuentas existentes conservan su contraseña.</div><p class="enrollment-progress" role="status" hidden>Registrando y matriculando el grupo. Espera a que aparezca el resultado.</p></div>`,async fd=>{
+  const selected=course?.id||fd.get('courseId');if(!selected)throw new Error('Selecciona el curso.');
+  const students=await readEnrollmentList(fd.get('csv'));
+  const startsAt=fd.get('startsAt')?`${fd.get('startsAt')}T00:00:00.000Z`:null,expiresAt=fd.get('expiresAt')?`${fd.get('expiresAt')}T23:59:59.999Z`:null;
+  if(startsAt&&expiresAt&&startsAt>=expiresAt)throw new Error('La fecha final debe ser posterior a la inicial.');
+  if(!form.isConnected||!modal.open)return;
+  state.bulkEnrollmentBusy=true;form.setAttribute('aria-busy','true');form.querySelector('.enrollment-progress').hidden=false;
+  const controls=Array.from(modal.querySelectorAll('input,select,button')).map(el=>[el,el.disabled]);controls.forEach(([el])=>el.disabled=true);
+  let result;
+  try {result=await post(`/admin/courses/${encodeURIComponent(selected)}/enrollments/bulk`,{students,startsAt,expiresAt,reactivate:fd.has('reactivate')});}
+  catch(error){throw new Error(`${error.message} Si la carga se interrumpió, revisa las matrículas y vuelve a enviar la misma lista; los registros confirmados no se duplican.`);}
+  finally{state.bulkEnrollmentBusy=false;form.removeAttribute('aria-busy');if(form.isConnected)form.querySelector('.enrollment-progress').hidden=true;controls.forEach(([el,disabled])=>el.disabled=disabled);}
+  let refreshFailed=false;try{await refresh();await render();}catch{refreshFailed=true;}
+  showEnrollmentImportResult(result,refreshFailed);
+ },{wide:true,submit:'Crear y matricular estudiantes'});
+ const form=modal.querySelector('#modal-form');
+ form.addEventListener('change',async()=>{
+  const version=++previewVersion,preview=form.querySelector('#enrollment-preview');form.querySelector('.form-error').textContent='';
+  const file=form.elements.csv.files[0],selected=course?.id||form.elements.courseId.value;
+  if(!file){preview.innerHTML='<p class="field-hint">Al elegir el archivo verás una vista previa de la lista.</p>';return;}
+  if(!selected){preview.innerHTML='<p class="field-hint">Selecciona el curso para revisar la lista.</p>';return;}
+  try{const rows=await readEnrollmentList(file);if(version!==previewVersion||!form.isConnected)return;const result=enrollmentPreview(rows,state.students,state.enrollments,selected,{reactivate:form.elements.reactivate.checked});preview.innerHTML=`<h3>Vista previa · ${rows.length} registros</h3><p class="field-hint">Estimación con los datos actuales. El resultado de la carga confirmará cada registro.</p>${enrollmentSummary(result.summary,true)}${enrollmentRows(result.results.slice(0,20),true)}${rows.length>20?`<p class="field-hint">Se muestran los primeros 20 de ${rows.length} registros.</p>`:''}`;}
+  catch(error){if(version===previewVersion&&form.isConnected)preview.innerHTML=`<p class="form-error" role="alert">${e(error.message)}</p>`;}
+ });
+}
+function showEnrollmentImportResult(result,refreshFailed=false) {
+ if(state.enrollmentReportUrl)URL.revokeObjectURL(state.enrollmentReportUrl);
+ const csv='\uFEFFregistro,cedula,nombre,resultado,detalle\r\n'+result.results.map(row=>[row.row,row.document,row.name,enrollmentResultLabel(row),row.error||row.reason||''].map(csvCell).join(',')).join('\r\n');
+ state.enrollmentReportUrl=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+ openModal('Resultado de la matrícula por lista',`<p class="small-paragraph">Curso: <strong>${e(result.course.title)}</strong><br>Se procesaron ${Number(result.summary.received)} registros.</p>${enrollmentSummary(result.summary)}${refreshFailed?'<p class="notice warning">El resultado se guardó, pero no pudimos actualizar el panel. Recarga la página después de revisar el reporte.</p>':''}${result.summary.errors||result.summary.skipped?'<p class="small-paragraph">Revisa los registros omitidos o con errores en la tabla. Puedes corregirlos y subir la lista otra vez.</p>':'<p class="small-paragraph">La lista quedó procesada. Los estudiantes nuevos deben cambiar su contraseña en el primer ingreso.</p>'}${enrollmentRows(result.results)}<div class="form-actions"><a class="btn secondary" href="${e(state.enrollmentReportUrl)}" download="resultado-matriculas.csv">${icon('download')}Descargar resultado</a>${btn('Listo','close-modal')}</div>`,null,{wide:true});
+}
+
 function moduleForm(id,courseId) {
  const m=id?allModules().find(x=>x.id===id):{title:'',position:state.currentCourse?.modules.length||0};
  openModal(id?'Editar capítulo':'Añadir capítulo',`<div class="form-stack"><label>Título del capítulo<input name="title" required maxlength="180" placeholder="Nombre del capítulo" value="${e(m.title)}"></label><label>Orden<input name="position" type="number" min="0" max="10000" value="${m.position||0}"></label></div>`,async fd=>{const data={...values(fd),position:Number(fd.get('position'))};await(id?patch(`/admin/modules/${id}`,data):post(`/admin/courses/${courseId}/modules`,data));await saved('Capítulo guardado');});
@@ -247,7 +303,7 @@ async function viewResource(id) {
 function importStudents() {
  openModal('Importar estudiantes',`<div class="form-stack"><p class="small-paragraph">Carga una lista CSV con las columnas <strong>cedula,nombre,correo</strong>. El correo es opcional. Conserva las cédulas como texto para no perder ceros.</p><label>Archivo CSV<input type="file" name="csv" accept=".csv,text/csv" required></label><p class="field-hint">Cada estudiante nuevo tendrá su cédula como usuario y contraseña inicial, con cambio obligatorio al ingresar. Las cuentas existentes se conservan. Las matrículas se asignan después, desde Matrículas.</p>${btn('Descargar plantilla vacía','csv-template','secondary small','download')}</div>`,async fd=>{const f=fd.get('csv');if(f.size>1024*1024)throw new Error('La lista debe pesar menos de 1 MB.');const students=parseStudentsCsv(await f.text());if(!students.length)throw new Error('La lista no contiene estudiantes.');if(students.length>500)throw new Error('Importa hasta 500 estudiantes por lista.');const result=await post('/admin/students/bulk',{students});await saved('Lista procesada');state.importResult=result;openModal('Resultado de la importación',`<p class="small-paragraph">Se registraron ${result.created?.length||0} estudiantes. Pueden ingresar con su cédula como usuario y contraseña inicial; el aula les pedirá crear una contraseña personal.</p>${result.errors?.length?`<div class="notice warning" style="margin-top:15px">${result.errors.map(x=>e(x.error||x.message||JSON.stringify(x))).join('<br>')}</div>`:''}<div class="table-wrap"><table><thead><tr><th>ESTUDIANTE</th><th>CÉDULA</th><th>ACCESO INICIAL</th></tr></thead><tbody>${(result.created||[]).map(s=>`<tr><td>${e(s.name)}</td><td>${e(s.document)}</td><td>Con su cédula</td></tr>`).join('')}</tbody></table></div><div class="form-actions">${btn('Guardar registro','export-students','secondary','download')}${btn('Listo','close-modal')}</div>`,null,{wide:true});},{submit:'Importar estudiantes'});
 }
-function downloadText(name,text,type='text/csv') {const url=URL.createObjectURL(new Blob([text],{type}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function downloadText(name,text,type='text/csv') {const url=URL.createObjectURL(new Blob([text],{type}));const a=document.createElement('a');a.href=url;a.download=name;(modal.open?modal:document.body).append(a);a.click();setTimeout(()=>{a.remove();URL.revokeObjectURL(url);},1000);}
 function importMigration() {
  openModal('Importar el aula local',`<div class="form-stack"><p class="small-paragraph">El traslado incluye los cursos, estudiantes, matrículas, avances y materiales del archivo. Solo se permite cuando esta plataforma aún no tiene cursos ni estudiantes.</p><label>Archivo de migración<input type="file" name="bundle" accept=".json,application/json" required></label><p class="field-hint">La cuenta de administrador y su contraseña actuales se conservan. Las sesiones y los códigos de activación anteriores no se trasladan.</p></div>`,async fd=>{
   const file=fd.get('bundle');if(!file?.size)throw new Error('Selecciona el archivo de migración.');if(file.size>64*1024*1024)throw new Error('La copia supera el límite de 64 MB.');
@@ -264,6 +320,7 @@ function bindForms() {
  document.getElementById('settings-form')?.addEventListener('submit',ev=>{ev.preventDefault();submitForm(ev.currentTarget,async fd=>{state.settings=await patch('/admin/settings',values(fd));await render();toast('Configuración guardada');});});
 }
 modal.addEventListener('submit',ev=>{if(ev.target.id==='modal-form'){ev.preventDefault();submitForm(ev.target,fd=>modalHandler(fd));}});
+modal.addEventListener('cancel',ev=>{if(state.bulkEnrollmentBusy)ev.preventDefault();});
 modal.addEventListener('close',async()=>{
  if(modal.open)return;
  const resourceId=state.activeResourceId,originRoute=state.activeResourceRoute,scroll=window.scrollY,initialUser=state.user?.id;
@@ -271,6 +328,7 @@ modal.addEventListener('close',async()=>{
  modal.replaceChildren();modalHandler=null;
  document.documentElement.classList.remove('resource-viewer-open');
  if(state.importResult)state.importResult=null;
+ if(state.enrollmentReportUrl){URL.revokeObjectURL(state.enrollmentReportUrl);state.enrollmentReportUrl=null;}
  if(resourceId&&student()){
   try{const learning=await api('/learning');if(state.user?.id!==initialUser)return;state.learning=learning;}catch{/* The material's saved progress remains available. */}
   if(route()===originRoute&&!modal.open){await render();window.scrollTo(0,scroll);document.querySelector(`[data-action="resource:${resourceId}"]`)?.focus({preventScroll:true});}
@@ -286,7 +344,7 @@ document.addEventListener('click',async ev=>{
    case 'menu':document.getElementById('sidebar').classList.toggle('open');break;
    case 'go':location.hash=id;break;
    case 'filter':state.filter=id;await render();break;
-   case 'close-modal':modal.close();break;
+   case 'close-modal':if(!state.bulkEnrollmentBusy)modal.close();break;
    case 'resource-filter':state.resourceFilter=id;await render();break;
    case 'course-login':state.afterLoginCourse=id;state.loginMode='password';location.hash='login';break;
    case 'study':{const [courseId,resourceId]=id.split('/');if(route()==='curso/'+courseId)await viewResource(resourceId);else{state.pendingResourceId=resourceId;location.hash='curso/'+courseId;}break;}
@@ -305,7 +363,9 @@ document.addEventListener('click',async ev=>{
    case 'csv-template':downloadText('plantilla-estudiantes.csv','\uFEFFcedula,nombre,correo\r\n');break;
    case 'export-students':if(state.importResult)downloadText('estudiantes-registrados.csv','\uFEFFcedula,nombre,acceso_inicial\r\n'+state.importResult.created.map(s=>[s.document,s.name,'Su cédula; cambio obligatorio al ingresar'].map(csvCell).join(',')).join('\r\n'));break;
    case 'new-enrollment':enrollmentForm();break;
-   case 'enroll-course':enrollmentForm(null,id);break;
+   case 'enroll-course':enrollmentOptions(id);break;
+   case 'single-enrollment':enrollmentForm(null,id);break;
+   case 'bulk-enrollment':bulkEnrollmentForm(id);break;
    case 'edit-enrollment':enrollmentForm(id);break;
    case 'toggle-enrollment':{const x=state.enrollments.find(y=>y.id===id);confirmAction(x.status==='active'?'Revocar matrícula':'Reactivar matrícula',x.status==='active'?'El estudiante perderá el acceso a este curso restringido.':'Se restaurará la matrícula con sus fechas actuales.',()=>patch(`/admin/enrollments/${id}`,{status:x.status==='active'?'revoked':'active'}));break;}
    case 'new-module':moduleForm(null,id);break;
@@ -330,7 +390,6 @@ async function boot() {
  catch(error){app.innerHTML=publicShell(heading('No pudimos conectar con el aula','Intenta nuevamente en unos momentos. Si el problema continúa, comunícate con tu docente.')+btn('Volver a intentar','reload','secondary','arrow'));}
 }
 boot();
-
 
 
 

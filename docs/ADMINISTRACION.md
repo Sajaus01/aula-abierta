@@ -6,7 +6,22 @@ Crea el curso desde el panel de administración. Usa un nombre descriptivo, agre
 
 La modalidad se decide por curso. Puedes tener cursos libres y privados al mismo tiempo. Un estudiante puede tener matrícula en varios cursos. La matrícula y la cuenta son cosas distintas: crear la cuenta de un estudiante no lo matricula automáticamente en todos los cursos.
 
-## Agregar estudiantes
+## Crear y matricular un grupo en un solo paso
+
+Abre **Mis cursos → tu curso → Matricular estudiantes → Subir lista y matricular**. También puedes entrar por **Matrículas → Subir lista y matricular** y elegir el curso. No necesitas registrar antes a las personas de la lista.
+
+1. Descarga la plantilla vacía y completa `cedula,nombre,correo`; el correo es opcional. Guarda el archivo como CSV UTF-8. Se admiten comas o punto y coma, hasta 500 registros y 1 MB.
+2. Sube el archivo y revisa la vista previa. Si quieres, define las fechas de acceso para las matrículas nuevas.
+3. Pulsa **Crear y matricular estudiantes**. Las cuentas que falten se crean con cédula como usuario y contraseña inicial, con cambio obligatorio en el primer ingreso. Las cuentas existentes conservan su nombre, correo y contraseña.
+4. Revisa el resultado por registro y usa **Descargar resultado** para guardar un reporte CSV. Las cifras de cuentas creadas y matrículas creadas se muestran separadas: una persona nueva cuenta en ambas.
+
+Una matrícula vigente o programada se conserva sin cambiar fechas. Las vencidas o revocadas se omiten, salvo que marques **Reactivar matrículas vencidas o revocadas de esta lista**; entonces reciben las fechas indicadas en el formulario. Las cuentas suspendidas requieren revisión y no se activan automáticamente. Una cédula repetida no crea cuentas ni matrículas adicionales.
+
+Si un registro falla, la tabla explica el motivo y los demás registros válidos pueden guardarse. Si el archivo no se puede interpretar o contiene cédulas o nombres inválidos, corrígelo antes de enviarlo. Ante una interrupción, puedes volver a subir la misma lista: los registros ya confirmados no se duplican ni restablecen contraseñas.
+
+Se conserva **Matricular estudiantes → Elegir estudiante** para la matrícula individual. La sección **Estudiantes** también permite crear cuentas sin asignarles un curso todavía.
+
+## Agregar estudiantes sin matricularlos todavía
 
 Registra la cédula como texto compuesto por dígitos, sin puntos, guiones ni espacios. Conserva los ceros iniciales si los hay. Usa el nombre que quieras mostrar en el aula y, opcionalmente, su correo de contacto.
 
@@ -20,7 +35,7 @@ Guarda el archivo en UTF-8 y separado por comas. Si lo preparas en Excel, config
 
 Importa hasta 500 estudiantes por lote. La importación registra las filas válidas e informa cuáles fallaron; una cédula ya existente no se sobrescribe. Revisa el resultado y corrige únicamente las filas pendientes antes de volver a importarlas. Cada estudiante nuevo recibe automáticamente su cédula como usuario y contraseña inicial, tanto en el registro individual como en CSV. No debes entregar códigos ni contraseñas distintas a cada persona.
 
-Después del registro, asigna la matrícula del estudiante en el curso correspondiente. Configura su vigencia cuando quieras que el acceso termine en una fecha determinada. Revisa la modalidad del curso antes de comunicar cómo ingresar.
+Si usas esta importación desde **Estudiantes**, asigna después la matrícula en el curso correspondiente. Para hacer ambas cosas juntas, usa la carga desde el curso descrita arriba. Configura su vigencia cuando quieras que el acceso termine en una fecha determinada. Revisa la modalidad del curso antes de comunicar cómo ingresar.
 
 ## Contraseñas
 
@@ -47,4 +62,3 @@ Antes de publicar, prueba el recorrido como estudiante en una sesión separada d
 ## Datos y mantenimiento
 
 Desactiva una cuenta o revoca su matrícula cuando corresponda. Conserva únicamente los datos necesarios y controla quién tiene acceso al servidor y a sus respaldos. Para trasladar la instalación debes conservar tanto la base de datos como los archivos; consulta [Publicación](PUBLICACION.md).
-

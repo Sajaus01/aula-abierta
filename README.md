@@ -40,8 +40,8 @@ La cédula identifica a una persona, pero no es un secreto. En un curso con acce
 
 1. Crea el curso y elige su modalidad de acceso.
 2. Organiza módulos y agrega materiales desde el panel.
-3. Registra estudiantes individualmente o importa un CSV con `cedula,nombre,correo`.
-4. Matricula los estudiantes en cada curso privado y define vigencia cuando corresponda.
+3. Dentro del curso, pulsa **Matricular estudiantes → Subir lista y matricular** y carga un CSV con `cedula,nombre,correo`. Creará las cuentas que falten y las matriculará en ese curso en un solo paso.
+4. Revisa la vista previa, define vigencia si corresponde y consulta el resultado por registro. También puedes registrar estudiantes por separado y usar la matrícula individual.
 5. Indica a los estudiantes nuevos que ingresen en **Con contraseña**, usando su cédula como usuario y contraseña inicial. El aula les exigirá crear una contraseña personal antes de acceder a los cursos. No necesitas repartir códigos.
 6. Publica el curso y comparte la dirección de tu plataforma.
 
@@ -71,4 +71,3 @@ data/                      Base de datos y materiales; solo en el servidor
 Esta base permite gestionar un aula y distribuir materiales. No incluye cobros, videoconferencia propia, envío de correos de recuperación, calificación automática de ejercicios, SCORM ni certificados académicos. Los videos externos conservan las reglas de acceso del proveedor donde están alojados. Se puede ampliar el código cuando esas funciones hagan falta.
 
 La configuración usa una única instancia de la aplicación y almacenamiento persistente local. Antes de operar con estudiantes reales, configura HTTPS, copias de seguridad y una política de tratamiento de los datos que recopilarás.
-

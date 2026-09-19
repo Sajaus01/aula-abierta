@@ -50,6 +50,15 @@ function timestamp(value, name) {
   return new Date(value).toISOString();
 }
 function validDates(starts, expires) { if (starts && expires && starts >= expires) fail(400, 'La fecha final debe ser posterior a la inicial.'); }
+function enrollmentImportDate(value, name) {
+  if (value === undefined || value === null) return null;
+  // The batch API accepts explicit ISO instants, avoiding locale-dependent dates.
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(value)) fail(400, `${name} debe ser una fecha ISO con zona horaria o estar vacía.`);
+  const result = timestamp(value, name);
+  const day = new Date(`${value.slice(0, 10)}T00:00:00Z`);
+  if (!Number.isFinite(day.getTime()) || day.toISOString().slice(0, 10) !== value.slice(0, 10) || Number(value.slice(11, 13)) > 23 || Number(value.slice(14, 16)) > 59 || Number(value.slice(17, 19)) > 59) fail(400, `${name} no es una fecha válida.`);
+  return result;
+}
 function json(res, data, status = 200) { res.writeHead(status, { 'Content-Type':'application/json; charset=utf-8' }); res.end(JSON.stringify({ data })); }
 function userView(user) { return { id:user.id, document:user.document, name:user.name, email:user.email, role:user.role, mustChangePassword:user.role === 'student' && Boolean(user.must_change_password) }; }
 
@@ -221,6 +230,101 @@ export async function createApp(options = {}) {
     const id = randomUUID(), at = now();
     run('INSERT INTO users(id,document,name,email,role,password_hash,must_change_password,active,created_at,updated_at) VALUES (?,?,?,?,?,?,1,1,?,?)', id, document, name, email, 'student', hash, at, at);
     return studentView(one('SELECT * FROM users WHERE id=?', id));
+  }
+  async function importCourseEnrollments(req, originalAuth, courseId, body) {
+    const checkScope = () => {
+      const current = readSession(req);
+      requireAdmin(current);
+      if (current.user.id !== originalAuth.user.id || current.tokenHash !== originalAuth.tokenHash) fail(403, 'La sesión de administración cambió. Vuelve a ingresar.', 'ADMIN_REQUIRED');
+      return existing('courses', courseId, 'Curso');
+    };
+    const course = checkScope();
+    if (!Array.isArray(body.students) || !body.students.length || body.students.length > 500) fail(400, 'Envía entre 1 y 500 estudiantes por importación.');
+    const startsAt = enrollmentImportDate(body.startsAt, 'La fecha inicial');
+    const expiresAt = enrollmentImportDate(body.expiresAt, 'La fecha final');
+    validDates(startsAt, expiresAt);
+    const reactivate = own(body, 'reactivate') ? Boolean(boolean(body.reactivate, 'Reactivar matrículas')) : false;
+    const summary = { received:body.students.length, createdStudents:0, enrolled:0, alreadyEnrolled:0, reactivated:0, skipped:0, errors:0 };
+    const results = [], seen = new Set();
+    for (let index = 0; index < body.students.length; index++) {
+      checkScope();
+      const input = body.students[index];
+      const result = { row:index + 1, document:typeof input?.document === 'string' ? input.document.slice(0, 20) : '', name:typeof input?.name === 'string' ? input.name.slice(0, 160) : '', createdStudent:false };
+      let transaction = false;
+      try {
+        if (!input || Array.isArray(input) || typeof input !== 'object') fail(400, 'Fila no válida.');
+        const document = documentNumber(input.document);
+        result.document = document;
+        if (seen.has(document)) {
+          result.status = 'skipped';
+          result.reason = 'Cédula repetida en este archivo; se procesa únicamente su primera fila.';
+        } else {
+          seen.add(document);
+          const name = string(input.name, 'el nombre', 160, true), email = emailAddress(input.email);
+          result.name = name;
+          const prior = one('SELECT * FROM users WHERE document=?', document);
+          if (prior && (prior.role !== 'student' || !prior.active)) fail(400, prior.role !== 'student' ? 'La cédula pertenece a una cuenta de administración.' : 'El estudiante está suspendido. Revisa su cuenta antes de matricularlo.');
+          // Only one derivation at a time; no transaction is held while hashing.
+          const hash = prior ? null : await hashPassword(document);
+          checkScope();
+          db.exec('BEGIN IMMEDIATE');
+          transaction = true;
+          checkScope();
+          let student = one('SELECT * FROM users WHERE document=?', document);
+          if (student && (student.role !== 'student' || !student.active)) fail(400, student.role !== 'student' ? 'La cédula pertenece a una cuenta de administración.' : 'El estudiante está suspendido. Revisa su cuenta antes de matricularlo.');
+          if (!student) {
+            if (!hash) fail(409, 'La cuenta cambió durante la importación. Reintenta esta fila.');
+            const id = randomUUID(), at = now();
+            run('INSERT INTO users(id,document,name,email,role,password_hash,must_change_password,active,created_at,updated_at) VALUES (?,?,?,?,?,?,1,1,?,?)', id, document, name, email, 'student', hash, at, at);
+            student = one('SELECT * FROM users WHERE id=?', id);
+            result.createdStudent = true;
+            audit(originalAuth.user, 'student.create', id);
+          }
+          result.studentId = student.id;
+          result.name = student.name;
+          const enrollment = one('SELECT * FROM enrollments WHERE student_id=? AND course_id=?', student.id, course.id);
+          const at = now();
+          if (enrollment && enrollment.status === 'active' && (!enrollment.expires_at || enrollment.expires_at > at)) {
+            // Scheduled enrollments count as existing too; their dates stay intact.
+            result.enrollmentId = enrollment.id;
+            result.status = 'already_enrolled';
+            result.reason = 'El estudiante ya tiene una matrícula vigente o programada en este curso.';
+          } else if (enrollment && !reactivate) {
+            result.enrollmentId = enrollment.id;
+            result.status = 'skipped';
+            result.reason = 'La matrícula está vencida o revocada. Requiere revisión o reactivación explícita.';
+          } else if (enrollment) {
+            run("UPDATE enrollments SET status='active',starts_at=?,expires_at=? WHERE id=?", startsAt, expiresAt, enrollment.id);
+            result.enrollmentId = enrollment.id;
+            result.status = 'reactivated';
+            audit(originalAuth.user, 'enrollment.reactivate', enrollment.id);
+          } else {
+            const id = randomUUID();
+            run("INSERT INTO enrollments(id,student_id,course_id,status,starts_at,expires_at,created_at) VALUES (?,?,?,'active',?,?,?)", id, student.id, course.id, startsAt, expiresAt, at);
+            result.enrollmentId = id;
+            result.status = 'enrolled';
+            audit(originalAuth.user, 'enrollment.create', id);
+          }
+          db.exec('COMMIT');
+          transaction = false;
+        }
+      } catch (error) {
+        if (transaction) db.exec('ROLLBACK');
+        if (error instanceof ApiError && ['ADMIN_REQUIRED', 'NOT_FOUND'].includes(error.code)) throw error;
+        // SQL errors can contain private data. Return only a generic row error.
+        result.status = 'error';
+        result.createdStudent = false;
+        delete result.studentId;
+        delete result.enrollmentId;
+        delete result.reason;
+        result.error = error instanceof ApiError ? error.message : 'No se pudo guardar esta fila. No se crearon cuentas ni matrículas para ella; puedes reintentarla.';
+      }
+      if (result.createdStudent) summary.createdStudents += 1;
+      const counter = { enrolled:'enrolled', already_enrolled:'alreadyEnrolled', reactivated:'reactivated', skipped:'skipped', error:'errors' }[result.status];
+      summary[counter] += 1;
+      results.push(result);
+    }
+    return { course:{ id:course.id, title:course.title }, summary, results };
   }
   function existing(table, id, label) { const row = one(`SELECT * FROM ${table} WHERE id=?`, id); if (!row) fail(404, `${label} no encontrado.`, 'NOT_FOUND'); return row; }
   function deleteFiles(rows) { for (const row of rows) if (row.file_key) { try { unlinkSync(join(uploadsDir, row.file_key)); } catch (error) { if (error.code !== 'ENOENT') console.error('No se pudo retirar un archivo huérfano.'); } } }
@@ -550,6 +654,11 @@ export async function createApp(options = {}) {
           audit(auth.user, 'course.create', id);
           return json(res, courseView(existing('courses', id, 'Curso'), auth, true), 201);
         }
+        match = /^\/api\/admin\/courses\/([^/]+)\/enrollments\/bulk$/.exec(path);
+        if (match && method === 'POST') {
+          const body = await readJson(req);
+          return json(res, await importCourseEnrollments(req, auth, match[1], body), 201);
+        }
         match = /^\/api\/admin\/courses\/([^/]+)$/.exec(path);
         if (match && ['GET', 'PATCH', 'DELETE'].includes(method)) {
           const course = existing('courses', match[1], 'Curso');
@@ -716,4 +825,3 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => app.server.close(() => process.exit(0)));
   }).catch(error => { console.error(error.message); process.exitCode = 1; });
 }
-
