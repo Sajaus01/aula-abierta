@@ -12,6 +12,61 @@ const future=()=>new Date(Date.now()+3600000).toISOString();
 const past=()=>new Date(Date.now()-3600000).toISOString();
 const pdf={name:'trabajo.pdf',base64:Buffer.from('%PDF-1.4\nEntrega de prueba').toString('base64')};
 const questions=[{id:'q1',type:'single',prompt:'Dos más dos',options:['4','5'],correct:[0],points:1},{id:'q2',type:'multiple',prompt:'Pares',options:['2','3','4'],correct:[0,2],points:1}];
+const photo={name:'respuesta.png',base64:Buffer.from([137,80,78,71,13,10,26,10,0,0,0,0]).toString('base64')};
+
+test('enunciados adjuntos y enlaces conservan privacidad, apertura y vista previa',async t=>{
+ const f=await fixture(t);let a=await f.activity({instructionUrl:'https://example.org/preguntas',attachments:[pdf,photo]});
+ assert.equal(a.attachments.length,2);assert.ok(!JSON.stringify(a).includes('file_key'));assert.ok(!JSON.stringify(a).includes('base64'));
+ let view=ok(await f.student.call(`/academics/activities/${a.id}`)).activity;assert.equal(view.instructionUrl,'https://example.org/preguntas');assert.equal(view.attachments.length,2);
+ const url=a.attachments[0].url.slice(4);let response=await f.student.call(url);ok(response);assert.match(response.headers.get('content-disposition'),/^inline/);assert.equal(response.headers.get('cache-control'),'no-store');
+ response=await f.student.call(url+'?download=1');ok(response);assert.match(response.headers.get('content-disposition'),/^attachment/);ok(await f.student.call(url,'HEAD'));
+ ok(await f.client().call(url),401);f.db.prepare("UPDATE enrollments SET status='revoked' WHERE student_id=?").run(f.students[1].id);ok(await f.other.call(url),403);
+ a=ok(await f.admin.call(`/academics/activities/${a.id}`,'PATCH',{version:a.version,opensAt:future()}));
+ view=ok(await f.student.call(`/academics/activities/${a.id}`)).activity;assert.deepEqual(view.attachments,[]);assert.equal(view.instructionUrl,'');ok(await f.student.call(url),403);ok(await f.admin.call(url));
+ a=ok(await f.admin.call(`/academics/activities/${a.id}`,'PATCH',{version:a.version,status:'draft'}));ok(await f.student.call(url),404);
+ ok(await f.admin.call(`/academics/activities/${a.id}`,'PATCH',{version:a.version,instructionUrl:'javascript:alert(1)'}),400);
+ ok(await f.admin.call(`/admin/courses/${f.course.id}`,'DELETE'));assert.equal((await readdir(join(f.dir,'uploads'))).length,0);
+});
+
+test('editar adjuntos respeta versiones, valida pertenencia y revierte fallos sin archivos huérfanos',async t=>{
+ const f=await fixture(t);let a=await f.activity({attachments:[pdf,photo]});const other=await f.activity({attachments:[pdf]});
+ const endpoint=`/academics/activities/${a.id}`;const original=a.attachments[0].url.slice(4);
+ ok(await f.admin.call(endpoint,'PATCH',{version:a.version,retainAttachmentIds:[other.attachments[0].id]}),400);
+ ok(await f.admin.call(endpoint,'PATCH',{version:0,attachments:[pdf]}),409);
+ ok(await f.admin.call(endpoint,'PATCH',{version:a.version,attachments:Array(4).fill(pdf)}),400);
+ ok(await f.admin.call(endpoint,'PATCH',{version:a.version,attachments:[{name:'malo.html',base64:Buffer.from('<script>x</script>').toString('base64')}]}),400);
+ assert.equal((await readdir(join(f.dir,'uploads'))).length,3);
+ f.db.exec("CREATE TRIGGER reject_material BEFORE INSERT ON activity_files BEGIN SELECT RAISE(ABORT,'synthetic failure'); END");
+ ok(await f.admin.call(endpoint,'PATCH',{version:a.version,retainAttachmentIds:[],attachments:[pdf]}),500);assert.equal((await readdir(join(f.dir,'uploads'))).length,3);ok(await f.student.call(original));
+ f.db.exec('DROP TRIGGER reject_material');
+ a=ok(await f.admin.call(endpoint,'PATCH',{version:a.version,retainAttachmentIds:[a.attachments[1].id],attachments:[{...pdf,name:'nuevo.pdf'}]}));assert.equal(a.attachments.length,2);ok(await f.student.call(original),404);assert.equal((await readdir(join(f.dir,'uploads'))).length,3);
+});
+
+test('varios archivos de respuesta: borrador, retiro, envío, historial y revisión privada',async t=>{
+ const f=await fixture(t),a=await f.activity({attachments:[pdf],maxAttempts:2});const key=randomUUID();
+ let s=ok(await f.submit(a,{requestId:key,action:'draft',text:'',files:[pdf,photo]}),201);assert.equal(s.files.length,2);
+ const removed=s.files[0].url.slice(4),kept=s.files[1].id;
+ ok(await f.other.call(removed),403);ok(await f.student.call(removed));ok(await f.admin.call(removed));
+ ok(await f.submit(a,{requestId:key,version:s.version,action:'draft',retainFileIds:['foreign']}),400);
+ s=ok(await f.submit(a,{requestId:key,version:s.version,action:'draft',text:'',retainFileIds:[kept],files:[{...pdf,name:'respuestas.pdf'}]}),201);assert.equal(s.files.length,2);ok(await f.student.call(removed),404);
+ const submitted=ok(await f.submit(a,{requestId:key,version:s.version,text:'',retainFileIds:s.files.map(f=>f.id)}),201);assert.equal(submitted.state,'submitted');
+ assert.equal(ok(await f.submit(a,{requestId:key,files:[pdf]})).id,submitted.id,'Un reintento no añade archivos ni duplica la entrega');
+ const next=ok(await f.submit(a,{text:'',files:[photo]}),201);assert.equal(next.attempt,2);assert.equal(ok(await f.student.call(`/academics/activities/${a.id}`)).mine.length,2);
+ const size=Buffer.from(pdf.base64,'base64').length+2*Buffer.from(photo.base64,'base64').length;assert.equal(ok(await f.admin.call('/academics/storage')).usedBytes,size);
+ ok(await f.grade(a,next,90));assert.equal(ok(await f.student.call(`/academics/activities/${a.id}`)).mine[0].points,90);
+ ok(await f.admin.call(`/admin/courses/${f.course.id}`,'DELETE'));assert.equal((await readdir(join(f.dir,'uploads'))).length,0);
+});
+
+test('límites múltiples, archivos antiguos y cuestionarios mantienen compatibilidad',async t=>{
+ const f=await fixture(t,{SUBMISSIONS_MAX_BYTES:'100'}),a=await f.activity();
+ ok(await f.submit(a,{files:Array(6).fill(pdf)}),400);
+ ok(await f.submit(a,{files:[{...pdf,base64:Buffer.from('%PDF-'+'.'.repeat(90)).toString('base64')},photo]}),413);
+ const quiz=await f.activity({kind:'quiz',questions});ok(await f.submit(quiz,{text:'',answers:{q1:[0],q2:[0,2]},files:[photo]}),400);
+ let s=ok(await f.submit(a,{action:'draft',file:pdf}),201);
+ const raw=f.db.prepare('SELECT payload FROM submissions WHERE id=?').get(s.id);const p=JSON.parse(raw.payload);p.file=p.files[0];delete p.files;f.db.prepare('UPDATE submissions SET payload=? WHERE id=?').run(JSON.stringify(p),s.id);
+ s=ok(await f.student.call(`/academics/activities/${a.id}`)).mine[0];assert.equal(s.files.length,1);ok(await f.student.call(s.fileUrl.slice(4)));ok(await f.student.call(s.files[0].url.slice(4)));
+ s=ok(await f.submit(a,{requestId:s.requestId,version:s.version,action:'draft',files:[photo],retainFileIds:s.files.map(f=>f.id)}),201);assert.equal(s.files.length,2);
+});
 async function fixture(t,env={}){
  const dir=await mkdtemp(join(tmpdir(),'aula-academics-'));const password='Pruebas-locales-2026!';const app=await createApp({dataDir:dir,env:{NODE_ENV:'test',ADMIN_DOCUMENT:'50000001',ADMIN_PASSWORD:password,...env}});
  t.after(async()=>{await new Promise(r=>app.server.close(r));const target=resolve(dir);assert.ok(target.startsWith(resolve(tmpdir())+sep)&&target.includes('aula-academics-'));await rm(target,{recursive:true,force:true,maxRetries:5,retryDelay:100});});

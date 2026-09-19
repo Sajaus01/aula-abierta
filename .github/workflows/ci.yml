@@ -21,9 +21,8 @@ jobs:
           node-version: '22'
       - name: Comprobar versión y ejecutar pruebas
         run: |
+          npm ci --omit=optional --ignore-scripts
           node --version
           node --test tests/*.test.mjs
       - name: Construir contenedor
         run: docker build --tag aula-abierta:ci .
-
-

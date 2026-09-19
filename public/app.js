@@ -193,9 +193,10 @@ function openModal(title,body,onSubmit,{wide=false,submit='Guardar'}={}) {
  modalHandler=onSubmit;modal.showModal();
 }
 function openResourceViewer(resource,view,actions) {
+ const backLabel=resource.id.startsWith('academic-file-')?'Volver a la actividad':'Volver al curso';
  if(modal.open)modal.close();
  modal.className='resource-viewer';
- modal.innerHTML=`<header class="viewer-header"><button type="button" class="btn secondary viewer-back" data-action="close-modal" aria-label="Volver al curso" autofocus>${icon('arrow')}<span class="viewer-action-label">Volver al curso</span></button><div class="viewer-heading"><h2 id="modal-title" title="${e(resource.title)}">${e(resource.title)}</h2><span>${materialName(resource.kind)}</span></div><div class="viewer-actions">${actions}<button type="button" class="icon-btn" data-action="close-modal" aria-label="Cerrar material" title="Cerrar material">${icon('close')}</button></div></header><p class="viewer-message" role="status" hidden></p><div class="content-view">${view}</div>`;
+ modal.innerHTML=`<header class="viewer-header"><button type="button" class="btn secondary viewer-back" data-action="close-modal" aria-label="${backLabel}" autofocus>${icon('arrow')}<span class="viewer-action-label">${backLabel}</span></button><div class="viewer-heading"><h2 id="modal-title" title="${e(resource.title)}">${e(resource.title)}</h2><span>${materialName(resource.kind)}</span></div><div class="viewer-actions">${actions}<button type="button" class="icon-btn" data-action="close-modal" aria-label="Cerrar material" title="Cerrar material">${icon('close')}</button></div></header><p class="viewer-message" role="status" hidden></p><div class="content-view">${view}</div>`;
  modalHandler=null;state.activeResourceId=resource.id;state.activeResourceRoute=route();
  document.documentElement.classList.add('resource-viewer-open');
  modal.showModal();
@@ -337,7 +338,7 @@ modal.addEventListener('close',async()=>{
  document.documentElement.classList.remove('resource-viewer-open');
  if(state.importResult)state.importResult=null;
  if(state.enrollmentReportUrl){URL.revokeObjectURL(state.enrollmentReportUrl);state.enrollmentReportUrl=null;}
- if(resourceId&&student()){
+ if(resourceId&&student()&&!resourceId.startsWith('academic-file-')){
   try{const learning=await api('/learning');if(state.user?.id!==initialUser)return;state.learning=learning;}catch{/* The material's saved progress remains available. */}
   if(route()===originRoute&&!modal.open){await render();window.scrollTo(0,scroll);document.querySelector(`[data-action="resource:${resourceId}"]`)?.focus({preventScroll:true});}
   else if(route()==='mis-cursos'&&!modal.open&&student())await render();
@@ -402,7 +403,7 @@ async function boot() {
  catch(error){app.innerHTML=publicShell(heading('No pudimos conectar con el aula','Intenta nuevamente en unos momentos. Si el problema continúa, comunícate con tu docente.')+btn('Volver a intentar','reload','secondary','arrow'));}
 }
 const quickResourcesUI=createQuickResourcesUI({api,getState:()=>state,openModal,openResourceViewer,modal,render,toast,btn,icon});
-const academicsUI=createAcademicUI({api,getState:()=>state,openModal,toast,render,modal,btn,icon,heading,empty});
+const academicsUI=createAcademicUI({openResourceViewer,api,getState:()=>state,openModal,toast,render,modal,btn,icon,heading,empty});
 boot();
 
 

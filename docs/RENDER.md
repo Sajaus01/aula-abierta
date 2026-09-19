@@ -19,7 +19,7 @@ Entra en [Render](https://dashboard.render.com), selecciona **New → Web Servic
 | Name | `aula-abierta` o un nombre disponible |
 | Language / Runtime | **Node** |
 | Root Directory | Dejar vacío: usar la raíz del repositorio |
-| Build Command | `node --check server/index.mjs` |
+| Build Command | `npm ci --omit=optional --ignore-scripts && node --check server/index.mjs` |
 | Start Command | `node server/index.mjs` |
 | Compute / Instance Type | **0,5 CPU / 512 MB**, de pago |
 | Health Check Path | `/api/status` |
@@ -78,4 +78,3 @@ Las contraseñas de estudiantes que ya estaban configuradas conservan su hash; l
 - Conserva respaldos coherentes de la base SQLite y de los materiales fuera del servicio. No confundas la copia del código en GitHub con una copia de tus datos académicos. La guía de [operación y respaldos](PUBLICACION.md#persistencia-y-copias) explica qué debes conservar; sus comandos Docker corresponden únicamente a instalaciones Docker.
 - Al usar la URL de un repositorio público sin conectar GitHub, publica los cambios desde **Manual Deploy → Deploy latest commit** en Render. No presupongas despliegues automáticos. Con disco persistente hay una breve interrupción durante ese cambio. [Consideraciones de discos](https://render.com/docs/disks#disk-limitations-and-considerations).
 - Si más adelante agregas un dominio propio, configura `APP_URL` con su dirección HTTPS exacta y úsala para entrar. La URL inicial de Render es suficiente para empezar.
-

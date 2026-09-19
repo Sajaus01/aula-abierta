@@ -2,7 +2,7 @@
 
 Plataforma de cursos en español para administrar estudiantes, matrículas y materiales desde el navegador. Empieza sin cursos ni estudiantes: tú creas la estructura y subes después tus diapositivas, libros, videos y ejercicios.
 
-La interfaz usa HTML, CSS y JavaScript. El servidor usa Node.js y SQLite, sin dependencias de terceros de npm. No necesitas programar para agregar cursos o materiales desde el panel.
+La interfaz usa HTML, CSS y JavaScript. El servidor usa Node.js y SQLite; PDF.js permite leer los enunciados PDF dentro de las actividades. No necesitas programar para agregar cursos o materiales desde el panel.
 
 ## GitHub y publicación
 
@@ -19,12 +19,13 @@ Para dar acceso a estudiantes por internet sin administrar un servidor, sigue [P
 5. Ejecuta:
 
 ```sh
+npm ci --omit=optional --ignore-scripts
 node --env-file=.env.local server/index.mjs
 ```
 
 Abre [http://localhost:3000](http://localhost:3000) e ingresa con las credenciales que definiste. El administrador inicial se crea solamente si todavía no existe uno; cambiar después esas variables no reemplaza una contraseña existente. Los datos quedan en `data/`, fuera de los archivos públicos y excluidos de Git.
 
-No es necesario ejecutar `npm install`. `node:sqlite` viene integrado; Node.js 22 puede mostrar un aviso sobre el estado experimental de esta API. [Referencia de Node.js](https://nodejs.org/download/release/v22.16.0/docs/api/sqlite.html).
+`npm ci` instala la versión fijada del visor PDF. `node:sqlite` viene integrado; Node.js 22 puede mostrar un aviso sobre el estado experimental de esta API. [Referencia de Node.js](https://nodejs.org/download/release/v22.16.0/docs/api/sqlite.html).
 
 ## Tres formas de acceso por curso
 

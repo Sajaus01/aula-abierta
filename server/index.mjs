@@ -690,7 +690,7 @@ export async function createApp(options = {}) {
           const course = existing('courses', match[1], 'Curso');
           if (method === 'GET') return json(res, courseView(course, auth, true));
           if (method === 'DELETE') {
-            const files = query('SELECT r.file_key FROM resources r JOIN modules m ON m.id=r.module_id WHERE m.course_id=?', course.id).concat(query("SELECT json_extract(s.payload,'$.file.key') AS file_key FROM submissions s JOIN activities a ON a.id=s.activity_id WHERE a.course_id=?", course.id));
+            const files = query('SELECT r.file_key FROM resources r JOIN modules m ON m.id=r.module_id WHERE m.course_id=?', course.id).concat(academics.courseFiles(course.id));
             files.push(...query('SELECT file_key FROM quick_resources WHERE course_id=?', course.id));
             run('DELETE FROM courses WHERE id=?', course.id);
             deleteFiles(files);
@@ -812,6 +812,12 @@ export async function createApp(options = {}) {
       }
       if (path.startsWith('/api/')) fail(404, 'Ruta no encontrada.', 'NOT_FOUND');
       if (!['GET', 'HEAD'].includes(method)) fail(405, 'Método no permitido.');
+      if (path.startsWith('/pdfjs/')) {
+        const relative=path.slice('/pdfjs/'.length);
+        if (!/^(?:legacy\/build\/(?:pdf|pdf\.worker)\.mjs|(?:cmaps|standard_fonts|wasm)\/[A-Za-z0-9_-]+\.(?:bcmap|pfb|ttf|wasm))$/.test(relative)) fail(404, 'Archivo no encontrado.');
+        return fileResponse(req,res,join(ROOT,'node_modules','pdfjs-dist',relative),relative.endsWith('.mjs')?'text/javascript; charset=utf-8':relative.endsWith('.wasm')?'application/wasm':'application/octet-stream',basename(relative));
+      }
+      if (path === '/pdf-viewer.html') res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self' blob:; connect-src 'self'; object-src 'none'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'");
       if (path.includes('\0') || path.split('/').some(part => part.startsWith('.'))) fail(404, 'Página no encontrada.', 'NOT_FOUND');
       let filePath = resolve(publicDir, '.' + path.replace(/\\/g, '/'));
       if (filePath !== publicDir && !filePath.startsWith(publicDir + sep)) fail(404, 'Página no encontrada.', 'NOT_FOUND');

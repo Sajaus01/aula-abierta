@@ -6,3 +6,13 @@
 .course-academic-links{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.course-academic-links .btn{font-size:.8rem;padding:9px 12px}.learning-summary-actions{display:flex;flex-direction:column;gap:18px;flex:0 0 280px;max-width:300px;border-left:1px solid #d1ddc2;padding-left:24px;margin-left:auto}.learning-summary-actions .course-academic-links{flex-wrap:nowrap}.learning-summary-actions .learning-next{border:0;padding:0;min-width:0;max-width:none;width:100%;grid-template-columns:1fr}.learning-summary-actions .learning-next>.btn{grid-column:auto;grid-row:auto}.learning-summary-actions .learning-next>small{grid-column:auto}
 @media(max-width:1150px){.learning-summary-actions{flex-basis:255px;padding-left:18px}.learning-summary-actions .course-academic-links{gap:8px}.learning-summary-actions .course-academic-links .btn{padding:9px 10px}}
 @media(max-width:800px){.learning-summary-actions{flex:1 1 100%;max-width:none;border-left:0;border-top:1px solid #d1ddc2;padding:18px 0 0;margin-left:0}.learning-summary-actions .course-academic-links{justify-content:flex-end}.learning-summary-actions .learning-next{padding:0}.learning-summary-actions .course-academic-links .btn{white-space:normal}}
+
+.assignment-materials,.assignment-editor{display:grid;gap:16px;margin-top:22px;padding-top:20px;border-top:1px solid var(--line)}
+.assignment-editor{margin:0;padding:20px;border:1px solid var(--line);border-radius:12px;background:#fafbf8}
+.assignment-pdf{width:100%;height:70vh;min-height:400px;border:1px solid var(--line);border-radius:10px;background:#f3f5ef}
+.assignment-image{max-width:100%;max-height:65vh;object-fit:contain;justify-self:center}
+.academic-files{display:grid;gap:10px}.academic-files:empty{display:none}
+.academic-file{display:flex;gap:14px;align-items:center;justify-content:space-between;border:1px solid var(--line);padding:14px;border-radius:10px;flex-wrap:wrap}
+.academic-file>div:first-child{flex:1;min-width:140px;overflow-wrap:anywhere}.academic-file strong{font-size:.85rem}.academic-file small{display:block;color:var(--muted);margin-top:6px}
+[data-file-selection]{overflow-wrap:anywhere}
+@media(max-width:600px){.assignment-pdf{min-height:300px;height:55vh}.assignment-editor{padding:15px}.academic-file{align-items:flex-start}}
