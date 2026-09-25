@@ -4,7 +4,7 @@ export function youtubeThumbnail(url){const embed=videoEmbed(url);return embed?.
 const fileSize=n=>n<1048576?Math.max(1,Math.ceil(n/1024))+' KB':(n/1048576).toLocaleString('es-CO',{maximumFractionDigits:1})+' MB';
 const labels={video:'Video',download:'Descarga',link:'Enlace'};
 export function createQuickResourcesUI({api,getState,openModal,openResourceViewer,modal,render,toast,btn,icon}){
- const admin=()=>getState().user?.role==='admin';
+ const admin=()=>getState().user?.role==='admin'&&getState().currentCourse?.permissions?.edit!==false;
  const current=()=>getState().currentCourse;
  const playable=r=>r.kind==='video'&&(videoEmbed(r.url)||/^https:\/\/.*\.(mp4|webm)(?:[?#].*)?$/i.test(r.url));
  function panel(course){const rows=course.quickResources||[];if(!admin()&&!rows.length)return '';
