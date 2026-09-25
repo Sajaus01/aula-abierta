@@ -40,6 +40,7 @@ export function createAcademicUI({api,getState,openModal,toast,render,modal,btn,
   }
   const [type,id]=route.split('/');
   if(type==='actividades'||type==='calificaciones'){
+   getState().currentCourse=getState().courses.find(c=>c.id===id)||null;
    const data=await api(`/academics/courses/${id}${type==='calificaciones'&&admin()?'/gradebook':''}`);if(generation!==pageGeneration)return '';page={type,id,...data};
    if(type==='calificaciones')return gradebook(data);
    const total=data.activities.filter(a=>a.status==='published').reduce((n,a)=>n+a.weight,0);
