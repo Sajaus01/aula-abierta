@@ -1,3 +1,4 @@
+import {supportRules} from '../public/procedure-support.js';
 export function setupAcademicPolicy(db){db.exec(`
 CREATE TABLE IF NOT EXISTS activity_versions(activity_id TEXT NOT NULL REFERENCES activities(id) ON DELETE CASCADE,revision INTEGER NOT NULL,config TEXT NOT NULL,files TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(activity_id,revision));
 CREATE TABLE IF NOT EXISTS grade_audit(id INTEGER PRIMARY KEY AUTOINCREMENT,submission_id TEXT NOT NULL,actor_id TEXT NOT NULL,before_value TEXT NOT NULL,after_value TEXT NOT NULL,reason TEXT NOT NULL,created_at TEXT NOT NULL);
@@ -5,14 +6,14 @@ CREATE TABLE IF NOT EXISTS grade_overrides(activity_id TEXT NOT NULL REFERENCES 
 CREATE TABLE IF NOT EXISTS attempt_starts(activity_id TEXT NOT NULL REFERENCES activities(id) ON DELETE CASCADE,student_id TEXT NOT NULL REFERENCES users(id),revision INTEGER NOT NULL,started_at TEXT NOT NULL,PRIMARY KEY(activity_id,student_id,revision));
 CREATE TABLE IF NOT EXISTS learning_events(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id TEXT NOT NULL,course_id TEXT,object_id TEXT,action TEXT NOT NULL,details TEXT NOT NULL DEFAULT '{}',created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS events_group_date ON learning_events(course_id,created_at);`);}
-export function evaluatedSignature(a){return JSON.stringify({kind:a.kind,maxPoints:a.maxPoints,questions:a.questions.map(q=>({id:q.id,type:q.type,options:q.options,correct:q.correct,points:q.points}))});}
+export function evaluatedSignature(a){return JSON.stringify({kind:a.kind,maxPoints:a.maxPoints,procedureSupport:supportRules(a.procedureSupport),questions:a.questions.map(q=>({id:q.id,type:q.type,options:q.options,correct:q.correct,points:q.points}))});}
 export function revisionDecision(before,after,body,count,attachmentsChanged,fail){
  const structural=evaluatedSignature(before)!==evaluatedSignature(after);
- const textChanged=['title','description','questions','instructionUrl'].some(k=>JSON.stringify(before[k])!==JSON.stringify(after[k]))||attachmentsChanged;
+ const textChanged=['title','description','questions','instructionUrl','procedureSupport'].some(k=>JSON.stringify(before[k])!==JSON.stringify(after[k]))||attachmentsChanged;
  const changed=structural||textChanged;
  if(count&&changed){
   if(!['editorial','evaluated'].includes(body.changeKind))fail(409,'Indica si el cambio es de redacción o modifica lo evaluado.','REVISION_DECISION_REQUIRED');
-  if(structural&&body.changeKind==='editorial')fail(400,'Cambiar opciones, respuestas, puntos o preguntas modifica la evaluación.');
+  if(structural&&body.changeKind==='editorial')fail(400,'Cambiar opciones, respuestas, puntos, preguntas o requisitos de soportes modifica la evaluación.');
   if(body.changeKind==='evaluated'&&!['keep','optional','repeat'].includes(body.revisionPolicy))fail(409,'Decide cómo afecta el cambio a los intentos existentes.','REVISION_DECISION_REQUIRED');
  }
  const policy=count&&changed&&body.changeKind==='evaluated'?body.revisionPolicy:(before.repeatPolicy||'keep');
