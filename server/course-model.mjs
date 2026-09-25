@@ -16,6 +16,7 @@ export function setupCourseModel(db){
  add(db,'courses','cohort',"TEXT NOT NULL DEFAULT ''");
  add(db,'courses','group_code',"TEXT NOT NULL DEFAULT ''");
  add(db,'courses','lifecycle',"TEXT NOT NULL DEFAULT 'draft' CHECK(lifecycle IN ('draft','active','archived'))");
+ add(db,'resources','lab_results',"TEXT NOT NULL DEFAULT 'optional' CHECK(lab_results IN ('disabled','optional','required'))");
  add(db,'courses','appearance',"TEXT NOT NULL DEFAULT '{}'");
  add(db,'users','account_status',"TEXT NOT NULL DEFAULT 'active' CHECK(account_status IN ('active','suspended','deactivated'))");
  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS groups_identity ON courses(template_id,cohort,group_code) WHERE entity_kind='group';
@@ -77,17 +78,29 @@ export function migrateCourseGroups(db,uploadsDir,{masterId}={}){
   const report={version:1,createdAt:now(),masterId,courses:[]};
   for(const course of db.prepare("SELECT * FROM courses WHERE entity_kind='legacy' ORDER BY id").all()){
    const before=courseInventory(db,course.id);
-   const existing=db.prepare("SELECT id FROM courses WHERE template_id=? AND cohort='2026-1' AND group_code='2026-1'").get(course.id);
-   if(existing)throw Error('Ya existe un grupo 2026-1 sin registro de migración. Se conserva todo y se requiere conciliación: '+course.id);
-   const groupId=randomUUID();
-   insert(db,'courses',{...course,id:groupId,entity_kind:'group',template_id:course.id,cohort:'2026-1',group_code:'2026-1',lifecycle:course.published?'active':'draft'});
-   // Reparent the original IDs: answers, grades and progress remain untouched.
-   for(const table of ['modules','activities','enrollments','grading_settings','quick_resources','course_staff'])db.prepare(`UPDATE ${table} SET course_id=? WHERE course_id=?`).run(groupId,course.id);
+   const existing=db.prepare("SELECT * FROM courses WHERE template_id=? AND cohort='2026-1' AND group_code='2026-1'").get(course.id);
+   const groupId=existing?.id||randomUUID(),existingBefore=existing?courseInventory(db,groupId):null;
+   const answersBefore=db.prepare('SELECT * FROM submissions ORDER BY id').all(),progressBefore=db.prepare('SELECT * FROM progress ORDER BY user_id,resource_id').all();
+   if(!existing)insert(db,'courses',{...course,id:groupId,entity_kind:'group',template_id:course.id,cohort:'2026-1',group_code:'2026-1',lifecycle:course.published?'active':'draft'});
+   // Reconcile enrollments without duplicating accounts or losing their previous access record.
+   for(const row of db.prepare('SELECT * FROM enrollments WHERE course_id=?').all(course.id)){
+    const previous=db.prepare('SELECT * FROM enrollments WHERE course_id=? AND student_id=?').get(groupId,row.student_id);
+    if(previous){insert(db,'enrollment_history',{id:randomUUID(),enrollment_id:previous.id,student_id:row.student_id,course_id:groupId,action:'migration.reconcile',actor_id:masterId,details:JSON.stringify({source:row,destination:previous}),created_at:now()});db.prepare('DELETE FROM enrollments WHERE id=?').run(row.id);}
+   }
+   // Two different grading schemes cannot be silently replaced. Preserve the group's
+   // independent configuration; the original template retains its own scheme.
+   const sourceSettings=db.prepare('SELECT * FROM grading_settings WHERE course_id=?').get(course.id),targetSettings=db.prepare('SELECT * FROM grading_settings WHERE course_id=?').get(groupId);
+   if(sourceSettings&&targetSettings&&sourceSettings.config!==targetSettings.config)throw Error('El grupo 2026-1 ya existe con otro esquema de notas. Revisa qué esquema conservar antes de conciliar: '+course.id);
+   if(sourceSettings&&targetSettings)db.prepare('DELETE FROM grading_settings WHERE course_id=?').run(course.id);
+   for(const row of db.prepare('SELECT * FROM course_staff WHERE course_id=?').all(course.id)){db.prepare('INSERT INTO course_staff VALUES(?,?,?,?,?) ON CONFLICT(course_id,user_id) DO UPDATE SET can_edit=max(can_edit,excluded.can_edit),can_grade=max(can_grade,excluded.can_grade),can_manage=max(can_manage,excluded.can_manage)').run(groupId,row.user_id,row.can_edit,row.can_grade,row.can_manage);}
+   db.prepare('DELETE FROM course_staff WHERE course_id=?').run(course.id);
+   for(const table of ['modules','activities','enrollments','grading_settings','quick_resources'])db.prepare(`UPDATE ${table} SET course_id=? WHERE course_id=?`).run(groupId,course.id);
+   if(JSON.stringify(answersBefore)!==JSON.stringify(db.prepare('SELECT * FROM submissions ORDER BY id').all())||JSON.stringify(progressBefore)!==JSON.stringify(db.prepare('SELECT * FROM progress ORDER BY user_id,resource_id').all()))throw Error('La conciliación alteró resultados históricos');
    db.prepare('INSERT OR IGNORE INTO course_staff VALUES(?,?,1,1,1)').run(groupId,masterId);
    copyCourseContent(db,uploadsDir,groupId,course.id,files);
    db.prepare("UPDATE courses SET entity_kind='template',lifecycle=CASE WHEN published=1 THEN 'active' ELSE 'draft' END WHERE id=?").run(course.id);
-   const after=courseInventory(db,groupId);if(JSON.stringify(before)!==JSON.stringify(after))throw Error('La integridad del grupo no coincide con el curso: '+course.id);
-   const item={templateId:course.id,groupId,title:course.title,before,after,verified:true};
+   const after=courseInventory(db,groupId);if(!existing&&JSON.stringify(before)!==JSON.stringify(after))throw Error('La integridad del grupo no coincide con el curso: '+course.id);
+   const item={templateId:course.id,groupId,title:course.title,before,after,existingBefore,reusedExistingGroup:!!existing,verified:true};
    insert(db,'legacy_course_groups',{template_id:course.id,group_id:groupId,report:JSON.stringify(item)});report.courses.push(item);
   }
   if(db.prepare('PRAGMA foreign_key_check').all().length)throw Error('La migración produjo relaciones inválidas');

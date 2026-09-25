@@ -1,6 +1,14 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {revisionDecision,validatePeriods,gradeCalculation} from '../server/academic-policy.mjs';
+import {createAcademicTools} from '../public/academic-tools.js';
 const fail=(code,message)=>{throw Error(message);};
+test('weight impact is confirmed even when the edited activity has no responses',async()=>{
+ let confirmations=0;const previous=globalThis.window;
+ globalThis.window={confirm:()=>{confirmations++;return false;}};
+ try{const tools=createAcademicTools({getState:()=>({user:{roles:['teacher']}}),api:async()=>({affectedResponses:0,impact:[{name:'Student',before:5,after:2.5}],policy:'keep',oldWeight:0,newWeight:50})});
+ assert.equal(await tools.confirmActivity('activity',{}),false);assert.equal(confirmations,1);
+ }finally{globalThis.window=previous;}
+});
 test('evaluated edits require an explicit choice; editorial corrections keep completed work',()=>{
  const before={kind:'quiz',title:'T',description:'D',maxPoints:1,questions:[{id:'q',type:'single',prompt:'Typo',options:['A','B'],correct:[0],points:1}]};
  const editorial={...before,title:'Fixed title'};

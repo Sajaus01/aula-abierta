@@ -1,0 +1,64 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {createApp} from '../server/index.mjs';
+
+test('audit fixes: draft preview, group grades, exemptions, labs, palette, question files and library copies',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'aula-audit-'));
+ const app=await createApp({dataDir:root,env:{NODE_ENV:'test',AULA_MODEL_V2:'1',ADMIN_DOCUMENT:'98765001',ADMIN_PASSWORD:'Audit-Master-2026!'}});
+ await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+app.server.address().port;
+ t.after(async()=>{await new Promise(r=>app.server.close(r));await rm(root,{recursive:true,force:true});});
+ function client(){let cookie='';return async(path,body,method=body?'POST':'GET',status=200,headers={})=>{
+  const response=await fetch(base+path,{method,headers:{'Content-Type':'application/json',Origin:base,Cookie:cookie,...headers},body:body?JSON.stringify(body):undefined});
+  if(response.headers.get('set-cookie'))cookie=response.headers.get('set-cookie').split(';')[0];
+  const result=response.headers.get('content-type')?.includes('application/json')?await response.json():await response.text();assert.equal(response.status,status,JSON.stringify(result));return result.data??result;
+ };}
+ const master=client(),student=client(),stranger=client();await master('/api/auth/login',{document:'98765001',password:'Audit-Master-2026!'});
+ const template=await master('/api/admin/courses',{title:'Audit template'},'POST',201);
+ const palette={color:'#173c30',accent:'#334477',surface:'#ffffff',textColor:'#172a21',font:'serif',fontSize:18,background:'',coverUrl:''};
+ await master(`/api/platform/courses/${template.id}/appearance`,palette);
+ await master(`/api/platform/courses/${template.id}/appearance`,{...palette,textColor:'#ffffff'},'POST',400);
+ const group=await master(`/api/platform/courses/${template.id}/clone`,{kind:'group',cohort:'2026-2',code:'A',title:'Audit A'},'POST',201);
+ assert.equal(group.appearance.accent,palette.accent);await master(`/api/platform/courses/${group.id}/state`,{state:'active'});
+ const module=await master(`/api/admin/courses/${group.id}/modules`,{title:'Chapter',published:true},'POST',201);
+ const file={name:'question-diagram.png',base64:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};
+ const draft=await master(`/api/academics/courses/${group.id}/activities`,{title:'Draft with media',kind:'quiz',status:'draft',opensAt:'2099-01-01T00:00:00Z',moduleId:module.id,attachments:[file],questions:[{id:'q1',prompt:'Read this diagram',type:'single',options:['A','B'],correct:[0],points:1,media:[file.name],imageAlt:'Red square'}]},'POST',201);
+ const previewHeaders={'X-Aula-Preview':group.id,'X-Aula-Activity-Preview':draft.id};
+ const preview=await master(`/api/academics/activities/${draft.id}`,undefined,'GET',200,previewHeaders);
+ assert.equal(preview.activity.questions[0].correct,undefined);assert.deepEqual(preview.activity.questions[0].media,[file.name]);assert.equal(preview.activity.opensAt,null);
+ await master(`/api/academics/activities/${draft.id}/submit`,{action:'submit'},'POST',403,previewHeaders);
+ const user=await master('/api/platform/users',{name:'Audit student',document:'98765002',roles:['student']},'POST',201);
+ await master('/api/admin/enrollments',{studentId:user.id,courseId:group.id},'POST',201);
+ await student('/api/auth/login',{document:'98765002',password:'98765002'});await student('/api/auth/first-password',{newPassword:'2468',confirmPassword:'2468'});
+ await student(`/api/academics/activities/${draft.id}`,undefined,'GET',404);
+ await student(`/api/academics/activities/${draft.id}`,undefined,'GET',403,previewHeaders);
+ const quizBody={kind:'quiz',status:'published',weight:50,moduleId:module.id,questions:[{id:'q',prompt:'Pick A',type:'single',options:['A','B'],correct:[0],points:10}]};
+ const quiz1=await master(`/api/academics/courses/${group.id}/activities`,{...quizBody,title:'Quiz one'},'POST',201),quiz2=await master(`/api/academics/courses/${group.id}/activities`,{...quizBody,title:'Quiz two'},'POST',201);
+ await student(`/api/academics/activities/${quiz1.id}`);await student(`/api/academics/activities/${quiz1.id}`);
+ let metrics=await master('/api/analytics/'+group.id);assert.equal(metrics.students[0].started,1);
+ for(const [quiz,answer] of [[quiz1,0],[quiz2,1]]){const sub=await student(`/api/academics/activities/${quiz.id}/submit`,{action:'submit',requestId:'audit-'+quiz.id,activityRevision:1,answers:{q:[answer]}},'POST',201);await master(`/api/academics/submissions/${sub.id}/grade`,{version:sub.version,points:answer?0:10,published:true,reason:'Initial grade'},'PATCH');}
+ const all=await master('/api/analytics/'+group.id),filtered=await master('/api/analytics/'+group.id+'?activity='+quiz1.id);
+ assert.equal(all.students[0].grade.provisional,2.5);assert.equal(filtered.students[0].grade.provisional,2.5);assert.equal(filtered.activities.length,1);assert.equal(filtered.activityOptions.length,3);
+ assert.equal(all.comparison[0].average,2.5);assert.equal(all.changes.length,2);
+ const overdue=await master(`/api/academics/courses/${group.id}/activities`,{title:'Excused',kind:'task',status:'published',weight:0,dueAt:'2020-01-01T00:00:00Z'},'POST',201);
+ await master('/api/grade-policy/'+group.id,{activityId:overdue.id,studentId:user.id,exempt:true,reason:'Excused'});
+ assert.equal((await master('/api/analytics/'+group.id)).students[0].overdue,0);
+ const lab=await master(`/api/admin/modules/${module.id}/resources`,{title:'Required lab',kind:'lab',published:true,content:'<p>Safe lab</p>',labResults:'required'},'POST',201);
+ await student('/api/progress/'+lab.id,{completed:true},'PUT',400);
+ await student('/api/labs/'+lab.id+'/results',{result:'Measured result'});
+ await student('/api/progress/'+lab.id,{completed:true},'PUT');
+ assert.equal((await master('/api/analytics/'+group.id)).labs[0].name,'Audit student');
+ await master('/api/admin/resources/'+lab.id,{labResults:'disabled'},'PATCH');await student('/api/labs/'+lab.id+'/results',{result:'Rejected'},'POST',400);
+ const entry=await master('/api/library',{kind:'module',sourceId:module.id,title:'Nested library chapter'},'POST',201);
+ const tree=(await master('/api/library/'+entry.id)).preview;
+ const snapshotFile=tree.activities.find(v=>v.title==='Draft with media').files[0];assert.ok(snapshotFile.fileUrl);
+ await master(snapshotFile.fileUrl);await stranger(snapshotFile.fileUrl,undefined,'GET',403);
+ assert.match(await master(tree.materials[0].previewUrl),/Safe lab/);
+ const second=await master(`/api/platform/courses/${template.id}/clone`,{kind:'group',cohort:'2026-2',code:'B',title:'Audit B'},'POST',201);
+ await master('/api/library/'+entry.id+'/use',{courseId:second.id},'POST',201);
+ const copied=await master('/api/courses/'+second.id);assert.equal(copied.modules.length,1);assert.notEqual(copied.modules[0].id,module.id);
+ assert.equal((await master(`/api/platform/courses/${template.id}/groups`)).length,2);
+ const overview=await master('/api/platform/overview');assert.ok(overview.events.some(v=>v.actor_name&&v.target_name==='Audit A'));
+});

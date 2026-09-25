@@ -3,17 +3,18 @@ import {join} from 'node:path';
 import {writeFileSync,unlinkSync,statfsSync} from 'node:fs';
 
 export const submissionFiles = payload => payload.files ?? (payload.file ? [{...payload.file,id:'legacy'}] : []);
-export function createAcademicFiles({db,fail,validateFile,uploadsDir}) {
+export function createAcademicFiles({db,fail,validateFile,uploadsDir,accessModel}) {
  const all=(sql,...args)=>db.prepare(sql).all(...args);
  const instructionFiles=id=>all('SELECT id,file_key AS key,name,mime,size FROM activity_files WHERE activity_id=? ORDER BY position,id',id);
  function remove(file){if(db.prepare("SELECT name FROM sqlite_master WHERE name='activity_versions'").get()&&db.prepare("SELECT 1 FROM activity_versions v,json_each(v.files) f WHERE json_extract(f.value,'$.key')=? LIMIT 1").get(file.key))return;try{unlinkSync(join(uploadsDir,file.key));}catch(error){if(error.code!=='ENOENT')console.error('No se pudo retirar un adjunto académico.');}}
  function prepare(existing,uploads,retainIds,{teacher=false}={}){
   if(uploads===undefined)uploads=[];
-  if(!Array.isArray(uploads)||uploads.length>5)fail(400,'Puedes adjuntar hasta 5 archivos.');
+  const limit=teacher&&accessModel?50:5;
+  if(!Array.isArray(uploads)||uploads.length>limit)fail(400,`Puedes adjuntar hasta ${limit} archivos.`);
   if(retainIds===undefined)retainIds=existing.map(f=>f.id);
   if(!Array.isArray(retainIds)||retainIds.some(id=>typeof id!=='string'||!existing.some(f=>f.id===id))||new Set(retainIds).size!==retainIds.length)fail(400,'La selección de archivos guardados no es válida.');
   const kept=existing.filter(f=>retainIds.includes(f.id));
-  if(kept.length+uploads.length>5)fail(400,'Puedes conservar hasta 5 archivos en total.');
+  if(kept.length+uploads.length>limit)fail(400,`Puedes conservar hasta ${limit} archivos en total.`);
   const added=uploads.map(input=>{
    if(!/\.(pdf|png|jpe?g|webp|gif|xlsx|csv|docx|pptx|txt)$/i.test(input?.name||''))fail(400,'Adjunta PDF, imágenes, PPTX, DOCX, XLSX, CSV o TXT.');
    const file=validateFile(input);

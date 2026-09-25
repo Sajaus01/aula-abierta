@@ -55,7 +55,8 @@ export function createPlatform(ctx){
      const rgb=color.slice(1).match(/../g).map(x=>parseInt(x,16)/255).map(x=>x<=0.04045?x/12.92:((x+0.055)/1.055)**2.4);const luminance=rgb[0]*.2126+rgb[1]*.7152+rgb[2]*.0722;
      if(1.05/(luminance+.05)<4.5)fail(400,'Selecciona un color más oscuro para conservar contraste con el texto blanco.');
      if(!['system','serif','mono'].includes(b.font)||!Number.isInteger(b.fontSize)||b.fontSize<16||b.fontSize>22)fail(400,'Tipografía o tamaño no válido.');
-     const appearance={color,font:b.font,fontSize:b.fontSize,background:webUrl(b.background)};
+     const surface=String(b.surface||'#ffffff'),textColor=String(b.textColor||'#273d32'),accent=String(b.accent||color);const lum=value=>{if(!/^#[\da-f]{6}$/i.test(value))fail(400,'Color de paleta no válido.');return value.slice(1).match(/../g).map(x=>parseInt(x,16)/255).map(x=>x<=.04045?x/12.92:((x+.055)/1.055)**2.4).reduce((n,v,i)=>n+v*[.2126,.7152,.0722][i],0);};const light=lum(surface),dark=lum(textColor);if((Math.max(light,dark)+.05)/(Math.min(light,dark)+.05)<4.5||1.05/(lum(accent)+.05)<4.5)fail(400,'La paleta requiere contraste mínimo de 4.5:1 entre texto y fondo, y entre acento y blanco.');
+     const appearance={color,surface,textColor,accent,font:b.font,fontSize:b.fontSize,background:webUrl(b.background)};
      run('UPDATE courses SET appearance=?,cover_url=?,updated_at=? WHERE id=?',JSON.stringify(appearance),webUrl(b.coverUrl),now(),id);audit(auth.user,'course.appearance',id);return send(appearance);
     }
    }

@@ -74,3 +74,21 @@ dialog.resource-viewer[open]{display:flex;flex-direction:column}
 .platform-toolbar{margin:16px 0;gap:10px}.analytics-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px}.analytics-metrics strong{font-size:2rem}.question-image{max-width:100%;max-height:400px;object-fit:contain}.academic-question[hidden]{display:none}.panel details{padding:12px 0;border-bottom:1px solid #e0e5e1}.panel progress{width:130px;accent-color:#315b4b}#excel-mapping{margin-top:16px}#excel-mapping td{white-space:normal;min-width:140px}.platform-toolbar .btn{white-space:normal}.grade-periods{margin:20px 0}.table-wrap small{display:block}main{background-size:cover;background-attachment:fixed}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid #226bc2;outline-offset:3px}@media(max-width:600px){.platform-toolbar{display:grid;grid-template-columns:1fr 1fr}.analytics-metrics{grid-template-columns:1fr 1fr}}
 
 [hidden]{display:none!important}
+
+/* Course palette applies to material, activity, preview and grade pages. */
+.course-themed main,.course-themed dialog{font-family:var(--course-font,system-ui);color:var(--course-text,#273d32)}
+.course-themed :is(h1,h2,h3,h4,input,select,textarea,button){font-family:inherit}
+.course-themed :is(.panel,.module,.module-head,.course-card,.resource-row,dialog,input,textarea,select,th){background:var(--course-surface,#fff);color:var(--course-text,#273d32)}
+.course-themed :is(.muted,.field-hint,.small-paragraph,.resource-row small,.course-header p,.page-heading p){color:var(--course-text,#273d32)}
+.course-themed .btn:not(.secondary):not(.ghost):not(.danger){background:var(--green);color:#fff}
+.course-themed :is(.btn.secondary,.btn.ghost,.text-button){background:var(--course-surface,#fff);color:var(--course-text,#273d32)}
+.course-themed :is(.progress-fill,progress){accent-color:var(--course-accent);background-color:var(--course-accent)}
+:focus-visible{outline:3px solid #075ca8;outline-offset:3px} .academic-text{white-space:pre-wrap;overflow-wrap:anywhere}
+.library-preview-item{margin-block:16px}.library-preview-item iframe{width:100%;height:60vh;border:1px solid #aab4a4}.library-preview-item img{max-width:100%;max-height:60vh;object-fit:contain}
+.module-head,.module-title{flex-wrap:wrap}.module-title{min-width:0}.module-title h3{overflow-wrap:anywhere}.academic-question-editor{min-width:0}
+@media(max-width:500px){.platform-toolbar{gap:8px}.platform-toolbar .btn{flex:1 1 145px}.analytics-metrics{grid-template-columns:1fr 1fr}.module-head>.flex,.section-head{flex-wrap:wrap}main,section,form,fieldset{min-width:0}.form-actions{flex-wrap:wrap}input,select,textarea{max-width:100%}.course-header h1{overflow-wrap:anywhere}.btn{max-width:100%;white-space:normal}}
+
+.skip-link{top:0;transform:translateY(-150%)}.skip-link:focus{transform:none}.footer{color:#55634e}.field-hint,.muted{color:#526458}
+:root{--muted:#526458}.nav-label,.stat small,.welcome .overline,.welcome p,.step-number,.module-title .number,.spark{color:#526448}.text-button{color:#42652d}
+
+@media(max-width:800px){.sidebar{visibility:hidden}.sidebar.open{visibility:visible}}

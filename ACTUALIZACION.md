@@ -22,7 +22,7 @@ Configura `AULA_MODEL_V2=1`. En el primer arranque se crea un respaldo consisten
 3. Reasigna los identificadores originales de contenidos, actividades y matrículas al grupo. Así se conservan respuestas, notas y avances sin duplicarlos. La plantilla recibe copias independientes de contenidos y archivos.
 4. Compara inventarios por curso y verifica claves foráneas. Conserva el informe en el respaldo y en `schema_migrations`.
 
-Una migración completada no se repite. Si aparece un grupo 2026-1 sin registro de migración, se detiene sin modificar nada para evitar una conciliación destructiva. Los estudiantes acceden únicamente a grupos activos con matrícula vigente, incluso si el antiguo modo del curso era libre.
+Una migración completada no se repite. Si aparece un grupo 2026-1 sin registro de migración, lo reconoce y concilia sus matrículas conservando historial. Un conflicto entre esquemas de notas distintos revierte la operación para permitir una decisión explícita. Los estudiantes acceden únicamente a grupos activos con matrícula vigente, incluso si el antiguo modo del curso era libre.
 
 ## Recuperación
 
@@ -36,7 +36,7 @@ Arranca la versión anterior apuntando `DATA_DIR` al directorio restaurado, sin 
 
 ## Alcance de las mediciones y límites
 
-Los registros de ingreso al grupo y auditorías detalladas de calificación empiezan con esta versión; no se inventan datos históricos. Los filtros de materiales usan sus últimas fechas guardadas; notas y ponderaciones muestran el estado actual. Las correcciones se muestran cronológicamente, pero no se reconstruye una nota final histórica completa. La comparación de grupos presenta volúmenes y advierte que contenidos y estudiantes pueden ser diferentes.
+Los registros de ingreso al grupo y auditorías detalladas de calificación empiezan con esta versión; no se inventan datos históricos. Los filtros de materiales usan sus últimas fechas guardadas; notas y ponderaciones muestran el estado actual. Las correcciones se muestran cronológicamente y en gráficas por estudiante y actividad, pero no se reconstruye una nota final histórica completa. La comparación de grupos presenta promedio, escala, progreso y volúmenes, y advierte que contenidos y estudiantes pueden ser diferentes.
 
 La importación de cuestionarios acepta XLSX de hasta 2 MB, 50 preguntas y cuatro opciones por fila; el editor permite hasta diez opciones. Rechaza fórmulas y limita la expansión ZIP a 20 MB. El laboratorio debe ser autocontenido: no accede a las credenciales, almacenamiento del campus ni conexiones de red mediante JavaScript.
 
@@ -47,3 +47,5 @@ Los límites actuales de archivos y el almacenamiento contratado en Render se co
 `npm ci --omit=optional --ignore-scripts` y `node --test --test-concurrency=1 tests/*.test.mjs`.
 
 Las pruebas cubren migración repetida y restauración, copias independientes de archivos, permisos y último máster, matrícula por lotes, publicación, versiones, conservación de escalas, exenciones, cortes, registro de laboratorio, estadísticas, importación XLSX y recuperación de acceso. Las pruebas de navegador usan exclusivamente datos sintéticos locales.
+
+Consulta [las correcciones de la auditoría](docs/CORRECCIONES-AUDITORIA.md) para los quince ajustes y su verificación.

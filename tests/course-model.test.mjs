@@ -4,7 +4,7 @@ import {mkdtempSync,rmSync,writeFileSync,readFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {openDatabase} from '../server/database.mjs';
-import {migrateCourseGroups,cloneCourse,courseInventory} from '../server/course-model.mjs';
+import {migrateCourseGroups,cloneCourse,courseInventory,setupCourseModel} from '../server/course-model.mjs';
 function fixture(){
  const root=mkdtempSync(join(tmpdir(),'aula-groups-')),db=openDatabase(root),uploads=join(root,'uploads');
  db.exec(`INSERT INTO users(id,document,name,role,created_at,updated_at) VALUES('owner','12345','Owner','admin','2026','2026'),('student','12346','Student','student','2026','2026');
@@ -53,5 +53,29 @@ test('missing file rolls the whole migration back, including roles and schema ch
   assert.equal(f.db.prepare('SELECT count(*) n FROM courses').get().n,2);
   assert.equal(f.db.prepare('SELECT course_id FROM enrollments').get().course_id,'course');
   assert.ok(!f.db.prepare('PRAGMA table_info(courses)').all().some(c=>c.name==='entity_kind'));
+ }finally{f.close();}
+});
+
+test('migration reuses a pre-existing 2026-1 and reconciles overlapping enrollment without losing results',()=>{
+ const f=fixture();try{
+  setupCourseModel(f.db);
+  f.db.exec("INSERT INTO courses(id,title,published,created_at,updated_at,entity_kind,template_id,cohort,group_code) VALUES('existing','Existing group',1,'2026','2026','group','course','2026-1','2026-1'); INSERT INTO enrollments(id,student_id,course_id,created_at) VALUES('existing-enrollment','student','existing','2026');");
+  const answers=f.db.prepare('SELECT * FROM submissions').all(),progress=f.db.prepare('SELECT * FROM progress').all();
+  const report=migrateCourseGroups(f.db,f.uploads),item=report.courses.find(c=>c.templateId==='course');
+  assert.equal(item.groupId,'existing');assert.equal(item.reusedExistingGroup,true);
+  assert.equal(f.db.prepare("SELECT count(*) n FROM courses WHERE template_id='course'").get().n,1);
+  assert.equal(f.db.prepare("SELECT count(*) n FROM enrollments WHERE course_id='existing'").get().n,1);
+  assert.equal(f.db.prepare("SELECT count(*) n FROM enrollment_history WHERE action='migration.reconcile'").get().n,1);
+  assert.deepEqual(f.db.prepare('SELECT * FROM submissions').all(),answers);assert.deepEqual(f.db.prepare('SELECT * FROM progress').all(),progress);
+  assert.equal(migrateCourseGroups(f.db,f.uploads).alreadyApplied,true);
+ }finally{f.close();}
+});
+
+test('conflicting grading schemes roll reconciliation back instead of silently changing grades',()=>{
+ const f=fixture();try{
+  setupCourseModel(f.db);f.db.exec("INSERT INTO courses(id,title,created_at,updated_at,entity_kind,template_id,cohort,group_code) VALUES('existing','Existing','2026','2026','group','course','2026-1','2026-1'); INSERT INTO grading_settings VALUES('existing','{\"scaleMax\":100}');");
+  assert.throws(()=>migrateCourseGroups(f.db,f.uploads),/otro esquema de notas/);
+  assert.equal(f.db.prepare("SELECT course_id FROM enrollments WHERE id='enrollment'").get().course_id,'course');
+  assert.equal(f.db.prepare("SELECT count(*) n FROM schema_migrations").get().n,0);
  }finally{f.close();}
 });

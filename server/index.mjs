@@ -158,7 +158,7 @@ export async function createApp(options = {}) {
     if(!session)return null;
     const auth={user:decorate(session),assurance:session.assurance,tokenHash:digest(value)};
     const preview=req.headers['x-aula-preview'];
-    if(preview&&accessModel){accessModel.requireScope(auth,preview,'view');accessModel.group(preview);return {...auth,preview,user:{...auth.user,role:'student'}};}
+    if(preview&&accessModel){accessModel.requireScope(auth,preview,'view');const previewActivity=req.headers['x-aula-activity-preview'];if(previewActivity){accessModel.requireScope(auth,preview,'edit');if(!one('SELECT id FROM activities WHERE id=? AND course_id=?',previewActivity,preview))fail(404,'Actividad no encontrada.');}else accessModel.group(preview);return {...auth,preview,previewActivity,user:{...auth.user,role:'student'}};}
     return auth;
   }
   function issueSession(res, user, assurance) {
@@ -202,7 +202,7 @@ export async function createApp(options = {}) {
     if (auth?.user.role !== 'admin' && (!row.published || !row.module_published)) fail(404, 'Material no disponible.', 'NOT_FOUND');
   }
   function resourceView(row) {
-    return { id:row.id, moduleId:row.module_id, published:Boolean(row.published), title:row.title, kind:row.kind, url:row.url, content:row.content, position:row.position, fileName:row.file_name, fileMime:row.file_mime, fileSize:row.file_size, fileUrl:row.file_key ? `/api/resources/${row.id}/file` : null, previewUrl:['html','lab'].includes(row.kind) && (row.content || row.file_key) ? `/api/resources/${row.id}/preview` : null, createdAt:row.created_at, updatedAt:row.updated_at };
+    return { id:row.id, moduleId:row.module_id, labResults:row.lab_results||'optional', published:Boolean(row.published), title:row.title, kind:row.kind, url:row.url, content:row.content, position:row.position, fileName:row.file_name, fileMime:row.file_mime, fileSize:row.file_size, fileUrl:row.file_key ? `/api/resources/${row.id}/file` : null, previewUrl:['html','lab'].includes(row.kind) && (row.content || row.file_key) ? `/api/resources/${row.id}/preview` : null, createdAt:row.created_at, updatedAt:row.updated_at };
   }
   function courseView(course, auth, details = false) {
     const teacher = auth?.user.role === 'admin' && auth.assurance === 'password';
@@ -592,7 +592,7 @@ export async function createApp(options = {}) {
         requireStudent(auth);
         await readJson(req);
         const currentAuth = requireStudent(readSession(req));
-        const row = one('SELECT m.course_id,r.published,m.published AS module_published FROM resources r JOIN modules m ON m.id=r.module_id WHERE r.id=?', match[1]);
+        const row = one('SELECT m.course_id,r.*,m.published AS module_published FROM resources r JOIN modules m ON m.id=r.module_id WHERE r.id=?', match[1]);
         if (!row) fail(404, 'Recurso no encontrado.', 'NOT_FOUND');
         requirePublishedResource(row, currentAuth);
         const at = now();
@@ -607,9 +607,10 @@ export async function createApp(options = {}) {
         requireStudent(auth);
         const body = await readJson(req), completed = boolean(body.completed, 'Completado');
         const currentAuth = requireStudent(readSession(req));
-        const row = one('SELECT m.course_id,r.published,m.published AS module_published FROM resources r JOIN modules m ON m.id=r.module_id WHERE r.id=?', match[1]);
+        const row = one('SELECT m.course_id,r.*,m.published AS module_published FROM resources r JOIN modules m ON m.id=r.module_id WHERE r.id=?', match[1]);
         if (!row) fail(404, 'Recurso no encontrado.', 'NOT_FOUND');
         requirePublishedResource(row, currentAuth);
+        if(accessModel&&completed&&row.kind==='lab'&&row.lab_results==='required'&&!one("SELECT 1 FROM learning_events WHERE user_id=? AND object_id=? AND action='lab.result'",currentAuth.user.id,match[1]))fail(400,'Registra los resultados del laboratorio antes de marcarlo completado.');
         const at = now(), opened = completed ? at : null;
         run(`INSERT INTO progress(user_id,resource_id,completed,updated_at,opened_at,last_opened_at) VALUES (?,?,?,?,?,?)
           ON CONFLICT(user_id,resource_id) DO UPDATE SET completed=excluded.completed,updated_at=excluded.updated_at,
@@ -810,6 +811,7 @@ export async function createApp(options = {}) {
         if (match && method === 'POST') {
           const module = existing('modules', match[1], 'Capítulo');
           const body = await readJson(req, 29 * 1024 * 1024), id = randomUUID(), at = now();
+          if(accessModel&&body.labResults!==undefined&&!['disabled','optional','required'].includes(body.labResults))fail(400,'Registro de laboratorio no válido.');
           const title = string(body.title, 'el título del recurso', 200, true), kind = body.kind;
           if (!RESOURCE_KINDS.has(kind)) fail(400, 'El tipo de recurso no es válido.');
           const resourceUrl = webUrl(body.url), content = string(body.content, 'el contenido', 1000000);
@@ -820,6 +822,7 @@ export async function createApp(options = {}) {
           if (file) writeFileSync(join(uploadsDir, file.key), file.buffer, { flag:'wx', mode:0o600 });
           try { run('INSERT INTO resources(id,module_id,title,kind,url,content,position,file_key,file_name,file_mime,file_size,created_at,updated_at,published) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)', id, module.id, title, kind, resourceUrl, content, order, file?.key || null, file?.name || null, file?.mime || null, file?.size || null, at, at, published); }
           catch (error) { if (file) deleteFiles([{ file_key:file.key }]); throw error; }
+          if(accessModel&&body.labResults!==undefined){if(!['disabled','optional','required'].includes(body.labResults))fail(400,'Registro de laboratorio no válido.');run('UPDATE resources SET lab_results=? WHERE id=?',body.labResults,id);}
           audit(auth.user, 'resource.create', id);
           return json(res, resourceView(existing('resources', id, 'Recurso')), 201);
         }
@@ -833,6 +836,7 @@ export async function createApp(options = {}) {
             return json(res, { success:true });
           }
           const body = await readJson(req, 29 * 1024 * 1024);
+          if(accessModel&&body.labResults!==undefined&&!['disabled','optional','required'].includes(body.labResults))fail(400,'Registro de laboratorio no válido.');
           const title = own(body, 'title') ? string(body.title, 'el título del recurso', 200, true) : resource.title;
           const kind = own(body, 'kind') ? body.kind : resource.kind;
           if (!RESOURCE_KINDS.has(kind)) fail(400, 'El tipo de recurso no es válido.');
@@ -848,6 +852,7 @@ export async function createApp(options = {}) {
           try { run('UPDATE resources SET title=?,kind=?,url=?,content=?,position=?,file_key=?,file_name=?,file_mime=?,file_size=?,updated_at=?,published=? WHERE id=?', title, kind, resourceUrl, content, order, fileKey, replaceFile ? file?.name || null : resource.file_name, replaceFile ? file?.mime || null : resource.file_mime, replaceFile ? file?.size || null : resource.file_size, now(), published, resource.id); }
           catch (error) { if (file) deleteFiles([{ file_key:file.key }]); throw error; }
           if (replaceFile) deleteFiles([resource]);
+          if(accessModel&&body.labResults!==undefined)run('UPDATE resources SET lab_results=? WHERE id=?',body.labResults,resource.id);
           audit(auth.user, 'resource.update', resource.id);
           return json(res, resourceView(existing('resources', resource.id, 'Recurso')));
         }
