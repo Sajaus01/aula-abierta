@@ -29,7 +29,7 @@ export const button=(text,action,style='',glyph='')=>`<button type="button" clas
 export function navigationItems(user,preview=false){
  if(user?.role!=='admin'||preview)return [['mis-cursos','cap','Mi aprendizaje'],['tareas','edit','Mis actividades'],['catalogo','book','Explorar cursos']];
  const modern=!!user.roles,global=user.roles?.some(r=>r==='master'||r==='admin');
- return [['inicio','grid','Resumen'],['cursos','book',modern?'Cursos plantilla':'Mis cursos'],...(modern?[['grupos','users','Grupos']]:[]),['estudiantes','cap','Estudiantes'],['matriculas','check','Matrículas'],['tareas','edit','Actividades y notas'],['biblioteca','folder','Biblioteca'],...(global?[['usuarios','shield','Usuarios y roles']]:[]),...(user.roles?.includes('master')?[['panorama','chart','Panorama']]:[])];
+ return [['inicio','grid','Resumen'],['cursos','book',modern?'Cursos plantilla':'Mis cursos'],...(modern?[['grupos','users','Grupos']]:[]),['estudiantes','cap','Estudiantes'],['matriculas','check','Matrículas'],['tareas','edit','Actividades y notas'],['biblioteca','folder','Biblioteca'],...(global?[['usuarios','shield','Usuarios y roles']]:[]),...(modern?[['panorama','chart','Panorama']]:[])];
 }
 
 export function courseEntryActions(course,learning){

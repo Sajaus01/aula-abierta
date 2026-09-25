@@ -15,7 +15,8 @@ test('la navegación mantiene separados permisos de estudiante, docente y admini
  assert.deepEqual(items({role:'student',roles:['student']}),['mis-cursos','tareas','catalogo']);
  assert.ok(items({role:'admin',roles:['teacher']}).includes('grupos'));
  assert.ok(!items({role:'admin',roles:['teacher']}).includes('usuarios'));
- assert.ok(!items({role:'admin',roles:['admin']}).includes('panorama'));
+ assert.ok(items({role:'admin',roles:['admin']}).includes('panorama'));
+ assert.ok(items({role:'admin',roles:['teacher']}).includes('panorama'));
  assert.ok(items({role:'admin',roles:['master']}).includes('panorama'));
  assert.deepEqual(navigationItems({role:'admin',roles:['master']},true).map(x=>x[0]),['mis-cursos','tareas','catalogo']);
 });

@@ -1,3 +1,4 @@
+import {eventContext} from './panorama.mjs';
 const validRoles=new Set(['master','admin','teacher','student']);
 const permissions={edit:'can_edit',grade:'can_grade',manage:'can_manage'};
 export class PermissionError extends Error{constructor(message,status=403){super(message);this.status=status;this.code='PERMISSION_DENIED';}}
@@ -15,7 +16,7 @@ export function createPermissions(db){
   return Boolean(row&&(action==='view'||(permissions[action]&&row[permissions[action]])));
  }
  const assert=(condition,message)=>{if(!condition)throw new PermissionError(message);};
- function log(actor,action,target,details){db.prepare('INSERT INTO permission_audit(actor_id,action,target_id,details,created_at) VALUES(?,?,?,?,?)').run(actor,action,target,JSON.stringify(details),new Date().toISOString());}
+ function log(actor,action,target,details){db.prepare('INSERT INTO permission_audit(actor_id,action,target_id,details,created_at) VALUES(?,?,?,?,?)').run(actor,action,target,JSON.stringify({...details,context:eventContext(db,{id:actor},action,target,details.courseId?{group:eventContext(db,{id:actor},action,details.courseId).group}:{})}),new Date().toISOString());}
  function atomic(fn){db.exec('BEGIN IMMEDIATE');try{const r=fn();db.exec('COMMIT');return r;}catch(e){db.exec('ROLLBACK');throw e;}}
  function protectLastMaster(target,nextRoles,nextStatus){
   if(roles(target).includes('master')&&active(target)&&(!nextRoles.includes('master')||nextStatus!=='active'))assert(Boolean(one("SELECT u.id FROM users u JOIN user_roles r ON r.user_id=u.id WHERE r.role='master' AND u.id<>? AND u.active=1 AND u.account_status='active'",target)),'No puedes retirar ni suspender la última cuenta máster activa.');

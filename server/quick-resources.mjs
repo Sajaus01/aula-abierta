@@ -27,7 +27,7 @@ export function createQuickResources(ctx){
   const old=edit?get(edit[1]):null,courseId=old?.course_id||create[1];requireCourse(courseId,auth);
   if(old&&body.version!==old.version)fail(409,'El recurso cambió en otra pestaña. Recarga el curso antes de editarlo.');
   const send=(data,status=200)=>{json(res,data,status);return true;};
-  if(method==='DELETE'){run('DELETE FROM quick_resources WHERE id=?',old.id);remove(old.file_key);audit(auth.user,'quick-resource.delete',old.id);return send({success:true});}
+  if(method==='DELETE'){const context=audit.capture?.(auth.user,'quick-resource.delete',old.id)||{};run('DELETE FROM quick_resources WHERE id=?',old.id);remove(old.file_key);audit(auth.user,'quick-resource.delete',old.id,context);return send({success:true});}
   if(body.move!==undefined){
    if(!old||!['up','down'].includes(body.move))fail(400,'Movimiento no válido.');
    const rows=all('SELECT * FROM quick_resources WHERE course_id=? ORDER BY position,id',courseId),i=rows.findIndex(r=>r.id===old.id),j=i+(body.move==='up'?-1:1);

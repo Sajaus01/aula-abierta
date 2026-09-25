@@ -14,6 +14,9 @@ import {createAccessModel} from './access-model.mjs';
 import {PermissionError} from './permissions.mjs';
 import {createPlatform} from './platform.mjs';
 import {createAnalytics} from './analytics.mjs';
+import {setupCommunity,createCommunity} from './community.mjs';
+import {setupPanorama,createPanorama,eventContext} from './panorama.mjs';
+import {createBackup} from './backup.mjs';
 import {createQuestionImport} from './question-import.mjs';
 import {createLibrary} from './library.mjs';
 
@@ -135,7 +138,10 @@ export async function createApp(options = {}) {
   const query = (sql, ...args) => db.prepare(sql).all(...args);
   const one = (sql, ...args) => db.prepare(sql).get(...args);
   const run = (sql, ...args) => db.prepare(sql).run(...args);
-  const audit = (actor, action, target) => run('INSERT INTO audit(actor_id,action,target_id,created_at) VALUES (?,?,?,?)', actor?.id || null, action, target || null, now());
+  const audit = (actor, action, target, context={}) => accessModel
+    ? run('INSERT INTO audit(actor_id,action,target_id,created_at,context) VALUES (?,?,?,?,?)',actor?.id||null,action,target||null,now(),JSON.stringify(eventContext(db,actor,action,target,context)))
+    : run('INSERT INTO audit(actor_id,action,target_id,created_at) VALUES (?,?,?,?)',actor?.id||null,action,target||null,now());
+  audit.capture=(actor,action,target)=>accessModel?eventContext(db,actor,action,target):{};
   const requireAdmin = auth => { if (!auth || auth.user.role !== 'admin' || auth.assurance !== 'password') fail(403, 'Se requiere una sesión de administración.', 'ADMIN_REQUIRED'); };
   const requireAuth = auth => { if (!auth) fail(401, 'Inicia sesión para continuar.', 'LOGIN_REQUIRED'); return auth; };
   const requirePersonalPassword = auth => {
@@ -424,6 +430,12 @@ export async function createApp(options = {}) {
   }
 
   const academics = createAcademics({db,fail,json,readJson,readSession,requireAdmin,requireStudent,requireCourse,isEnrolled,validateFile,fileResponse,uploadsDir,audit,env,accessModel});
+  if(accessModel){
+    if(!one("SELECT name FROM sqlite_master WHERE type='table' AND name='profiles'"))createBackup(dataDir,{label:'before-community-panorama-v1'});
+    setupCommunity(db);setupPanorama(db);
+  }
+  const community=accessModel?createCommunity({db,accessModel,fail,json,readJson,readSession,requireCourse,isEnrolled,audit}):null;
+  const panorama=accessModel?createPanorama({db,accessModel,fail,json}):null;
   const quickResources = createQuickResources({db,fail,json,readJson,readSession,requireAdmin,requireCourse,validateFile,fileResponse,uploadsDir,audit,string,webUrl,boolean});
   const platform=accessModel?createPlatform({db,accessModel,fail,json,readJson,readSession,uploadsDir,addStudent,activation,hashPassword,token,audit,courseView,string,webUrl}):null;
   const library=accessModel?createLibrary({db,accessModel,fail,json,readJson,readSession,uploadsDir,audit,string,fileResponse}):null;
@@ -447,6 +459,8 @@ export async function createApp(options = {}) {
       accessModel?.authorize(req,auth);
       const initialAllowed = (method === 'GET' && ['/api/status', '/api/settings', '/api/auth/me'].includes(path)) || (method === 'POST' && ['/api/auth/logout', '/api/auth/first-password'].includes(path));
       if (path.startsWith('/api/') && !initialAllowed) requirePersonalPassword(auth);
+      if(community&&await community.handler(req,res,path,method,auth))return;
+      if(panorama&&await panorama.handler(req,res,path,method,auth))return;
       if(analytics&&await analytics.handler(req,res,path,method,auth))return;
       if(questionImport&&await questionImport.handler(req,res,path,method,auth))return;
       if(platform&&await platform.handler(req,res,path,method,auth))return;
@@ -479,6 +493,7 @@ export async function createApp(options = {}) {
       }
       if (path === '/api/auth/logout' && method === 'POST') {
         await readJson(req);
+        if(auth)audit(auth.user,'auth.logout',auth.user.id);
         if (auth) run('DELETE FROM sessions WHERE token_hash=?', auth.tokenHash);
         clearSession(res);
         return json(res, { success:true });
@@ -545,7 +560,7 @@ export async function createApp(options = {}) {
 
       if (path === '/api/courses' && method === 'GET') return json(res, query('SELECT * FROM courses WHERE published=1 ORDER BY created_at DESC').filter(c=>!accessModel||canAccess(c,auth)).map(course => courseView(course, auth)));
       let match = /^\/api\/courses\/([^/]+)$/.exec(path);
-      if (match && method === 'GET') {const course=requireCourse(match[1],auth);if(accessModel&&auth?.user.role==='student'&&!auth.preview)run('INSERT INTO learning_events(user_id,course_id,object_id,action,created_at) VALUES(?,?,?,?,?)',auth.user.id,course.id,course.id,'group.enter',now());return json(res, courseView(course, auth, true));}
+      if (match && method === 'GET') {const course=requireCourse(match[1],auth);if(accessModel&&auth&&!auth.preview&&course.entity_kind==='group')run('INSERT INTO learning_events(user_id,course_id,object_id,action,created_at,context) VALUES(?,?,?,?,?,?)',auth.user.id,course.id,course.id,'group.enter',now(),JSON.stringify(audit.capture(auth.user,'group.enter',course.id)));return json(res, courseView(course, auth, true));}
       match = /^\/api\/resources\/([^/]+)\/preview$/.exec(path);
       if (match && ['GET', 'HEAD'].includes(method)) {
         const resource = one('SELECT r.*,m.course_id,m.published AS module_published FROM resources r JOIN modules m ON m.id=r.module_id WHERE r.id=?', match[1]);
@@ -600,6 +615,7 @@ export async function createApp(options = {}) {
           ON CONFLICT(user_id,resource_id) DO UPDATE SET updated_at=excluded.updated_at,
           opened_at=COALESCE(progress.opened_at,progress.last_opened_at,CASE WHEN progress.completed=1 THEN progress.updated_at END,excluded.opened_at),
           last_opened_at=excluded.last_opened_at`, currentAuth.user.id, match[1], at, at, at);
+        if(accessModel)audit(currentAuth.user,'resource.open',match[1]);
         return json(res, progressView(one('SELECT * FROM progress WHERE user_id=? AND resource_id=?', currentAuth.user.id, match[1])));
       }
       match = /^\/api\/progress\/([^/]+)$/.exec(path);
@@ -616,6 +632,7 @@ export async function createApp(options = {}) {
           ON CONFLICT(user_id,resource_id) DO UPDATE SET completed=excluded.completed,updated_at=excluded.updated_at,
           opened_at=COALESCE(progress.opened_at,progress.last_opened_at,CASE WHEN progress.completed=1 THEN progress.updated_at END,excluded.opened_at),
           last_opened_at=COALESCE(progress.last_opened_at,progress.opened_at,CASE WHEN progress.completed=1 THEN progress.updated_at END,excluded.last_opened_at)`, currentAuth.user.id, match[1], completed, at, opened, opened);
+        if(accessModel)audit(currentAuth.user,completed?'resource.complete':'resource.pending',match[1]);
         return json(res, progressView(one('SELECT * FROM progress WHERE user_id=? AND resource_id=?', currentAuth.user.id, match[1])));
       }
 
@@ -794,9 +811,10 @@ export async function createApp(options = {}) {
           const module = existing('modules', match[1], 'Capítulo');
           if (method === 'DELETE') {
             const files = query('SELECT file_key FROM resources WHERE module_id=?', module.id);
+            const context=audit.capture(auth.user,'module.delete',module.id);
             run('DELETE FROM modules WHERE id=?', module.id);
             deleteFiles(files);
-            audit(auth.user, 'module.delete', module.id);
+            audit(auth.user, 'module.delete', module.id,context);
             return json(res, { success:true });
           }
           const body = await readJson(req);
@@ -830,9 +848,10 @@ export async function createApp(options = {}) {
         if (match && ['PATCH', 'DELETE'].includes(method)) {
           const resource = existing('resources', match[1], 'Recurso');
           if (method === 'DELETE') {
+            const context=audit.capture(auth.user,'resource.delete',resource.id);
             run('DELETE FROM resources WHERE id=?', resource.id);
             deleteFiles([resource]);
-            audit(auth.user, 'resource.delete', resource.id);
+            audit(auth.user, 'resource.delete', resource.id,context);
             return json(res, { success:true });
           }
           const body = await readJson(req, 29 * 1024 * 1024);
