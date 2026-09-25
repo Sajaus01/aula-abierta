@@ -64,4 +64,3 @@ test('el texto de ejercicios se escapa para impedir que se convierta en HTML eje
   assert.equal(escapeHtml(undefined), '');
   assert.equal(escapeHtml(42), '42');
 });
-

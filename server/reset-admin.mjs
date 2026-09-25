@@ -25,4 +25,3 @@ try {
   console.log('Contraseña del administrador restablecida. Sus sesiones anteriores se cerraron. Retira ADMIN_PASSWORD del entorno.');
 } catch (error) { console.error(error.message); process.exitCode = 1; }
 finally { db.close(); }
-

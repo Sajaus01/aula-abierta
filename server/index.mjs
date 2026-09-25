@@ -1,3 +1,4 @@
+import {setupCourseModel} from './course-model.mjs';
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { createReadStream, existsSync, statSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
@@ -8,10 +9,17 @@ import { token, digest, hashPassword, verifyPassword, passwordError, RateLimiter
 import { importMigration, MigrationError, MIGRATION_MAX_BYTES } from './migration.mjs';
 import { createAcademics } from './academics.mjs';
 import { createQuickResources } from './quick-resources.mjs';
+import {upgradeData} from './upgrade.mjs';
+import {createAccessModel} from './access-model.mjs';
+import {PermissionError} from './permissions.mjs';
+import {createPlatform} from './platform.mjs';
+import {createAnalytics} from './analytics.mjs';
+import {createQuestionImport} from './question-import.mjs';
+import {createLibrary} from './library.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
-const RESOURCE_KINDS = new Set(['pdf', 'slides', 'video', 'book', 'image', 'exercise', 'html', 'link']);
+const RESOURCE_KINDS = new Set(['pdf', 'slides', 'video', 'book', 'image', 'exercise', 'html', 'lab', 'link']);
 const FILE_TYPES = { '.xlsx':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.csv':'text/csv', '.pdf':'application/pdf', '.pptx':'application/vnd.openxmlformats-officedocument.presentationml.presentation', '.docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.gif':'image/gif', '.webp':'image/webp', '.txt':'text/plain', '.html':'text/html', '.htm':'text/html' };
 const STATIC_TYPES = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.mjs':'text/javascript; charset=utf-8', '.css':'text/css; charset=utf-8', '.json':'application/json; charset=utf-8', '.svg':'image/svg+xml', '.png':'image/png', '.jpg':'image/jpeg', '.ico':'image/x-icon', '.webp':'image/webp', '.woff2':'font/woff2' };
 const now = () => new Date().toISOString();
@@ -62,9 +70,9 @@ function enrollmentImportDate(value, name) {
   return result;
 }
 function json(res, data, status = 200) { res.writeHead(status, { 'Content-Type':'application/json; charset=utf-8' }); res.end(JSON.stringify({ data })); }
-function userView(user) { return { id:user.id, document:user.document, name:user.name, email:user.email, role:user.role, mustChangePassword:user.role === 'student' && Boolean(user.must_change_password) }; }
+function userView(user) { return { id:user.id, document:user.document, name:user.name, email:user.email, role:user.role, roles:user.roles, primaryRole:user.primaryRole, accountStatus:user.account_status, mustChangePassword:Boolean(user.must_change_password) }; }
 
-async function readJson(req, limit = 1024 * 1024) {
+async function readJsonBody(req, limit = 1024 * 1024) {
   if (!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type'] || '')) fail(415, 'Envía los datos como application/json.');
   const length = Number(req.headers['content-length']);
   if (Number.isFinite(length) && length > limit) fail(413, 'El archivo o la solicitud supera el tamaño permitido.');
@@ -113,6 +121,11 @@ export async function createApp(options = {}) {
   const db = openDatabase(dataDir);
   await bootstrapAdmin(db, env);
   await backfillStudentInitialPasswords(db);
+  const modernEnabled=env.AULA_MODEL_V2==='1'||Boolean(db.prepare("SELECT name FROM sqlite_master WHERE name='schema_migrations'").get());
+  if(modernEnabled){upgradeData(dataDir);setupCourseModel(db);}
+  const accessModel=modernEnabled?createAccessModel(db,fail):null;
+  const decorate=user=>accessModel?accessModel.decorate(user):user;
+  const readJson=async(req,limit)=>{const body=await readJsonBody(req,limit);accessModel?.authorize(req,readSession(req),body);return body;};
   const configuredUrl = env.APP_URL || env.RENDER_EXTERNAL_URL;
   const appOrigin = configuredUrl ? new URL(configuredUrl).origin : null;
   if (env.NODE_ENV === 'production' && (!appOrigin || !appOrigin.startsWith('https://'))) throw new Error('En producción configura APP_URL con la URL pública HTTPS.');
@@ -126,7 +139,7 @@ export async function createApp(options = {}) {
   const requireAdmin = auth => { if (!auth || auth.user.role !== 'admin' || auth.assurance !== 'password') fail(403, 'Se requiere una sesión de administración.', 'ADMIN_REQUIRED'); };
   const requireAuth = auth => { if (!auth) fail(401, 'Inicia sesión para continuar.', 'LOGIN_REQUIRED'); return auth; };
   const requirePersonalPassword = auth => {
-    if (auth?.user.role === 'student' && auth.user.must_change_password) fail(403, 'Configura tu contraseña personal antes de entrar al aula.', 'PASSWORD_CHANGE_REQUIRED');
+    if (auth?.user.must_change_password) fail(403, 'Configura tu contraseña personal antes de entrar al aula.', 'PASSWORD_CHANGE_REQUIRED');
   };
   const requireStudent = auth => {
     requireAuth(auth);
@@ -141,9 +154,15 @@ export async function createApp(options = {}) {
     const value = match.slice('aula_session='.length);
     if (!/^[\w-]{43}$/.test(value)) return null;
     const session = one('SELECT s.*,u.* FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>? AND u.active=1', digest(value), now());
-    return session ? { user:session, assurance:session.assurance, tokenHash:digest(value) } : null;
+    if(session&&accessModel&&!accessModel.p.active(session.user_id))return null;
+    if(!session)return null;
+    const auth={user:decorate(session),assurance:session.assurance,tokenHash:digest(value)};
+    const preview=req.headers['x-aula-preview'];
+    if(preview&&accessModel){accessModel.requireScope(auth,preview,'view');accessModel.group(preview);return {...auth,preview,user:{...auth.user,role:'student'}};}
+    return auth;
   }
   function issueSession(res, user, assurance) {
+    user=decorate(user);
     const secret = token();
     const seconds = user.role === 'student' && user.must_change_password ? 15 * 60 : assurance === 'password' ? 12 * 60 * 60 : 4 * 60 * 60;
     run('DELETE FROM sessions WHERE expires_at<=?', now());
@@ -158,6 +177,12 @@ export async function createApp(options = {}) {
     return Boolean(one("SELECT id FROM enrollments WHERE student_id=? AND course_id=? AND status='active' AND (starts_at IS NULL OR starts_at<=?) AND (expires_at IS NULL OR expires_at>?)", userId, courseId, at, at));
   }
   function canAccess(course, auth) {
+    if(accessModel){
+      if(!course||!auth||auth.user.must_change_password)return false;
+      if(auth.preview)return auth.preview===course.id;
+      if(accessModel.staff(auth))return accessModel.p.can(auth.user.id,course.id,'view');
+      return course.entity_kind==='group'&&course.lifecycle==='active'&&Boolean(course.published)&&isEnrolled(auth.user.id,course.id)&&(course.access_mode==='document'||auth.assurance==='password');
+    }
     if (auth?.user.role === 'student' && auth.user.must_change_password) return false;
     if (auth?.user.role === 'admin' && auth.assurance === 'password') return true;
     if (!course.published) return false;
@@ -168,7 +193,7 @@ export async function createApp(options = {}) {
   function requireCourse(courseId, auth) {
     requirePersonalPassword(auth);
     const course = one('SELECT * FROM courses WHERE id=?', courseId);
-    if (!course || (!course.published && auth?.user.role !== 'admin')) fail(404, 'Curso no encontrado.', 'NOT_FOUND');
+    if (!course || (!course.published && auth?.user.role !== 'admin'&&!auth?.preview)) fail(404, 'Curso no encontrado.', 'NOT_FOUND');
     if (!canAccess(course, auth)) fail(auth ? 403 : 401, course.access_mode === 'password' && auth?.assurance === 'document' ? 'Este curso requiere cédula y contraseña.' : 'Necesitas una matrícula vigente y el acceso requerido para consultar este curso.', 'COURSE_LOCKED');
     return course;
   }
@@ -177,7 +202,7 @@ export async function createApp(options = {}) {
     if (auth?.user.role !== 'admin' && (!row.published || !row.module_published)) fail(404, 'Material no disponible.', 'NOT_FOUND');
   }
   function resourceView(row) {
-    return { id:row.id, moduleId:row.module_id, published:Boolean(row.published), title:row.title, kind:row.kind, url:row.url, content:row.content, position:row.position, fileName:row.file_name, fileMime:row.file_mime, fileSize:row.file_size, fileUrl:row.file_key ? `/api/resources/${row.id}/file` : null, previewUrl:row.kind === 'html' && (row.content || row.file_key) ? `/api/resources/${row.id}/preview` : null, createdAt:row.created_at, updatedAt:row.updated_at };
+    return { id:row.id, moduleId:row.module_id, published:Boolean(row.published), title:row.title, kind:row.kind, url:row.url, content:row.content, position:row.position, fileName:row.file_name, fileMime:row.file_mime, fileSize:row.file_size, fileUrl:row.file_key ? `/api/resources/${row.id}/file` : null, previewUrl:['html','lab'].includes(row.kind) && (row.content || row.file_key) ? `/api/resources/${row.id}/preview` : null, createdAt:row.created_at, updatedAt:row.updated_at };
   }
   function courseView(course, auth, details = false) {
     const teacher = auth?.user.role === 'admin' && auth.assurance === 'password';
@@ -186,6 +211,8 @@ export async function createApp(options = {}) {
     const resources = details ? query(`SELECT r.* ${resourceScope} ORDER BY r.position,r.id`, course.id, Number(teacher)) : [];
     const resourceCount = details ? resources.length : one(`SELECT COUNT(*) AS count ${resourceScope}`, course.id, Number(teacher)).count;
     const result = { id:course.id, title:course.title, description:course.description, accessMode:course.access_mode, published:Boolean(course.published), coverUrl:course.cover_url, createdAt:course.created_at, updatedAt:course.updated_at, enrolled:isEnrolled(auth?.user.id, course.id), locked:!canAccess(course, auth), resourceCount, moduleCount:modules.length };
+    if(auth?.preview)result.enrolled=true;
+    if(accessModel)Object.assign(result,{entityKind:course.entity_kind,templateId:course.template_id,cohort:course.cohort,groupCode:course.group_code,lifecycle:course.lifecycle,appearance:JSON.parse(course.appearance||'{}'),permissions:Object.fromEntries(['view','edit','grade','manage'].map(k=>[k,Boolean(auth&&accessModel.p.can(auth.user.id,course.id,k))]))});
     if (auth?.user.role === 'admin') result.enrollmentCount = one("SELECT COUNT(*) AS count FROM enrollments WHERE course_id=? AND status='active'", course.id).count;
     if (details) result.modules = modules.map(module => ({ id:module.id, courseId:module.course_id, title:module.title, position:module.position, published:Boolean(module.published), resources:resources.filter(r => r.module_id === module.id).map(resourceView) }));
     if (details) {
@@ -232,7 +259,7 @@ export async function createApp(options = {}) {
     return { courses, recent:recent.slice(0, 5), activities };
   }
   function studentView(user) {
-    return { ...userView(user), active:Boolean(user.active), hasPassword:Boolean(user.password_hash), createdAt:user.created_at, updatedAt:user.updated_at, enrollmentCount:one("SELECT COUNT(*) AS count FROM enrollments WHERE student_id=? AND status='active'", user.id).count };
+    return { ...userView(decorate(user)), active:Boolean(user.active), hasPassword:Boolean(user.password_hash), createdAt:user.created_at, updatedAt:user.updated_at, enrollmentCount:one("SELECT COUNT(*) AS count FROM enrollments WHERE student_id=? AND status='active'", user.id).count };
   }
   function settings() { return Object.fromEntries(query('SELECT key,value FROM settings').map(row => [row.key, row.value])); }
   function activation(userId) {
@@ -257,6 +284,7 @@ export async function createApp(options = {}) {
     const checkScope = () => {
       const current = readSession(req);
       requireAdmin(current);
+      if(accessModel){accessModel.requireScope(current,courseId,'manage');accessModel.group(courseId);}
       if (current.user.id !== originalAuth.user.id || current.tokenHash !== originalAuth.tokenHash) fail(403, 'La sesión de administración cambió. Vuelve a ingresar.', 'ADMIN_REQUIRED');
       return existing('courses', courseId, 'Curso');
     };
@@ -285,7 +313,7 @@ export async function createApp(options = {}) {
           const name = string(input.name, 'el nombre', 160, true), email = emailAddress(input.email);
           result.name = name;
           const prior = one('SELECT * FROM users WHERE document=?', document);
-          if (prior && (prior.role !== 'student' || !prior.active)) fail(400, prior.role !== 'student' ? 'La cédula pertenece a una cuenta de administración.' : 'El estudiante está suspendido. Revisa su cuenta antes de matricularlo.');
+          if (prior && ((accessModel?!accessModel.p.roles(prior.id).includes('student'):prior.role !== 'student') || !prior.active)) fail(400, (accessModel?!accessModel.p.roles(prior.id).includes('student'):prior.role !== 'student') ? 'La cédula pertenece a una cuenta de administración.' : 'El estudiante está suspendido. Revisa su cuenta antes de matricularlo.');
           // Only one derivation at a time; no transaction is held while hashing.
           const hash = prior ? null : await hashPassword(document);
           checkScope();
@@ -293,7 +321,7 @@ export async function createApp(options = {}) {
           transaction = true;
           checkScope();
           let student = one('SELECT * FROM users WHERE document=?', document);
-          if (student && (student.role !== 'student' || !student.active)) fail(400, student.role !== 'student' ? 'La cédula pertenece a una cuenta de administración.' : 'El estudiante está suspendido. Revisa su cuenta antes de matricularlo.');
+          if (student && ((accessModel?!accessModel.p.roles(student.id).includes('student'):student.role !== 'student') || !student.active)) fail(400, (accessModel?!accessModel.p.roles(student.id).includes('student'):student.role !== 'student') ? 'La cédula pertenece a una cuenta de administración.' : 'El estudiante está suspendido. Revisa su cuenta antes de matricularlo.');
           if (!student) {
             if (!hash) fail(409, 'La cuenta cambió durante la importación. Reintenta esta fila.');
             const id = randomUUID(), at = now();
@@ -395,8 +423,12 @@ export async function createApp(options = {}) {
     stream.pipe(res);
   }
 
-  const academics = createAcademics({db,fail,json,readJson,readSession,requireAdmin,requireStudent,requireCourse,isEnrolled,validateFile,fileResponse,uploadsDir,audit,env});
+  const academics = createAcademics({db,fail,json,readJson,readSession,requireAdmin,requireStudent,requireCourse,isEnrolled,validateFile,fileResponse,uploadsDir,audit,env,accessModel});
   const quickResources = createQuickResources({db,fail,json,readJson,readSession,requireAdmin,requireCourse,validateFile,fileResponse,uploadsDir,audit,string,webUrl,boolean});
+  const platform=accessModel?createPlatform({db,accessModel,fail,json,readJson,readSession,uploadsDir,addStudent,activation,hashPassword,token,audit,courseView,string,webUrl}):null;
+  const library=accessModel?createLibrary({db,accessModel,fail,json,readJson,readSession,uploadsDir,audit,string,fileResponse}):null;
+  const analytics=accessModel?createAnalytics({db,accessModel,fail,json,readJson,readSession,requireCourse,audit,academics}):null;
+  const questionImport=accessModel?createQuestionImport({accessModel,fail,json,readJson,readSession}):null;
   const handler = async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
@@ -410,12 +442,18 @@ export async function createApp(options = {}) {
       const path = decodeURIComponent(url.pathname);
       const method = req.method;
       const auth = readSession(req);
+      if(auth?.preview&&!['GET','HEAD'].includes(method))fail(403,'La vista estudiante no genera entregas, notas ni avances.','PREVIEW_READ_ONLY');
       if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) csrf(req);
+      accessModel?.authorize(req,auth);
       const initialAllowed = (method === 'GET' && ['/api/status', '/api/settings', '/api/auth/me'].includes(path)) || (method === 'POST' && ['/api/auth/logout', '/api/auth/first-password'].includes(path));
       if (path.startsWith('/api/') && !initialAllowed) requirePersonalPassword(auth);
+      if(analytics&&await analytics.handler(req,res,path,method,auth))return;
+      if(questionImport&&await questionImport.handler(req,res,path,method,auth))return;
+      if(platform&&await platform.handler(req,res,path,method,auth))return;
+      if(library&&await library.handler(req,res,path,method,auth))return;
       if (await academics.handler(req,res,path,method,auth)) return;
       if (await quickResources.handler(req,res,path,method,auth)) return;
-      if (path === '/api/status' && method === 'GET') return json(res, { setupRequired:!one("SELECT id FROM users WHERE role='admin'"), uploadMaxBytes:UPLOAD_MAX_BYTES });
+      if (path === '/api/status' && method === 'GET') return json(res, { setupRequired:!one("SELECT id FROM users WHERE role='admin'"), uploadMaxBytes:UPLOAD_MAX_BYTES,modelVersion:accessModel?2:1 });
       if (path === '/api/settings' && method === 'GET') return json(res, settings());
       if (path === '/api/auth/me' && method === 'GET') return json(res, auth ? { user:userView(auth.user), assurance:auth.assurance } : { user:null, assurance:null });
       if (path === '/api/auth/login' && method === 'POST') {
@@ -428,7 +466,7 @@ export async function createApp(options = {}) {
         if (hasPassword && body.password.length > 256) fail(400, 'Contraseña no válida.');
         const validPassword = hasPassword ? await verifyPassword(body.password, user?.password_hash) : false;
         const fresh = user ? one('SELECT * FROM users WHERE id=?', user.id) : null;
-        if (!fresh?.active || fresh.document !== document || (hasPassword && (!validPassword || fresh.password_hash !== user.password_hash)) || (!hasPassword && user.role === 'admin')) fail(401, 'Los datos de acceso no son válidos.', 'INVALID_CREDENTIALS');
+        if (!fresh?.active || fresh.document !== document || (hasPassword && (!validPassword || fresh.password_hash !== user.password_hash)) || (!hasPassword && (accessModel?accessModel.p.staff(user.id):user.role === 'admin'))) fail(401, 'Los datos de acceso no son válidos.', 'INVALID_CREDENTIALS');
         if (!hasPassword) {
           requirePersonalPassword({ user:fresh });
           const at = now();
@@ -447,9 +485,9 @@ export async function createApp(options = {}) {
       }
       if (path === '/api/auth/first-password' && method === 'POST') {
         requireAuth(auth);
-        if (auth.user.role !== 'student' || auth.assurance !== 'password' || !auth.user.must_change_password) fail(403, 'Ingresa con tu contraseña inicial para configurar la personal.', 'INITIAL_PASSWORD_REQUIRED');
+        if ((!accessModel&&auth.user.role !== 'student') || auth.assurance !== 'password' || !auth.user.must_change_password) fail(403, 'Ingresa con tu contraseña inicial para configurar la personal.', 'INITIAL_PASSWORD_REQUIRED');
         const body = await readJson(req);
-        const error = passwordError(body.newPassword, 'student', auth.user.document);
+        const error = passwordError(body.newPassword, auth.user.role, auth.user.document);
         if (error) fail(400, error);
         if (body.confirmPassword !== body.newPassword) fail(400, 'Las contraseñas no coinciden.');
         authLimit(req, auth.user.document);
@@ -471,7 +509,8 @@ export async function createApp(options = {}) {
         const code = string(body.code, 'el código de activación', 128, true);
         const error = passwordError(body.password, 'student', document);
         if (error) fail(400, error);
-        const user = one("SELECT * FROM users WHERE document=? AND role='student' AND active=1", document);
+        const user = one(accessModel?"SELECT * FROM users WHERE document=? AND active=1":"SELECT * FROM users WHERE document=? AND role='student' AND active=1", document);
+        if(accessModel&&user&&accessModel.p.staff(user.id)){const staffError=passwordError(body.password,'admin',document);if(staffError)fail(400,staffError);}
         const record = user ? one('SELECT * FROM activations WHERE token_hash=? AND user_id=? AND expires_at>?', digest(code), user.id, now()) : null;
         if (!record || user.must_change_password) fail(401, 'El código de activación no es válido o ha vencido.', 'INVALID_ACTIVATION');
         const hash = await hashPassword(body.password);
@@ -504,13 +543,13 @@ export async function createApp(options = {}) {
         return json(res, issueSession(res, auth.user, 'password'));
       }
 
-      if (path === '/api/courses' && method === 'GET') return json(res, query('SELECT * FROM courses WHERE published=1 ORDER BY created_at DESC').map(course => courseView(course, auth)));
+      if (path === '/api/courses' && method === 'GET') return json(res, query('SELECT * FROM courses WHERE published=1 ORDER BY created_at DESC').filter(c=>!accessModel||canAccess(c,auth)).map(course => courseView(course, auth)));
       let match = /^\/api\/courses\/([^/]+)$/.exec(path);
-      if (match && method === 'GET') return json(res, courseView(requireCourse(match[1], auth), auth, true));
+      if (match && method === 'GET') {const course=requireCourse(match[1],auth);if(accessModel&&auth?.user.role==='student'&&!auth.preview)run('INSERT INTO learning_events(user_id,course_id,object_id,action,created_at) VALUES(?,?,?,?,?)',auth.user.id,course.id,course.id,'group.enter',now());return json(res, courseView(course, auth, true));}
       match = /^\/api\/resources\/([^/]+)\/preview$/.exec(path);
       if (match && ['GET', 'HEAD'].includes(method)) {
         const resource = one('SELECT r.*,m.course_id,m.published AS module_published FROM resources r JOIN modules m ON m.id=r.module_id WHERE r.id=?', match[1]);
-        if (!resource || resource.kind !== 'html') fail(404, 'Vista previa no encontrada.', 'NOT_FOUND');
+        if (!resource || !['html','lab'].includes(resource.kind)) fail(404, 'Vista previa no encontrada.', 'NOT_FOUND');
         requirePublishedResource(resource, auth);
         let content = resource.content;
         if (!content && resource.file_key) {
@@ -595,7 +634,7 @@ export async function createApp(options = {}) {
           audit(auth.user, 'settings.update');
           return json(res, settings());
         }
-        if (path === '/api/admin/students' && method === 'GET') return json(res, query("SELECT * FROM users WHERE role='student' ORDER BY name COLLATE NOCASE").map(studentView));
+        if (path === '/api/admin/students' && method === 'GET') return json(res, query("SELECT * FROM users WHERE role='student' ORDER BY name COLLATE NOCASE").filter(u=>!accessModel||(accessModel.p.roles(u.id).includes('student')&&(accessModel.global(auth)||query('SELECT course_id FROM enrollments WHERE student_id=?',u.id).some(e=>accessModel.p.can(auth.user.id,e.course_id,'view'))))).map(studentView));
         if (path === '/api/admin/students' && method === 'POST') {
           const body = await readJson(req);
           const student = await addStudent(body);
@@ -620,7 +659,7 @@ export async function createApp(options = {}) {
         if (match && method === 'POST') {
           await readJson(req);
           const user = existing('users', match[1], 'Estudiante');
-          if (user.role !== 'student') fail(403, 'No puedes restablecer administradores desde estudiantes.');
+          if ((accessModel?accessModel.p.roles(user.id).some(r=>r!=='student'):user.role !== 'student')) fail(403, 'No puedes restablecer administradores desde estudiantes.');
           const hash = await hashPassword(user.document);
           const fresh = existing('users', user.id, 'Estudiante');
           if (fresh.document !== user.document) fail(409, 'La cédula cambió. Repite el restablecimiento.');
@@ -634,7 +673,7 @@ export async function createApp(options = {}) {
         if (match && method === 'POST') {
           await readJson(req);
           const user = existing('users', match[1], 'Estudiante');
-          if (user.role !== 'student' || !user.active) fail(400, 'Solo puedes activar estudiantes habilitados.');
+          if ((accessModel?accessModel.p.roles(user.id).some(r=>r!=='student'):user.role !== 'student') || !user.active) fail(400, 'Solo puedes activar estudiantes habilitados.');
           if (user.must_change_password) fail(400, 'Este estudiante debe ingresar con su cédula como contraseña inicial.');
           run('DELETE FROM sessions WHERE user_id=?', user.id);
           audit(auth.user, 'student.activation.issue', user.id);
@@ -643,9 +682,9 @@ export async function createApp(options = {}) {
         match = /^\/api\/admin\/students\/([^/]+)$/.exec(path);
         if (match && ['PATCH', 'DELETE'].includes(method)) {
           const user = existing('users', match[1], 'Estudiante');
-          if (user.role !== 'student') fail(403, 'No puedes modificar administradores desde estudiantes.');
+          if ((accessModel?accessModel.p.roles(user.id).some(r=>r!=='student'):user.role !== 'student')) fail(403, 'No puedes modificar administradores desde estudiantes.');
           if (method === 'DELETE') {
-            run('UPDATE users SET active=0,updated_at=? WHERE id=?', now(), user.id);
+            if(accessModel)accessModel.p.setStatus(auth.user.id,user.id,'suspended');else run('UPDATE users SET active=0,updated_at=? WHERE id=?', now(), user.id);
             run('DELETE FROM sessions WHERE user_id=?', user.id);
             run('DELETE FROM activations WHERE user_id=?', user.id);
             audit(auth.user, 'student.suspend', user.id);
@@ -665,11 +704,12 @@ export async function createApp(options = {}) {
           } else {
             run('UPDATE users SET document=?,name=?,email=?,active=?,updated_at=? WHERE id=?', document, name, email, active, now(), user.id);
           }
+          if(accessModel)accessModel.p.setStatus(auth.user.id,user.id,active?'active':'suspended');
           if (!active || document !== user.document) { run('DELETE FROM sessions WHERE user_id=?', user.id); run('DELETE FROM activations WHERE user_id=?', user.id); }
           audit(auth.user, 'student.update', user.id);
           return json(res, studentView(existing('users', user.id, 'Estudiante')));
         }
-        if (path === '/api/admin/courses' && method === 'GET') return json(res, query('SELECT * FROM courses ORDER BY created_at DESC').map(course => courseView(course, auth, true)));
+        if (path === '/api/admin/courses' && method === 'GET') return json(res, query('SELECT * FROM courses ORDER BY created_at DESC').filter(c=>!accessModel||accessModel.p.can(auth.user.id,c.id,'view')).map(course => courseView(course, auth, true)));
         if (path === '/api/admin/courses' && method === 'POST') {
           const body = await readJson(req), id = randomUUID(), at = now();
           const title = string(body.title, 'el título', 200, true), description = string(body.description, 'la descripción', 10000);
@@ -677,6 +717,7 @@ export async function createApp(options = {}) {
           if (!['public', 'document', 'password'].includes(accessMode)) fail(400, 'La modalidad de acceso no es válida.');
           const published = own(body, 'published') ? boolean(body.published, 'Publicado') : 0;
           run('INSERT INTO courses(id,title,description,access_mode,published,cover_url,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)', id, title, description, accessMode, published, webUrl(body.coverUrl), at, at);
+          if(accessModel){run("UPDATE courses SET entity_kind='template',lifecycle=? WHERE id=?",published?'active':'draft',id);run('INSERT INTO course_staff VALUES(?,?,1,1,1)',id,auth.user.id);}
           audit(auth.user, 'course.create', id);
           return json(res, courseView(existing('courses', id, 'Curso'), auth, true), 201);
         }
@@ -690,6 +731,7 @@ export async function createApp(options = {}) {
           const course = existing('courses', match[1], 'Curso');
           if (method === 'GET') return json(res, courseView(course, auth, true));
           if (method === 'DELETE') {
+            if(accessModel){run("UPDATE courses SET lifecycle='archived',published=0 WHERE id=?",course.id);audit(auth.user,'course.archived',course.id);return json(res,{success:true,archived:true});}
             const files = query('SELECT r.file_key FROM resources r JOIN modules m ON m.id=r.module_id WHERE m.course_id=?', course.id).concat(academics.courseFiles(course.id));
             files.push(...query('SELECT file_key FROM quick_resources WHERE course_id=?', course.id));
             run('DELETE FROM courses WHERE id=?', course.id);
@@ -705,14 +747,15 @@ export async function createApp(options = {}) {
           const published = own(body, 'published') ? boolean(body.published, 'Publicado') : course.published;
           const coverUrl = own(body, 'coverUrl') ? webUrl(body.coverUrl) : course.cover_url;
           run('UPDATE courses SET title=?,description=?,access_mode=?,published=?,cover_url=?,updated_at=? WHERE id=?', title, description, accessMode, published, coverUrl, now(), course.id);
+          if(accessModel)run('UPDATE courses SET lifecycle=? WHERE id=?',published?'active':'draft',course.id);
           audit(auth.user, 'course.update', course.id);
           return json(res, courseView(existing('courses', course.id, 'Curso'), auth, true));
         }
-        if (path === '/api/admin/enrollments' && method === 'GET') return json(res, query('SELECT e.*,u.name AS student_name,u.document AS student_document,c.title AS course_title FROM enrollments e JOIN users u ON u.id=e.student_id JOIN courses c ON c.id=e.course_id ORDER BY e.created_at DESC').map(row => ({ id:row.id, studentId:row.student_id, courseId:row.course_id, studentName:row.student_name, studentDocument:row.student_document, courseTitle:row.course_title, status:row.status, startsAt:row.starts_at, expiresAt:row.expires_at, createdAt:row.created_at, active:isEnrolled(row.student_id, row.course_id) })));
+        if (path === '/api/admin/enrollments' && method === 'GET') return json(res, query('SELECT e.*,u.name AS student_name,u.document AS student_document,c.title AS course_title FROM enrollments e JOIN users u ON u.id=e.student_id JOIN courses c ON c.id=e.course_id ORDER BY e.created_at DESC').filter(row=>!accessModel||accessModel.p.can(auth.user.id,row.course_id,'view')).map(row => ({ id:row.id, studentId:row.student_id, courseId:row.course_id, studentName:row.student_name, studentDocument:row.student_document, courseTitle:row.course_title, status:row.status, startsAt:row.starts_at, expiresAt:row.expires_at, createdAt:row.created_at, active:isEnrolled(row.student_id, row.course_id) })));
         if (path === '/api/admin/enrollments' && method === 'POST') {
           const body = await readJson(req);
           const student = existing('users', string(body.studentId, 'el estudiante', 100, true), 'Estudiante');
-          if (student.role !== 'student' || !student.active) fail(400, 'Selecciona un estudiante habilitado.');
+          if ((accessModel?!accessModel.p.roles(student.id).includes('student'):student.role !== 'student') || !student.active) fail(400, 'Selecciona un estudiante habilitado.');
           const course = existing('courses', string(body.courseId, 'el curso', 100, true), 'Curso');
           const startsAt = timestamp(body.startsAt, 'La fecha inicial'), expiresAt = timestamp(body.expiresAt, 'La fecha final');
           validDates(startsAt, expiresAt);
@@ -830,7 +873,7 @@ export async function createApp(options = {}) {
       return fileResponse(req, res, filePath, mime, basename(filePath));
     } catch (error) {
       if (res.headersSent) { res.destroy(); return; }
-      const status = error instanceof ApiError || error instanceof MigrationError ? error.status : error instanceof URIError ? 400 : 500;
+      const status = error instanceof ApiError || error instanceof MigrationError || error instanceof PermissionError ? error.status : error instanceof URIError ? 400 : 500;
       if (status === 500) console.error('Error interno:', error.message);
       res.removeHeader('Content-Length');
       res.removeHeader('Content-Disposition');

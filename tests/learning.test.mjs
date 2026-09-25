@@ -439,4 +439,3 @@ test('una base con progress antiguo añade columnas sin perder filas y permite r
     db = null;
   }
 });
-

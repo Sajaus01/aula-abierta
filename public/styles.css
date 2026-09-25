@@ -69,3 +69,8 @@ dialog.resource-viewer[open]{display:flex;flex-direction:column}
 .publication-state{font-weight:600}
 .publication-module .resource-row{flex-wrap:wrap}
 .publication-module .resource-row .spacer{min-width:140px}
+
+/* Integrated course management and accessible data views. */
+.platform-toolbar{margin:16px 0;gap:10px}.analytics-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px}.analytics-metrics strong{font-size:2rem}.question-image{max-width:100%;max-height:400px;object-fit:contain}.academic-question[hidden]{display:none}.panel details{padding:12px 0;border-bottom:1px solid #e0e5e1}.panel progress{width:130px;accent-color:#315b4b}#excel-mapping{margin-top:16px}#excel-mapping td{white-space:normal;min-width:140px}.platform-toolbar .btn{white-space:normal}.grade-periods{margin:20px 0}.table-wrap small{display:block}main{background-size:cover;background-attachment:fixed}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid #226bc2;outline-offset:3px}@media(max-width:600px){.platform-toolbar{display:grid;grid-template-columns:1fr 1fr}.analytics-metrics{grid-template-columns:1fr 1fr}}
+
+[hidden]{display:none!important}

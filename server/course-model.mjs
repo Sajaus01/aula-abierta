@@ -24,6 +24,7 @@ export function setupCourseModel(db){
  CREATE TABLE IF NOT EXISTS schema_migrations(name TEXT PRIMARY KEY,applied_at TEXT NOT NULL,report TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS legacy_course_groups(template_id TEXT PRIMARY KEY REFERENCES courses(id),group_id TEXT NOT NULL UNIQUE REFERENCES courses(id),report TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS enrollment_history(id TEXT PRIMARY KEY,enrollment_id TEXT NOT NULL,student_id TEXT NOT NULL,course_id TEXT NOT NULL,action TEXT NOT NULL,actor_id TEXT,details TEXT NOT NULL DEFAULT '{}',created_at TEXT NOT NULL);
+ CREATE TRIGGER IF NOT EXISTS new_user_role AFTER INSERT ON users BEGIN INSERT OR IGNORE INTO user_roles(user_id,role) VALUES(NEW.id,NEW.role); END;
  CREATE TRIGGER IF NOT EXISTS enroll_group_insert BEFORE INSERT ON enrollments WHEN (SELECT entity_kind FROM courses WHERE id=NEW.course_id)='template' BEGIN SELECT RAISE(ABORT,'Las matrículas requieren un grupo'); END;
  CREATE TRIGGER IF NOT EXISTS enroll_group_update BEFORE UPDATE OF course_id ON enrollments WHEN (SELECT entity_kind FROM courses WHERE id=NEW.course_id)='template' BEGIN SELECT RAISE(ABORT,'Las matrículas requieren un grupo'); END;`);
 }

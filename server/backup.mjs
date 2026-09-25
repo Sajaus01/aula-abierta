@@ -11,6 +11,8 @@ function fileKeys(db){
  const names=tables(db),keys=new Set();
  for(const table of ['resources','quick_resources','activity_files'])if(names.includes(table))for(const row of db.prepare(`SELECT file_key FROM ${table} WHERE file_key IS NOT NULL`).all())keys.add(row.file_key);
  if(names.includes('submissions'))for(const row of db.prepare('SELECT payload FROM submissions').all()){const p=JSON.parse(row.payload);for(const f of p.files??(p.file?[p.file]:[]))keys.add(f.key);}
+ if(names.includes('activity_versions'))for(const row of db.prepare('SELECT files FROM activity_versions').all())for(const f of JSON.parse(row.files))keys.add(f.key);
+ if(names.includes('library_items')){const walk=v=>{if(Array.isArray(v))v.forEach(walk);else if(v&&typeof v==='object')for(const [k,x] of Object.entries(v)){if(k==='file_key'&&x)keys.add(x);else walk(x);}};for(const row of db.prepare('SELECT payload FROM library_items').all())walk(JSON.parse(row.payload));}
  return [...keys].sort().map(key=>{if(typeof key!=='string'||key!==basename(key)||/[\\/\x00]/.test(key))throw Error('Ruta de adjunto no válida: se canceló el respaldo.');return key;});
 }
 export function createBackup(dataDirectory,{label='manual'}={}){

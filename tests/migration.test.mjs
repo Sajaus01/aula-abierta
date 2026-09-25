@@ -278,4 +278,3 @@ test('los paquetes inválidos se rechazan completos sin filas, archivos ni bloqu
   }
   status(await importBundle(app.admin, value), 201);
 });
-

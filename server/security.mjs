@@ -47,4 +47,3 @@ export class RateLimiter {
     return item.count <= maximum;
   }
 }
-

@@ -6,7 +6,7 @@ export const submissionFiles = payload => payload.files ?? (payload.file ? [{...
 export function createAcademicFiles({db,fail,validateFile,uploadsDir}) {
  const all=(sql,...args)=>db.prepare(sql).all(...args);
  const instructionFiles=id=>all('SELECT id,file_key AS key,name,mime,size FROM activity_files WHERE activity_id=? ORDER BY position,id',id);
- function remove(file){try{unlinkSync(join(uploadsDir,file.key));}catch(error){if(error.code!=='ENOENT')console.error('No se pudo retirar un adjunto académico.');}}
+ function remove(file){if(db.prepare("SELECT name FROM sqlite_master WHERE name='activity_versions'").get()&&db.prepare("SELECT 1 FROM activity_versions v,json_each(v.files) f WHERE json_extract(f.value,'$.key')=? LIMIT 1").get(file.key))return;try{unlinkSync(join(uploadsDir,file.key));}catch(error){if(error.code!=='ENOENT')console.error('No se pudo retirar un adjunto académico.');}}
  function prepare(existing,uploads,retainIds,{teacher=false}={}){
   if(uploads===undefined)uploads=[];
   if(!Array.isArray(uploads)||uploads.length>5)fail(400,'Puedes adjuntar hasta 5 archivos.');

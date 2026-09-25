@@ -31,4 +31,3 @@ test('la guía del estudiante no contiene instrucciones de administración', () 
   assert.match(quickGuide('admin').flat().join(' '), /Registra y matricula/);
   assert.deepEqual(quickGuide(undefined), quickGuide('student'));
 });
-
