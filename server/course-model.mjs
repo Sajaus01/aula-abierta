@@ -1,6 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import {copyFileSync,unlinkSync,statSync,statfsSync} from 'node:fs';
 import {join,basename,extname} from 'node:path';
+import {setupPermissionAudit} from './permissions.mjs';
 
 const now=()=>new Date().toISOString();
 const ident=s=>'"'+s.replaceAll('"','""')+'"';
@@ -9,6 +10,7 @@ function add(db,table,name,definition){if(!db.prepare(`PRAGMA table_info(${table
 
 // Called inside the upgrade transaction, never automatically by a read request.
 export function setupCourseModel(db){
+ setupPermissionAudit(db);
  add(db,'courses','entity_kind',"TEXT NOT NULL DEFAULT 'legacy' CHECK(entity_kind IN ('legacy','template','group'))");
  add(db,'courses','template_id','TEXT REFERENCES courses(id) ON DELETE RESTRICT');
  add(db,'courses','cohort',"TEXT NOT NULL DEFAULT ''");
@@ -70,6 +72,7 @@ export function migrateCourseGroups(db,uploadsDir,{masterId}={}){
   setupCourseModel(db);
   db.exec("INSERT OR IGNORE INTO user_roles SELECT id,role FROM users; UPDATE users SET account_status=CASE WHEN active=1 THEN 'active' ELSE 'deactivated' END");
   db.prepare("INSERT OR IGNORE INTO user_roles VALUES(?,'master')").run(masterId);
+  db.prepare('INSERT INTO permission_audit(actor_id,action,target_id,details,created_at) VALUES(?,?,?,?,?)').run(masterId,'roles.migrate',masterId,JSON.stringify({before:['admin'],after:['admin','master']}),now());
   const report={version:1,createdAt:now(),masterId,courses:[]};
   for(const course of db.prepare("SELECT * FROM courses WHERE entity_kind='legacy' ORDER BY id").all()){
    const before=courseInventory(db,course.id);

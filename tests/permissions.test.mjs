@@ -25,7 +25,7 @@ test('roles and scoped capabilities enforce master protection, account state and
   assert.throws(()=>p.setRoles('teacher','student',['admin']),/administración/);
   p.setStatus('administrative','teacher','suspended');assert.equal(p.can('teacher','one','edit'),false);
   p.setStatus('administrative','teacher','active');assert.equal(p.can('teacher','one','edit'),true);
-  assert.equal(db.prepare('SELECT count(*) n FROM permission_audit').get().n,6);
+  assert.equal(db.prepare('SELECT count(*) n FROM permission_audit').get().n,7);
   assert.equal(db.prepare('SELECT count(*) n FROM enrollments').get().n,0);
  }finally{db.close();rmSync(root,{recursive:true,force:true});}
 });

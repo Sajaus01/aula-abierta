@@ -47,6 +47,7 @@ export function createPermissions(db){
   assert(can(actor,courseId,'manage'),'No puedes gestionar colaboradores de este curso o grupo.');
   assert(active(target)&&roles(target).some(r=>['teacher','admin','master'].includes(r)),'El colaborador debe tener un perfil docente o administrativo activo.');
   assert(rights&&Object.keys(permissions).every(k=>typeof rights[k]==='boolean'),'Define los permisos de edición, calificación y gestión.');
+  assert(global(actor)||Object.keys(permissions).every(k=>!rights[k]||can(actor,courseId,k)),'No puedes conceder permisos que tú no tienes.');
   db.prepare('INSERT INTO course_staff VALUES(?,?,?,?,?) ON CONFLICT(course_id,user_id) DO UPDATE SET can_edit=excluded.can_edit,can_grade=excluded.can_grade,can_manage=excluded.can_manage').run(courseId,target,Number(rights.edit),Number(rights.grade),Number(rights.manage));
   log(actor,'collaborator.permissions',target,{courseId,...rights});return rights;
  });}
