@@ -3,11 +3,10 @@ import {revisionDecision,validatePeriods,gradeCalculation} from '../server/acade
 import {createAcademicTools} from '../public/academic-tools.js';
 const fail=(code,message)=>{throw Error(message);};
 test('weight impact is confirmed even when the edited activity has no responses',async()=>{
- let confirmations=0;const previous=globalThis.window;
- globalThis.window={confirm:()=>{confirmations++;return false;}};
- try{const tools=createAcademicTools({getState:()=>({user:{roles:['teacher']}}),api:async()=>({affectedResponses:0,impact:[{name:'Student',before:5,after:2.5}],policy:'keep',oldWeight:0,newWeight:50})});
- assert.equal(await tools.confirmActivity('activity',{}),false);assert.equal(confirmations,1);
- }finally{globalThis.window=previous;}
+ let confirmations=0;
+ const form={activityEditor:{confirmImpact:async r=>{confirmations++;assert.equal(r.impact[0].after,2.5);return false;}}};
+ const tools=createAcademicTools({getState:()=>({user:{roles:['teacher']}}),api:async()=>({affectedResponses:0,impact:[{name:'Student',before:5,after:2.5}],policy:'keep',oldWeight:0,newWeight:50})});
+ assert.equal(await tools.confirmActivity('activity',{},form),false);assert.equal(confirmations,1);
 });
 test('evaluated edits require an explicit choice; editorial corrections keep completed work',()=>{
  const before={kind:'quiz',title:'T',description:'D',maxPoints:1,questions:[{id:'q',type:'single',prompt:'Typo',options:['A','B'],correct:[0],points:1}]};
@@ -18,6 +17,21 @@ test('evaluated edits require an explicit choice; editorial corrections keep com
  assert.throws(()=>revisionDecision(before,changed,{changeKind:'editorial'},3,false,fail),/modifica/);
  assert.equal(revisionDecision(before,changed,{changeKind:'evaluated',revisionPolicy:'keep'},3,false,fail).reset,false);
  assert.equal(revisionDecision(before,changed,{changeKind:'evaluated',revisionPolicy:'repeat'},3,false,fail).reset,true);
+});
+
+test('reviewing an editorial edit does not announce a repeated assignment from an older revision',async()=>{
+ let seen=null;
+ const tools=createAcademicTools({getState:()=>({user:{roles:['teacher']}}),api:async(path,request)=>{assert.equal(request.body.preview,true);return {affectedResponses:1,changed:true,policy:'repeat',impact:[]};}});
+ const form={activityEditor:{confirmImpact:async r=>{seen=r;return true;}}};
+ assert.equal(await tools.confirmActivity('activity',{changeKind:'editorial'},form),true);assert.equal(seen.policy,'keep');
+ await tools.confirmActivity('activity',{changeKind:'evaluated'},form);assert.equal(seen.policy,'repeat');
+});
+
+test('new activities and edits without responses or grade impact do not require impact approval',async()=>{
+ let calls=0;
+ const tools=createAcademicTools({getState:()=>({user:{roles:['teacher']}}),api:async()=>{calls++;return {affectedResponses:0,impact:[]};}});
+ assert.equal(await tools.confirmActivity(null,{}),true);assert.equal(calls,0);
+ assert.equal(await tools.confirmActivity('activity',{}),true);assert.equal(calls,1);
 });
 test('period weights, real zero, ungraded, exempt and retained historical scale are distinct',()=>{
  const periods=validatePeriods([{id:'one',title:'One',weight:30},{id:'two',title:'Two',weight:70}],fail);assert.throws(()=>validatePeriods([{id:'one',title:'One',weight:30}],fail),/100/);
