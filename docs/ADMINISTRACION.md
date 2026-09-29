@@ -59,6 +59,12 @@ Agrupa los recursos en módulos. Un material puede ser un archivo, enlace de vid
 
 Antes de publicar, prueba el recorrido como estudiante en una sesión separada del navegador. El administrador puede revisar borradores, por lo que su vista por sí sola no demuestra qué ve un estudiante.
 
+## Eliminar cursos y grupos
+
+Abre el curso plantilla o el grupo, entra en **Editar curso** o **Editar grupo** y busca **Eliminar** al final del formulario. La primera confirmación muestra cuántas matrículas, capítulos, materiales, actividades, entregas, notas y archivos se eliminarán. En la segunda debes escribir el nombre exacto y marcar que entiendes la pérdida de datos. Solo una persona con permiso de gestión puede completar la eliminación.
+
+Un curso plantilla con grupos vinculados no se puede borrar todavía: elimina primero los grupos, uno por uno. Al eliminar un grupo se borran sus matrículas, avances, actividades, entregas, calificaciones y archivos asociados; la plantilla y las cuentas de los estudiantes permanecen. Si necesitas ocultarlo conservando su historial, usa **Estado → Archivado** en lugar de eliminarlo. Antes de borrar datos reales, conserva una copia de seguridad de la base de datos y de los archivos del servidor.
+
 ## Datos y mantenimiento
 
 Desactiva una cuenta o revoca su matrícula cuando corresponda. Conserva únicamente los datos necesarios y controla quién tiene acceso al servidor y a sus respaldos. Para trasladar la instalación debes conservar tanto la base de datos como los archivos; consulta [Publicación](PUBLICACION.md).

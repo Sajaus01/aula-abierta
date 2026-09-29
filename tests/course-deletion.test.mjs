@@ -1,0 +1,58 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,rm,readdir} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join,resolve,sep} from 'node:path';
+import {createApp} from '../server/index.mjs';
+
+const pdf={name:'desarrollo.pdf',base64:Buffer.from('%PDF-1.4\nDesarrollo sintético').toString('base64')};
+
+test('eliminar grupo y plantilla exige dos confirmaciones, permisos, inventario vigente y limpia dependencias',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'aula-delete-course-'));
+ const app=await createApp({dataDir:root,env:{NODE_ENV:'test',AULA_MODEL_V2:'1',ADMIN_DOCUMENT:'99900001',ADMIN_PASSWORD:'Master-Synthetic-2026!'}});
+ await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+app.server.address().port;
+ t.after(async()=>{await new Promise(r=>app.server.close(r));assert.ok(resolve(root).startsWith(resolve(tmpdir())+sep+'aula-delete-course-'));await rm(root,{recursive:true,force:true});});
+ function client(){let cookie='';return async(path,body,method=body?'POST':'GET',expected=200)=>{const r=await fetch(base+'/api'+path,{method,headers:{'Content-Type':'application/json',Origin:base,Cookie:cookie},body:body===undefined?undefined:JSON.stringify(body)});if(r.headers.get('set-cookie'))cookie=r.headers.get('set-cookie').split(';')[0];const data=await r.json();assert.equal(r.status,expected,JSON.stringify(data));return data.data;};}
+ const master=client(),teacher=client(),student=client(),foreign=client();
+ await master('/auth/login',{document:'99900001',password:'Master-Synthetic-2026!'});
+ const template=await master('/admin/courses',{title:'Plantilla de prueba'},'POST',201);
+ const group=await master(`/platform/courses/${template.id}/clone`,{kind:'group',title:'Grupo A de prueba',cohort:'2026-2',code:'A'},'POST',201);
+ await master(`/platform/courses/${group.id}/state`,{state:'active'});
+ await master(`/admin/courses/${group.id}/enrollments/bulk`,{students:[{document:'99900003',name:'Estudiante'}]},'POST',201);
+ await student('/auth/login',{document:'99900003',password:'99900003'});await student('/auth/first-password',{newPassword:'4567',confirmPassword:'4567'});
+ const chapter=await master(`/admin/courses/${group.id}/modules`,{title:'Capítulo',published:true},'POST',201);
+ await master(`/admin/modules/${chapter.id}/resources`,{title:'Material PDF',kind:'pdf',file:pdf,published:true},'POST',201);
+ const task=await master(`/academics/courses/${group.id}/activities`,{title:'Tarea',kind:'task',status:'published',moduleId:chapter.id,weight:100},'POST',201);
+ const submission=await student(`/academics/activities/${task.id}/submit`,{requestId:'delete-group-attempt',action:'submit',activityRevision:1,files:[pdf]},'POST',201);
+ await master(`/academics/submissions/${submission.id}/grade`,{version:submission.version,points:90,feedback:'Revisado',published:true,reason:'Evaluación sintética'},'PATCH');
+ const templatePath=`/platform/courses/${template.id}/delete`,groupPath=`/platform/courses/${group.id}/delete`;
+ let first=await master(templatePath);assert.equal(first.linkedGroups,1);
+ await master(templatePath,{confirmed:true,confirmTitle:first.title,counts:first.counts},'DELETE',409);
+ let preview=await master(groupPath);assert.equal(preview.kind,'group');assert.equal(preview.counts.students,1);assert.equal(preview.counts.submissions,1);assert.equal(preview.counts.files,2);
+ await student(groupPath,undefined,'GET',403);
+ await master('/platform/users',{document:'99900002',name:'Docente sin gestión',roles:['teacher']},'POST',201);
+ await teacher('/auth/login',{document:'99900002',password:'99900002'});await teacher('/auth/first-password',{newPassword:'Docente-Synthetic-2026!',confirmPassword:'Docente-Synthetic-2026!'});
+ await master(`/platform/courses/${group.id}/staff`,{userId:(await master('/platform/users')).find(u=>u.document==='99900002').id,edit:true,grade:true,manage:false});
+ await teacher(groupPath,undefined,'GET',403);
+ await teacher(groupPath,{confirmed:true,confirmTitle:preview.title,counts:preview.counts},'DELETE',403);
+ await foreign(groupPath,undefined,'GET',403);
+ await master(groupPath,{confirmed:true,confirmTitle:'Nombre incorrecto',counts:preview.counts},'DELETE',400);
+ await master(groupPath,{confirmed:false,confirmTitle:preview.title,counts:preview.counts},'DELETE',400);
+ await master(groupPath,{confirmed:true,confirmTitle:preview.title},'DELETE',409);
+ await master(`/admin/courses/${group.id}/modules`,{title:'Otro capítulo'},'POST',201);
+ await master(groupPath,{confirmed:true,confirmTitle:preview.title,counts:preview.counts},'DELETE',409);
+ preview=await master(groupPath);assert.equal(preview.counts.modules,2);
+ assert.equal((await readdir(join(root,'uploads'))).length,2);
+ await master(groupPath,{confirmed:true,confirmTitle:preview.title,counts:preview.counts},'DELETE');
+ assert.equal((await readdir(join(root,'uploads'))).length,0);
+ await master(`/admin/courses/${group.id}`,undefined,'GET',403);
+ assert.equal(app.db.prepare('PRAGMA foreign_key_check').all().length,0);
+ assert.equal(app.db.prepare('SELECT COUNT(*) n FROM submissions').get().n,0);
+ assert.equal(app.db.prepare('SELECT COUNT(*) n FROM grade_audit').get().n,0);
+ assert.equal(app.db.prepare('SELECT COUNT(*) n FROM enrollment_history WHERE course_id=?').get(group.id).n,0);
+ assert.equal((await student('/courses')).length,0);
+ first=await master(templatePath);assert.equal(first.linkedGroups,0);
+ await master(templatePath,{confirmed:true,confirmTitle:first.title,counts:first.counts},'DELETE');
+ assert.equal((await master('/admin/courses')).length,0);
+ assert.equal(app.db.prepare('PRAGMA foreign_key_check').all().length,0);
+});

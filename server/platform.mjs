@@ -1,11 +1,25 @@
 import {randomUUID} from 'node:crypto';
+import {unlinkSync} from 'node:fs';
+import {join,basename} from 'node:path';
 import {cloneCourse} from './course-model.mjs';
+import {courseInventory} from './course-model.mjs';
+import {submissionFiles} from './academic-files.mjs';
 
 export function createPlatform(ctx){
  const {db,accessModel:a,fail,json,readJson,readSession,uploadsDir,addStudent,activation,hashPassword,token,audit,courseView,string,webUrl}=ctx;
  const all=(sql,...p)=>db.prepare(sql).all(...p),one=(sql,...p)=>db.prepare(sql).get(...p),run=(sql,...p)=>db.prepare(sql).run(...p),now=()=>new Date().toISOString();
  const clean=u=>({id:u.id,name:u.name,document:u.document,email:u.email,roles:a.p.roles(u.id),accountStatus:u.account_status,active:Boolean(u.active),mustChangePassword:Boolean(u.must_change_password)});
  const transactions=fn=>{db.exec('BEGIN IMMEDIATE');try{const result=fn();db.exec('COMMIT');return result;}catch(e){db.exec('ROLLBACK');throw e;}};
+ function deletionFiles(id){
+  const keys=new Set();const add=key=>{if(typeof key==='string'&&key)keys.add(key);};
+  all('SELECT r.file_key FROM resources r JOIN modules m ON m.id=r.module_id WHERE m.course_id=?',id).forEach(r=>add(r.file_key));
+  all('SELECT file_key FROM quick_resources WHERE course_id=?',id).forEach(r=>add(r.file_key));
+  all('SELECT f.file_key FROM activity_files f JOIN activities a ON a.id=f.activity_id WHERE a.course_id=?',id).forEach(r=>add(r.file_key));
+  all('SELECT s.payload FROM submissions s JOIN activities a ON a.id=s.activity_id WHERE a.course_id=?',id).forEach(r=>submissionFiles(JSON.parse(r.payload)).forEach(f=>add(f.key)));
+  all('SELECT v.files FROM activity_versions v JOIN activities a ON a.id=v.activity_id WHERE a.course_id=?',id).forEach(r=>JSON.parse(r.files).forEach(f=>add(f.key||f.file_key)));
+  return [...keys];
+ }
+ function deletionPreview(id){const course=one('SELECT * FROM courses WHERE id=?',id);if(!course)fail(404,'Curso o grupo no encontrado.');const linkedGroups=one("SELECT COUNT(*) n FROM courses WHERE template_id=? AND entity_kind='group'",id).n;return {id:course.id,title:course.title,kind:course.entity_kind,linkedGroups,counts:{...courseInventory(db,id),files:deletionFiles(id).length}};}
  async function handler(req,res,path,method,auth){
   if(!path.startsWith('/api/platform/'))return false;
   const send=(data,status)=>{json(res,data,status);return true;};
@@ -34,8 +48,30 @@ export function createPlatform(ctx){
    }
   }
   if(path==='/api/platform/collaborators'&&method==='GET'){staff();return send(all("SELECT DISTINCT u.id,u.name FROM users u JOIN user_roles r ON r.user_id=u.id WHERE u.active=1 AND r.role IN ('master','admin','teacher') ORDER BY u.name"));}
-  m=/^\/api\/platform\/courses\/([^/]+)\/(clone|staff|state|appearance|groups)$/.exec(path);
+  m=/^\/api\/platform\/courses\/([^/]+)\/(clone|staff|state|appearance|groups|delete)$/.exec(path);
   if(m){const [,id,action]=m;staff();a.requireScope(auth,id,action==='groups'?'view':action==='appearance'?'edit':'manage');
+   if(action==='delete'&&method==='GET')return send(deletionPreview(id));
+   if(action==='delete'&&method==='DELETE'){
+    const b=await body();a.requireScope(auth,id,'manage');
+    const result=transactions(()=>{
+     const preview=deletionPreview(id);
+     if(!['template','group'].includes(preview.kind))fail(400,'Este curso no admite eliminación desde esta vista.');
+     if(preview.linkedGroups)fail(409,'Elimina primero los grupos vinculados a este curso plantilla.');
+     if(b.confirmed!==true||b.confirmTitle!==preview.title)fail(400,'Escribe el nombre exacto y confirma la eliminación.');
+     if(JSON.stringify(b.counts)!==JSON.stringify(preview.counts))fail(409,'Los datos del curso cambiaron. Revisa de nuevo la eliminación.');
+     const keys=deletionFiles(id);
+     for(const key of keys)if(key!==basename(key)||/[\\/\x00]/.test(key))fail(400,'Se encontró un archivo no válido. No se eliminó el curso.');
+     audit(auth.user,'course.delete',id,{deleted:preview.counts,kind:preview.kind});
+     run('DELETE FROM grade_audit WHERE submission_id IN (SELECT s.id FROM submissions s JOIN activities a ON a.id=s.activity_id WHERE a.course_id=?)',id);
+     run('DELETE FROM learning_events WHERE course_id=?',id);
+     run('DELETE FROM enrollment_history WHERE course_id=?',id);
+     run('DELETE FROM legacy_course_groups WHERE template_id=? OR group_id=?',id,id);
+     run('DELETE FROM courses WHERE id=?',id);
+     return {kind:preview.kind,keys};
+    });
+    for(const key of result.keys)try{unlinkSync(join(uploadsDir,key));}catch(error){if(error.code!=='ENOENT')console.error('No se pudo retirar un archivo del curso eliminado.');}
+    return send({success:true,kind:result.kind});
+   }
    if(action==='groups'&&method==='GET')return send(all("SELECT * FROM courses WHERE template_id=? AND entity_kind='group'",id).filter(c=>a.p.can(auth.user.id,c.id,'view')).map(c=>courseView(c,auth)));
    if(action==='staff'&&method==='GET')return send(all('SELECT s.*,u.name FROM course_staff s JOIN users u ON u.id=s.user_id WHERE s.course_id=?',id));
    if(method==='POST'){
