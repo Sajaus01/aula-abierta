@@ -337,9 +337,10 @@ function bindForms() {
  document.getElementById('settings-form')?.addEventListener('submit',ev=>{ev.preventDefault();submitForm(ev.currentTarget,async fd=>{state.settings=await patch('/admin/settings',values(fd));await render();toast('Configuración guardada');});});
 }
 modal.addEventListener('submit',ev=>{if(ev.target.id==='modal-form'){ev.preventDefault();submitForm(ev.target,fd=>modalHandler(fd));}});
-modal.addEventListener('input',()=>{if(modal.querySelector('form'))modal.dataset.dirty='true';});
-modal.addEventListener('change',()=>{if(modal.querySelector('form'))modal.dataset.dirty='true';});
+modal.addEventListener('input',ev=>{if(ev.target.closest('form'))modal.dataset.dirty='true';});
+modal.addEventListener('change',ev=>{if(ev.target.closest('form'))modal.dataset.dirty='true';});
 function canDismissModal(after=()=>modal.close()){
+ if(modal.getAttribute('aria-busy')==='true')return false;
  if(state.bulkEnrollmentBusy)return false;
  if(modal.dataset.dirty!=='true')return true;
  pendingModalDismiss=after;

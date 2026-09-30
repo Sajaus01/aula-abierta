@@ -1,5 +1,20 @@
 # Actividades, entregas y calificaciones
 
+## Revisar y calificar entregas
+
+Abre la actividad y pulsa **Comenzar revisión** o **Revisar** en la fila del estudiante. La revisión ocupa toda la pantalla: a la izquierda están los estudiantes y filtros; en el centro, las respuestas y archivos; a la derecha, la calificación y devolución. Puedes buscar por nombre o cédula y avanzar con **Anterior / Siguiente**. En pantallas pequeñas, **Calificar / Devolver** lleva directamente al panel de acciones.
+
+- **Devolver para corregir** está al principio del panel y también en la lista de entregas. Escribe las indicaciones y, si lo necesitas, un nuevo plazo. El estudiante conserva sus respuestas, archivos y el mismo intento; la nota anterior se retira hasta el reenvío.
+- **Guardar sin publicar** conserva una calificación interna; si ya estaba publicada, la retira de la vista del estudiante. **Publicar nota y comentarios** hace visibles ambos. **Guardar y revisar siguiente** conserva la visibilidad que tenía la nota y abre el siguiente registro de la lista filtrada.
+- Asigna puntos directamente o usa **Automática**, **Máxima** o **Cero**. Puedes añadir comentarios, usar textos de apoyo y cambiar el motivo que quedará en el historial de calificaciones. Los soportes requeridos deben confirmarse como revisados para publicar.
+- Las preguntas muestran las opciones seleccionadas y la respuesta correcta, con un índice para saltar entre ellas. Los PDF e imágenes se previsualizan junto a las respuestas; los documentos de Office se descargan. **Ver enunciado** permite consultar las instrucciones sin abandonar la revisión.
+- Un borrador permite consultar el avance guardado, pero no calificar. Una entrega devuelta permite consultar la corrección y **Ajustar indicaciones o ampliar el plazo**. Esta actualización conserva las respuestas e inicia de nuevo el temporizador del cuestionario al volver a abrirlo.
+- Los intentos de versiones anteriores están en el filtro de historial y son de consulta. Solo se devuelve el último intento enviado, sin otro intento en borrador. Si la actividad está oculta, primero debe publicarse para admitir correcciones.
+
+El sistema avisa antes de cambiar de estudiante o cerrar si hay cambios sin guardar, y evita sobrescribir una entrega modificada desde otra sesión. **Actualizar** consulta las respuestas más recientes guardadas en el servidor.
+
+En el **Libro de calificaciones** también puedes buscar por nombre o cédula y filtrar estudiantes con evaluación completa o incompleta. La columna de nombres permanece visible al desplazar las actividades horizontalmente.
+
 ## Crear actividades
 
 Abre un curso y pulsa **Actividad** en el capítulo donde quieras crearla: ese capítulo queda seleccionado automáticamente. También puedes usar **Gestionar actividades → Crear actividad** o **Actividades y notas** en el menú. Los materiales se siguen cargando desde los capítulos, con **Material**.

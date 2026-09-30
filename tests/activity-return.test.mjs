@@ -42,8 +42,15 @@ test('modern groups expose saved work to teachers and return a quiz without spen
  app.db.prepare("UPDATE activities SET config=json_set(config,'$.dueAt',json(?)) WHERE id=?").run(JSON.stringify(new Date(Date.now()-3600000).toISOString()),activity.id);
  draft=await student(endpoint+'/submit',{requestId,activityRevision:activity.revision,version:returned.version,action:'draft',answers:{q1:[0]}},'POST',201);
  assert.equal(draft.id,sent.id);assert.equal(draft.attempt,1);
+ const correctionPage=await student(endpoint);
+ assert.ok(correctionPage.deadline,'a saved returned draft still has its correction timer after the original deadline');
+ const extended=await master(`/academics/submissions/${draft.id}/return`,{reason:'Plazo ampliado para completar la corrección',returnDueAt:new Date(Date.now()+7200000).toISOString(),version:draft.version},'PATCH');
+ assert.equal(extended.state,'returned');assert.deepEqual(extended.answers,{q1:[0]});assert.equal(extended.attempt,1);
+ await master(`/academics/submissions/${draft.id}/return`,{reason:'Versión desactualizada',version:draft.version},'PATCH',409);
+ draft=extended;
+ await student(endpoint);
  sent=await student(endpoint+'/submit',{requestId,activityRevision:activity.revision,version:draft.version,action:'submit',answers:{q1:[0]}},'POST',201);
  assert.equal(sent.id,returned.id);assert.equal(sent.attempt,1);assert.equal(sent.returnedAt,null);assert.equal(sent.feedback,'');
  assert.equal(app.db.prepare('SELECT count(*) n FROM submissions WHERE activity_id=?').get(activity.id).n,1);
- assert.equal(app.db.prepare('SELECT count(*) n FROM grade_audit WHERE submission_id=?').get(sent.id).n,2);
+ assert.equal(app.db.prepare('SELECT count(*) n FROM grade_audit WHERE submission_id=?').get(sent.id).n,3);
 });
