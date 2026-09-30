@@ -440,7 +440,7 @@ export async function createApp(options = {}) {
     setupChat(db);
   }
   const chat=accessModel?createChat({db,accessModel,fail,json,readJson,readSession,isEnrolled,audit}):null;
-  const community=accessModel?createCommunity({db,accessModel,fail,json,readJson,readSession,requireCourse,isEnrolled,audit}):null;
+  const community=accessModel?createCommunity({db,accessModel,fail,json,readJson,readSession,requireCourse,isEnrolled,audit,chat}):null;
   const panorama=accessModel?createPanorama({db,accessModel,fail,json}):null;
   const quickResources = createQuickResources({db,fail,json,readJson,readSession,requireAdmin,requireCourse,validateFile,fileResponse,uploadsDir,audit,string,webUrl,boolean});
   const platform=accessModel?createPlatform({db,accessModel,fail,json,readJson,readSession,uploadsDir,addStudent,activation,hashPassword,token,audit,courseView,string,webUrl}):null;

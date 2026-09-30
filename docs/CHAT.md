@@ -2,13 +2,13 @@
 
 ## Activar y controlar
 
-Entra al grupo y pulsa **Configurar chat**, junto a la comunidad en línea. El chat empieza desactivado en cada grupo nuevo. Actívalo y decide si los estudiantes pueden escribir a docentes y/o a sus compañeros. Los docentes asignados al grupo pueden supervisar y moderar sus conversaciones; el máster y administrativos tienen alcance global.
+Entra al grupo y pulsa **Activar chat**, junto a la comunidad en línea. El chat empieza desactivado en cada grupo nuevo. En **Configurar chat** decide si los estudiantes pueden escribir a docentes y/o a sus compañeros. Los docentes asignados al grupo pueden supervisar y moderar sus conversaciones; el máster y administrativos tienen alcance global. Cuando se desactiva el grupo, desaparecen sus botones de mensajes y de escribir a personas. El docente conserva los controles de configuración.
 
 En **Mensajes → Mis permisos**, cada docente puede impedir que estudiantes le escriban. En **Control general**, administración puede desactivar toda la mensajería. Desactivar un chat conserva su historial y bloquea nuevos envíos; las restricciones se comprueban en el servidor incluso para ventanas ya abiertas. El chat requiere contraseña personal: una sesión de solo cédula o una vista previa no puede usarlo.
 
 ## Conversar
 
-Usa el icono de mensajes de la barra superior, la sección **Mensajes** o **Comunidad → Escribir**. Selecciona un grupo y una persona. Hasta tres conversaciones pueden estar abiertas; en pantallas pequeñas se presenta una a la vez. Volver a abrir una conversación desde la bandeja la trae al frente.
+Usa **Mensajes del grupo**, el icono de la barra superior, la sección **Mensajes** o **Comunidad → Escribir**. El panel lateral muestra directamente las personas del grupo, con su foto, nombre y presencia. Pulsa una persona para abrir o iniciar su conversación. La pestaña **Conversaciones** permite retomar el historial; los filtros avanzados quedan en **Organizar conversaciones** en la página completa. Hasta tres conversaciones pueden estar abiertas; en pantallas pequeñas se presenta una a la vez. Volver a abrir una conversación desde la bandeja la trae al frente. Un docente puede escribir a un estudiante recién matriculado: este podrá leer y responder después de crear su contraseña personal en el primer ingreso.
 
 Puedes enviar texto de hasta 5.000 caracteres, enlaces y emojis, citar respuestas, editar mensajes propios y eliminarlos. Enter envía; Shift + Enter añade una línea. Los mensajes sin leer, las confirmaciones de lectura y el indicador de escritura se actualizan mientras el aula está abierta. Se reutilizan las fotos y la presencia de Comunidad, respetando el estado oculto del personal docente.
 
@@ -16,7 +16,7 @@ El historial se almacena en SQLite en el disco persistente del servidor, no en G
 
 ## Supervisión y eliminación
 
-Las conversaciones **son visibles para los docentes del grupo**; esta condición se explica antes de iniciar y dentro de cada chat. En **Mensajes → Conversaciones → Supervisión del grupo**, filtra por grupo, persona o estado. Las conversaciones ajenas se abren en modo de lectura y no cambian las confirmaciones de lectura de sus participantes.
+Las conversaciones **son visibles para los docentes del grupo**. En **Mensajes → Supervisión**, filtra por grupo, persona o estado. Las conversaciones ajenas se abren en modo de lectura y no cambian las confirmaciones de lectura de sus participantes.
 
 Los participantes pueden reportar un mensaje. El docente puede filtrar **Con reportes pendientes**, revisar el motivo, resolverlo, retirar mensajes y suspender los envíos de un estudiante desde la lista de contactos del grupo. Los cambios de configuración, mensajes enviados y acciones de moderación se registran en Panorama con su grupo; el texto de las conversaciones no se copia a Panorama.
 

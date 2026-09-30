@@ -117,3 +117,29 @@ test('chat: chronological pagination and course deletion cascade',async t=>{
 test('chat UI: escaped text and safe links',async()=>{
  const {messageText}=await import('../public/chat.js');const html=messageText('<img src=x onerror=alert(1)> https://example.com/tutorial?a=1&b=2');assert.ok(!html.includes('<img'));assert.ok(html.includes('&lt;img'));assert.ok(html.includes('href="https://example.com/tutorial?a=1&amp;b=2"'));assert.ok(!messageText('https://user:pass@example.com/').includes('<a'));
 });
+
+test('community messaging buttons follow course, global and recipient permissions',async t=>{
+ const {master,groups:[g],people:[s,p,teacher]}=await fixture(t),roster=()=>s.c('/community/presence?group='+g.id);
+ assert.ok((await roster()).people.every(u=>u.chatGroupIds.length===0));
+ await teacher.c('/chat/courses/'+g.id,{enabled:true,studentStaff:true,studentPeers:false},'PUT');
+ let d=await roster();assert.deepEqual(d.people.find(u=>u.id===teacher.u.id).chatGroupIds,[g.id]);assert.deepEqual(d.people.find(u=>u.id===p.u.id).chatGroupIds,[]);
+ await teacher.c('/chat/preferences',{acceptStudents:false},'PUT');d=await roster();assert.deepEqual(d.people.find(u=>u.id===teacher.u.id).chatGroupIds,[]);
+ await teacher.c('/chat/preferences',{acceptStudents:true},'PUT');await teacher.c('/chat/courses/'+g.id,{enabled:true,studentStaff:true,studentPeers:true},'PUT');
+ assert.deepEqual((await roster()).people.find(u=>u.id===p.u.id).chatGroupIds,[g.id]);
+ await teacher.c('/chat/courses/'+g.id,{enabled:false,studentStaff:true,studentPeers:true},'PUT');assert.ok((await roster()).people.every(u=>u.chatGroupIds.length===0));
+ await teacher.c('/chat/courses/'+g.id,{enabled:true,studentStaff:true,studentPeers:true},'PUT');await master('/chat/global',{enabled:false},'PUT');assert.ok((await roster()).people.every(u=>u.chatGroupIds.length===0));
+});
+
+test('teacher can start a conversation with a newly enrolled student before their first login',async t=>{
+ const {master,groups:[g],people:[s,p,teacher],client}=await fixture(t);
+ const u=await master('/platform/users',{document:'99900088',name:'Nuevo estudiante',roles:['student']},'POST',201);
+ await master('/admin/enrollments',{studentId:u.id,courseId:g.id},'POST',201);
+ await teacher.c('/chat/courses/'+g.id,{enabled:true,studentStaff:true,studentPeers:false},'PUT');
+ const contacts=await teacher.c('/chat/contacts?group='+g.id);assert.equal(contacts.people.find(p=>p.id===u.id).canMessage,true);
+ const v=await teacher.c('/chat/conversations',{groupId:g.id,userId:u.id},'POST',201),path='/chat/conversations/'+v.id;
+ await teacher.c(path+'/messages',{body:'Bienvenido al grupo',clientKey:'new-student-welcome'},'POST',201);
+ const student=client();await student('/auth/login',{document:'99900088',password:'99900088'});await student(path,undefined,'GET',403);
+ await student('/auth/first-password',{newPassword:'4567',confirmPassword:'4567'});assert.equal((await student('/chat')).unread,1);
+ const history=await student(path);assert.equal(history.messages[0].body,'Bienvenido al grupo');assert.equal(history.canSend,true);
+ await student(path+'/messages',{body:'Gracias, docente',clientKey:'new-student-answer'},'POST',201);assert.equal((await teacher.c(path)).messages[1].body,'Gracias, docente');
+});

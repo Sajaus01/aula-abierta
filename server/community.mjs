@@ -35,7 +35,7 @@ export function decodeAvatar(value,fail) {
  return {bytes,mime:'image/'+m[1],version:createHash('sha256').update(bytes).digest('hex').slice(0,16)};
 }
 
-export function createCommunity({db,accessModel:a,fail,json,readJson,readSession,requireCourse,isEnrolled,audit,clock=Date.now}) {
+export function createCommunity({db,accessModel:a,fail,json,readJson,readSession,requireCourse,isEnrolled,audit,chat=null,clock=Date.now}) {
  const all=(s,...p)=>db.prepare(s).all(...p),one=(s,...p)=>db.prepare(s).get(...p),run=(s,...p)=>db.prepare(s).run(...p);
  const now=()=>new Date(clock()).toISOString(),cutoff=()=>new Date(clock()-PRESENCE_TTL).toISOString();
  const membership=`(EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND r.role IN ('master','admin')) OR (EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND r.role='teacher') AND EXISTS(SELECT 1 FROM course_staff s WHERE s.user_id=u.id AND s.course_id=c.id)) OR (c.lifecycle='active' AND c.published=1 AND EXISTS(SELECT 1 FROM enrollments e WHERE e.student_id=u.id AND e.course_id=c.id AND e.status='active' AND (e.starts_at IS NULL OR e.starts_at<=?) AND (e.expires_at IS NULL OR e.expires_at>?))))`;
@@ -53,7 +53,7 @@ export function createCommunity({db,accessModel:a,fail,json,readJson,readSession
   const ids=group?[group.id]:groups.map(g=>g.id),scoped=group||!a.global(auth);
   let people=all(`SELECT u.id,u.name,p.hidden,p.bio,p.photo_version,(SELECT json_group_array(role) FROM user_roles WHERE user_id=u.id) roles FROM users u LEFT JOIN profiles p ON p.user_id=u.id WHERE u.active=1 AND u.account_status='active' AND u.must_change_password=0 ${scoped?`AND EXISTS(SELECT 1 FROM courses c WHERE c.id IN (${ids.map(()=>'?').join(',')||'NULL'}) AND ${membership})`:''} ORDER BY u.name COLLATE NOCASE`,...(scoped?[...ids,now(),now()]:[]));
   const term=(q.get('search')||'').trim().toLocaleLowerCase('es').slice(0,160),role=q.get('role'),status=q.get('status');
-  people=people.map(u=>{const roles=JSON.parse(u.roles),hidden=!!u.hidden&&roles.some(r=>r!=='student'),online=!hidden&&live.some(p=>p.user_id===u.id),inGroup=online&&!!group&&live.some(p=>p.user_id===u.id&&p.course_id===group.id);return {id:u.id,name:u.name,bio:u.bio||'',roles,avatarUrl:u.photo_version?`/api/community/avatar/${u.id}?v=${u.photo_version}`:null,online,inGroup};}).filter(u=>(!term||u.name.toLocaleLowerCase('es').includes(term))&&(!role||u.roles.includes(role)));
+  people=people.map(u=>{const roles=JSON.parse(u.roles),hidden=!!u.hidden&&roles.some(r=>r!=='student'),online=!hidden&&live.some(p=>p.user_id===u.id),inGroup=online&&!!group&&live.some(p=>p.user_id===u.id&&p.course_id===group.id);const chatGroupIds=(group?[group]:groups).filter(c=>chat?.canMessage(auth,c,u.id)).map(c=>c.id);return {id:u.id,name:u.name,bio:u.bio||'',roles,chatGroupIds,avatarUrl:u.photo_version?`/api/community/avatar/${u.id}?v=${u.photo_version}`:null,online,inGroup};}).filter(u=>(!term||u.name.toLocaleLowerCase('es').includes(term))&&(!role||u.roles.includes(role)));
   const total=people.length,online=people.filter(u=>u.online).length,inGroup=people.filter(u=>u.inGroup).length;
   if(status==='online')people=people.filter(u=>u.online);if(status==='offline')people=people.filter(u=>!u.online);
   people.sort((x,y)=>Number(y.inGroup)-Number(x.inGroup)||Number(y.online)-Number(x.online)||x.name.localeCompare(y.name,'es'));
