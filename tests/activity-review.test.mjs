@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {reviewCategory,reviewStatus,returnBlockReason,answerAssessment} from '../public/activity-review.js';
+import {reviewCategory,reviewStatus,returnBlockReason,answerAssessment,createActivityReview} from '../public/activity-review.js';
 
 test('el seguimiento distingue avance, corrección guardada, nota interna e historial',()=>{
  assert.equal(reviewCategory({state:'draft'}),'draft');
@@ -29,4 +29,13 @@ test('comparar respuestas respeta conjuntos, ceros y preguntas manuales o histó
  assert.equal(answerAssessment({type:'single'},[0]).label,'Revisión manual');
  assert.equal(answerAssessment({type:'single',correct:[0]},[0]).label,'Correcta');
  assert.equal(answerAssessment({type:'single',correct:[0]},[1]).label,'Por revisar');
+});
+
+test('un evento tardío de cierre no desactiva una revisión recién abierta',()=>{
+ const handlers=new Map(),elements=new Map([['[data-review-root]',{innerHTML:''}],['[data-review=prev]',{}],['[data-review=next]',{}],['.review-response-pane',{focus(){}}]]);
+ const modal={open:false,dataset:{},classList:{add(){}},querySelector:selector=>elements.get(selector),addEventListener:(event,fn,options)=>handlers.set(event,{fn,signal:options.signal})};
+ const review=createActivityReview({modal,openModal:()=>{modal.open=true;},icon:()=>'',modern:()=>true,questionMedia:()=>'',api:()=>{},toast:()=>{},render:()=>{throw Error('No hubo modificaciones');}});
+ review.open({activity:{id:'activity',kind:'task',maxPoints:100,status:'published',title:'Actividad',weight:0},submissions:[{id:'submission',name:'Prueba',state:'draft',points:null,studentId:'student',attempt:1}],id:'submission'});
+ const close=handlers.get('close');close.fn();assert.equal(close.signal.aborted,false,'the current modal remains interactive while open');
+ modal.open=false;close.fn();assert.equal(close.signal.aborted,true,'listeners are cleaned up after the actual close');
 });

@@ -54,7 +54,7 @@ export function createActivityReview({api,modal,openModal,icon,toast,render,mode
    finally{busy=false;modal.removeAttribute('aria-busy');controls.forEach(([el,disabled])=>{if(el.isConnected)el.disabled=disabled;});}
   }
   openModal('Revisión de entregas',`<div data-review-root></div>`,null,{wide:true});modal.classList.add('review-workspace');
-  modal.addEventListener('close',()=>{cleanup();if(changed)void render();},options);
+  modal.addEventListener('close',()=>{if(modal.open)return;cleanup();if(changed)void render();},options);
   modal.addEventListener('cancel',ev=>{if(busy)ev.preventDefault();},options);
   modal.addEventListener('click',async ev=>{
    const anchor=ev.target.closest('a[href^="#review-"]');if(anchor){ev.preventDefault();modal.querySelector(anchor.getAttribute('href'))?.scrollIntoView({behavior:'smooth',block:'start'});return;}
