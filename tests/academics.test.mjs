@@ -147,7 +147,8 @@ test('el contenido del curso ubica actividades por capítulo sin filtrar respues
  const a=await f.activity({title:'Tarea del capítulo',moduleId:'chapter-one'}),quiz=await f.activity({kind:'quiz',questions,moduleId:'chapter-two'}),draft=await f.activity({status:'draft',moduleId:'chapter-one'}),archived=await f.activity({status:'archived'}),general=await f.activity();
  const detail=()=>f.student.call(`/courses/${f.course.id}`);
  let c=ok(await detail());assert.equal(c.activities.length,3);assert.equal(c.activities.find(x=>x.id===a.id).moduleId,'chapter-one');assert.equal(c.activities.find(x=>x.id===general.id).moduleId,null);
- assert.deepEqual(Object.keys(c.activities.find(x=>x.id===quiz.id)).sort(),['id','moduleId','title','kind','status','weight','dueAt','opensAt','closesAt','submitted'].sort());
+ assert.deepEqual(Object.keys(c.activities.find(x=>x.id===quiz.id)).sort(),['id','moduleId','title','kind','status','weight','dueAt','opensAt','closesAt','submitted','responseState'].sort());
+ assert.equal(c.activities.find(x=>x.id===quiz.id).responseState,null);
  assert.equal(ok(await f.admin.call(`/courses/${f.course.id}`)).activities.length,5);
  const submitted=ok(await f.submit(a),201);ok(await f.grade(a,submitted,90,false));c=ok(await detail());assert.equal(c.activities.find(x=>x.id===a.id).submitted,true);assert.equal(ok(await f.other.call(`/courses/${f.course.id}`)).activities.find(x=>x.id===a.id).submitted,false);
  ok(await f.admin.call(`/academics/activities/${a.id}`,'PATCH',{version:a.version,moduleId:'chapter-two'}));assert.equal(ok(await detail()).activities.find(x=>x.id===a.id).moduleId,'chapter-two');
@@ -210,5 +211,52 @@ test('edición fallida no archiva respuestas y publicar notas no altera historia
  f.db.exec('DROP TRIGGER reject_revision');
  a=ok(await f.admin.call(`/academics/activities/${a.id}`,'PATCH',{version:a.version,title:'Cambiar'}));ok(await f.admin.call(`/academics/courses/${f.course.id}/release`,'POST',{}));
  const pastView=ok(await f.student.call(`/academics/activities/${a.id}`)).previous[0];assert.equal(pastView.points,null);assert.equal(pastView.feedback,'');assert.equal(pastView.published,false);
+});
+
+test('publicar desde el curso conserva la actividad y valida pesos y versiones',async t=>{
+ const f=await fixture(t),a=await f.activity({status:'draft',weight:60}),other=await f.activity({weight:50});
+ const endpoint=`/academics/activities/${a.id}/publication`;
+ ok(await f.student.call(`/academics/activities/${a.id}`),404);
+ ok(await f.student.call(endpoint,'PATCH',{status:'published',version:a.version}),403);
+ ok(await f.admin.call(endpoint,'PATCH',{status:'published',version:0}),409);
+ ok(await f.admin.call(endpoint,'PATCH',{status:'published',version:a.version}),400);
+ const adjusted=ok(await f.admin.call(`/academics/activities/${a.id}`,'PATCH',{version:a.version,weight:50}));
+ const published=ok(await f.admin.call(endpoint,'PATCH',{status:'published',version:adjusted.version}));assert.equal(published.status,'published');
+ ok(await f.student.call(`/academics/activities/${a.id}`));
+ const hidden=ok(await f.admin.call(endpoint,'PATCH',{status:'draft',version:published.version}));assert.equal(hidden.status,'draft');
+ ok(await f.student.call(`/academics/activities/${a.id}`),404);assert.equal(ok(await f.admin.call(`/academics/activities/${other.id}`)).activity.status,'published');
+});
+
+test('el docente ve borradores guardados sin convertirlos en entregas',async t=>{
+ const f=await fixture(t),a=await f.activity({kind:'quiz',questions,maxAttempts:1,weight:100}),key=randomUUID();
+ const draft=ok(await f.submit(a,{requestId:key,action:'draft',text:'',answers:{q1:[0],q2:[]}}),201);
+ const teacher=ok(await f.admin.call(`/academics/activities/${a.id}/submissions`)).submissions;
+ assert.equal(teacher.length,1);assert.equal(teacher[0].state,'draft');assert.deepEqual(teacher[0].answers,{q1:[0],q2:[]});assert.equal(teacher[0].submittedAt,null);
+ ok(await f.other.call(`/academics/submissions/${draft.id}/files/missing`),403);
+ ok(await f.admin.call(`/academics/submissions/${draft.id}/grade`,'PATCH',{points:1,published:true,version:draft.version}),400);
+ assert.equal(ok(await f.book()).students[0].cells[0].state,'pending');
+});
+
+test('devolver preserva respuestas y archivos, reabre el mismo intento y retira la nota anterior',async t=>{
+ const f=await fixture(t),a=await f.activity({kind:'quiz',questions,maxAttempts:1,weight:100,dueAt:future()}),key=randomUUID();
+ let draft=ok(await f.submit(a,{requestId:key,action:'draft',text:'',answers:{q1:[0],q2:[0,2]},files:[]}),201);
+ let sent=ok(await f.submit(a,{requestId:key,version:draft.version,text:'',answers:{q1:[0],q2:[0,2]}}),201);assert.equal(sent.attempt,1);
+ sent=ok(await f.grade(a,sent,1.5));assert.equal(ok(await f.book()).students[0].cells[0].points,1.5);
+ const returnUrl=`/academics/submissions/${sent.id}/return`;
+ ok(await f.student.call(returnUrl,'PATCH',{reason:'Corrige la pregunta 2',version:sent.version}),403);
+ ok(await f.admin.call(returnUrl,'PATCH',{reason:'',version:sent.version}),400);
+ ok(await f.admin.call(returnUrl,'PATCH',{reason:'Corrige la pregunta 2',version:0}),409);
+ f.db.prepare('UPDATE activities SET config=json_set(config,\'$.dueAt\',json(?)) WHERE id=?').run(JSON.stringify(past()),a.id);
+ let returned=ok(await f.admin.call(returnUrl,'PATCH',{reason:'Corrige la pregunta 2',version:sent.version,returnDueAt:future()}));
+ assert.equal(returned.state,'returned');assert.equal(returned.attempt,1);assert.equal(returned.points,null);assert.equal(returned.feedback,'Corrige la pregunta 2');
+ assert.deepEqual(returned.answers,{q1:[0],q2:[0,2]});assert.equal(ok(await f.book()).students[0].cells[0].state,'returned');
+ assert.equal(ok(await f.student.call(`/academics/activities/${a.id}`)).mine[0].feedback,'Corrige la pregunta 2');
+ ok(await f.submit(a,{text:'',answers:{q1:[0],q2:[0,2]}}),409);
+ draft=ok(await f.submit(a,{requestId:key,version:returned.version,action:'draft',text:'',answers:{q1:[0],q2:[1]}}),201);
+ assert.equal(draft.id,sent.id);assert.equal(draft.attempt,1);assert.equal(ok(await f.book()).students[0].cells[0].state,'returned');
+ sent=ok(await f.submit(a,{requestId:key,version:draft.version,text:'',answers:{q1:[0],q2:[0,2]}}),201);
+ assert.equal(sent.id,returned.id);assert.equal(sent.attempt,1);assert.equal(sent.returnedAt,null);assert.equal(sent.feedback,'');
+ assert.equal(ok(await f.book()).students[0].cells[0].points,2);
+ assert.equal(f.db.prepare('SELECT count(*) n FROM submissions WHERE activity_id=?').get(a.id).n,1);
 });
 

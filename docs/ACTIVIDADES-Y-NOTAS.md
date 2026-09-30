@@ -32,7 +32,7 @@ Selecciona **Cuestionario interactivo → Añadir pregunta**. Admite hasta 50 pr
 2. **Varias respuestas correctas:** números separados por comas, por ejemplo `1,3`. Se asignan puntos solo si se elige exactamente el conjunto correcto; no hay puntos parciales ni penalizaciones negativas.
 3. **Respuesta abierta:** revisión manual del docente.
 
-Los cuestionarios que solo contienen selección se califican automáticamente al enviarlos. Si incluyen alguna respuesta abierta, el docente asigna la puntuación total. En ambos casos, las notas se ocultan hasta su publicación y las claves correctas no se envían al estudiante.
+Los cuestionarios que solo contienen selección se califican automáticamente al enviarlos. Si incluyen alguna respuesta abierta, el docente asigna la puntuación total. También puede corregir manualmente la puntuación automática y registrar el motivo. En ambos casos, las notas se ocultan hasta su publicación y las claves correctas no se envían al estudiante.
 
 Puedes modificar todos los campos aunque ya existan borradores, respuestas o notas. Cambiar el título, las instrucciones, el enlace o los archivos del enunciado, el tipo, las preguntas o sus puntos crea una nueva versión: las respuestas anteriores pasan al historial, dejan de contar para las notas y no consumen intentos de la versión nueva. La actividad vuelve a aparecer pendiente para cada estudiante que ya había respondido. Las preguntas y notas antiguas se muestran con los datos de su versión, sin revelar claves de respuesta.
 
@@ -46,15 +46,19 @@ El botón **Eliminar actividad** aparece junto a cada actividad en el listado de
 
 ## Entregar trabajos
 
-El estudiante necesita contraseña personal y matrícula vigente, incluso si el curso permite consultar materiales solo con cédula o es libre. **Mis actividades** muestra pendientes y fechas de sus cursos. Puede guardar un borrador y enviarlo al terminar. Un borrador no cuenta como entrega ni aparece en la bandeja de corrección.
+El estudiante necesita contraseña personal y matrícula vigente, incluso si el curso permite consultar materiales solo con cédula o es libre. **Mis actividades** muestra pendientes y fechas de sus cursos. Puede guardar un borrador y enviarlo al terminar. El texto y las respuestas de selección se guardan automáticamente tras una breve pausa; los archivos nuevos se guardan al pulsar **Guardar borrador** o **Enviar**. La pantalla indica si hay cambios pendientes o si el avance quedó guardado. Un borrador no cuenta como entrega ni consume intentos, pero el docente puede verlo en **Seguimiento de respuestas** para verificar el avance real guardado en el servidor. El estudiante recibe este aviso en el formulario.
 
 Las tareas admiten texto, enlace y hasta **5 archivos de respuesta**, de **10 MB por archivo y 20 MB en total**: PDF, PNG, JPG, WebP, GIF, XLSX, CSV, DOCX, PPTX o TXT. Se pueden seleccionar varias fotos o documentos a la vez, guardar el borrador, y retirar o agregar adjuntos antes de enviar. Los PDF y las imágenes se pueden ampliar; los demás formatos se descargan. La plataforma no ejecuta macros ni calcula hojas de Excel. El estudiante debe dar al docente acceso a los enlaces externos.
 
-Cada envío queda cerrado. Si hay más intentos, puede enviar otro que sustituye al anterior para el cálculo de su nota. El historial y los comentarios publicados siguen disponibles. Cada estudiante accede únicamente a sus propias entregas.
+Cada envío queda cerrado. Si hay más intentos, puede enviar otro que sustituye al anterior para el cálculo de su nota. Si el docente **devuelve** un envío, el estudiante puede corregir las respuestas y los archivos existentes y reenviar **el mismo intento**, incluso si venció el plazo original. El docente puede fijar un nuevo plazo específico para esa corrección. En los cuestionarios con temporizador, el tiempo se inicia otra vez al abrir la corrección. El historial y los comentarios publicados siguen disponibles. Cada estudiante accede únicamente a sus propias entregas.
 
 ## Revisar y publicar
 
-Dentro de la actividad, pulsa **Revisar**. Encontrarás todos los archivos de cada intento junto al texto y el enlace de respuesta. Abre o descarga los adjuntos, asigna puntos de cero al máximo y escribe comentarios. Puedes guardar sin publicar o marcar **Publicar esta nota y los comentarios**.
+Desde el listado del curso puedes **Publicar** u **Ocultar** una actividad con el mismo botón de publicación que tienen los materiales. Dentro de la actividad, **Seguimiento de respuestas** distingue entregas enviadas, borradores, correcciones devueltas y versiones anteriores. Puedes filtrarlas y consultar cuándo se guardó por última vez cada avance. Solo las entregas enviadas se pueden calificar.
+
+Pulsa **Revisar** para ver los archivos, el texto, el enlace y las respuestas. Puedes asignar puntos de cero al máximo, incluso una puntuación distinta de la calculada automáticamente, con motivo registrado en el historial. Añade comentarios y guarda la nota sin publicar o marca **Publicar esta nota y los comentarios**. También puedes iniciar la revisión desde la celda **Revisar nota** del libro de notas.
+
+Pulsa **Devolver para corregir** y escribe indicaciones. La nota se retira del cálculo y de la vista del estudiante hasta que este reenvíe; sus respuestas y archivos se conservan. La devolución no consume otro intento y queda registrada en el historial de calificaciones. Mientras corrige, el docente puede ver el avance que el estudiante vaya guardando. Tras el reenvío, califica de nuevo y publica la nota cuando corresponda. Si la nota final del curso estaba publicada, se retira para revisar el resultado actualizado.
 
 En **Libro de notas** ves la matriz del curso. **Publicar notas disponibles** muestra todas las notas guardadas o calculadas de actividades publicadas, incluidos los cuestionarios automáticos. Los envíos aún sin nota siguen pendientes. **Descargar libro CSV** incluye las notas guardadas, aunque todavía no estén publicadas; un campo vacío no representa cero.
 
@@ -80,4 +84,4 @@ La variable opcional `SUBMISSIONS_MAX_BYTES` ajusta el cupo en bytes. Antes de a
 
 Respalda una copia coherente de **la base de datos completa y `uploads/`**, según [Publicación](PUBLICACION.md#persistencia-y-copias). El traslado JSON heredado del aula inicial no incluye actividades, entregas ni calificaciones y no sirve para respaldar esta función.
 
-Esta versión no incluye vigilancia de exámenes, temporizador individual, banco aleatorio, detección de plagio, corrección por IA, entregas grupales ni integración con R2. Los criterios de rúbrica se escriben en las instrucciones; se registra una puntuación total y comentarios.
+Esta versión no incluye vigilancia de exámenes, banco aleatorio, detección de plagio, corrección por IA, entregas grupales ni integración con R2. La calificación se registra como una puntuación total acompañada de comentarios y motivo de corrección.
