@@ -18,7 +18,7 @@ El historial se almacena en SQLite en el disco persistente del servidor, no en G
 
 Las conversaciones **son visibles para los docentes del grupo**. En **Mensajes → Supervisión**, filtra por grupo, persona o estado. Las conversaciones ajenas se abren en modo de lectura y no cambian las confirmaciones de lectura de sus participantes.
 
-Los participantes pueden reportar un mensaje. El docente puede filtrar **Con reportes pendientes**, revisar el motivo, resolverlo, retirar mensajes y suspender los envíos de un estudiante desde la lista de contactos del grupo. Los cambios de configuración, mensajes enviados y acciones de moderación se registran en Panorama con su grupo; el texto de las conversaciones no se copia a Panorama.
+Los participantes pueden reportar un mensaje. El docente puede filtrar **Con reportes pendientes**, revisar el motivo, resolverlo, retirar mensajes y suspender los envíos de un estudiante desde **Configurar chat → Gestionar participantes**. Los cambios de configuración, mensajes enviados y acciones de moderación se registran en Panorama con su grupo; el texto de las conversaciones no se copia a Panorama.
 
 **Eliminar para mí** oculta la conversación, sin borrar el historial de la otra persona ni de supervisión. Se puede recuperar desde **Archivadas / eliminadas para mí**; un mensaje nuevo vuelve a mostrarla. **Archivar** organiza la bandeja; **silenciar** excluye sus mensajes del contador general de avisos.
 
