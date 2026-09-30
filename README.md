@@ -72,3 +72,5 @@ data/                      Base de datos y materiales; solo en el servidor
 Incluye tareas con entregas privadas, cuestionarios con corrección automática de selección, revisión manual de respuestas abiertas, fechas límite, intentos y notas ponderadas con publicación controlada. Consulta [Actividades y notas](docs/ACTIVIDADES-Y-NOTAS.md). No incluye cobros, videoconferencia propia, correos de recuperación, SCORM ni certificados. Los videos y enlaces externos conservan las reglas de acceso de su proveedor.
 
 La configuración usa una única instancia de la aplicación y almacenamiento persistente local. Antes de operar con estudiantes reales, configura HTTPS, copias de seguridad y una política de tratamiento de los datos que recopilarás.
+
+La mensajería por grupo permite conversaciones entre estudiantes y docentes, supervisión docente, reportes, controles de envío y conservación del historial. Se activa de forma independiente en cada grupo y requiere contraseña personal. Consulta [Chat de los grupos](docs/CHAT.md).

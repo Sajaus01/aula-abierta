@@ -3,6 +3,7 @@ import {icon} from './ui.js';
 import {avatar,roleNames} from './community.js';
 const categories={access:['Ingresos y salidas','logout'],learning:['Aprendizaje','book'],submissions:['Entregas','upload'],grades:['Calificaciones','chart'],management:['Gestión','settings'],permissions:['Permisos','shield']};
 const actions={
+ 'chat.global':'Cambió la disponibilidad general del chat','chat.configure':'Configuró el chat del grupo','chat.moderate':'Cambió los permisos de envío de un estudiante','chat.remove':'Retiró una conversación','chat.restore':'Restauró una conversación','chat.report':'Reportó un mensaje al docente','chat.message.remove':'Eliminó un mensaje','chat.message.send':'Envió un mensaje en el grupo',
  'auth.login.password':'Ingresó con contraseña','auth.login.document':'Ingresó con cédula','auth.logout':'Cerró sesión','auth.password.first':'Creó su contraseña personal','auth.password.change':'Cambió su contraseña','auth.activate':'Recuperó su acceso',
  'group.enter':'Abrió el grupo','activity.start':'Abrió la actividad','submission.start':'Inició un borrador','submission.submit':'Envió una entrega','submission.grade':'Calificó una entrega',
  'resource.open':'Abrió el material','resource.complete':'Marcó el material como completado','resource.pending':'Dejó el material pendiente','lab.result':'Registró resultados del laboratorio',

@@ -19,6 +19,7 @@ import {setupPanorama,createPanorama,eventContext} from './panorama.mjs';
 import {createBackup} from './backup.mjs';
 import {createQuestionImport} from './question-import.mjs';
 import {createLibrary} from './library.mjs';
+import {setupChat,createChat} from './chat.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
@@ -435,7 +436,10 @@ export async function createApp(options = {}) {
   if(accessModel){
     if(!one("SELECT name FROM sqlite_master WHERE type='table' AND name='profiles'"))createBackup(dataDir,{label:'before-community-panorama-v1'});
     setupCommunity(db);setupPanorama(db);
+    if(!one("SELECT name FROM sqlite_master WHERE type='table' AND name='chat_messages'"))createBackup(dataDir,{label:'before-chat-v1'});
+    setupChat(db);
   }
+  const chat=accessModel?createChat({db,accessModel,fail,json,readJson,readSession,isEnrolled,audit}):null;
   const community=accessModel?createCommunity({db,accessModel,fail,json,readJson,readSession,requireCourse,isEnrolled,audit}):null;
   const panorama=accessModel?createPanorama({db,accessModel,fail,json}):null;
   const quickResources = createQuickResources({db,fail,json,readJson,readSession,requireAdmin,requireCourse,validateFile,fileResponse,uploadsDir,audit,string,webUrl,boolean});
@@ -462,6 +466,7 @@ export async function createApp(options = {}) {
       const initialAllowed = (method === 'GET' && ['/api/status', '/api/settings', '/api/auth/me'].includes(path)) || (method === 'POST' && ['/api/auth/logout', '/api/auth/first-password'].includes(path));
       if (path.startsWith('/api/') && !initialAllowed) requirePersonalPassword(auth);
       if(community&&await community.handler(req,res,path,method,auth))return;
+      if(chat&&await chat.handler(req,res,path,method,auth))return;
       if(panorama&&await panorama.handler(req,res,path,method,auth))return;
       if(analytics&&await analytics.handler(req,res,path,method,auth))return;
       if(questionImport&&await questionImport.handler(req,res,path,method,auth))return;

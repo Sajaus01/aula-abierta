@@ -22,7 +22,7 @@ export function eventContext(db,actor,action,target,extra={}){
  }
  if(typeof module==='string')module=one('SELECT id,title FROM modules WHERE id=?',module)||null;
  const memberships=actor?.id&&action.startsWith('auth.')?all(`SELECT DISTINCT c.id,c.title,c.group_code code,c.cohort FROM courses c WHERE c.entity_kind='group' AND (EXISTS(SELECT 1 FROM enrollments e WHERE e.course_id=c.id AND e.student_id=? AND e.status='active' AND (e.starts_at IS NULL OR e.starts_at<=?) AND (e.expires_at IS NULL OR e.expires_at>?)) OR EXISTS(SELECT 1 FROM course_staff s WHERE s.course_id=c.id AND s.user_id=?))`,actor.id,new Date().toISOString(),new Date().toISOString(),actor.id):[];
- return {actor:person(actor?.id),object,group,module,student,submission,memberships,...extra};
+ return {actor:person(actor?.id),object,group:group||course(extra.courseId)||null,module,student,submission,memberships,...extra};
 }
 
 export function setupPanorama(db){
