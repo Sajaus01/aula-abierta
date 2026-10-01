@@ -166,7 +166,8 @@ export async function createApp(options = {}) {
     const auth={user:decorate(session),assurance:session.assurance,tokenHash:digest(value)};
     const preview=req.headers['x-aula-preview'];
     if(preview&&accessModel){accessModel.requireScope(auth,preview,'view');const previewActivity=req.headers['x-aula-activity-preview'];if(previewActivity){accessModel.requireScope(auth,preview,'edit');if(!one('SELECT id FROM activities WHERE id=? AND course_id=?',previewActivity,preview))fail(404,'Actividad no encontrada.');}else accessModel.group(preview);return {...auth,preview,previewActivity,user:{...auth.user,role:'student'}};}
-    const learningView=req.headers['x-aula-view']==='learning'||(req.headers.cookie||'').split(';').some(part=>part.trim()==='aula_view=learning');
+    const explicitView=req.headers['x-aula-view']||new URL(req.url,'http://localhost').searchParams.get('aula_view');
+    const learningView=explicitView?explicitView==='learning':(req.headers.cookie||'').split(';').some(part=>part.trim()==='aula_view=learning');
     if(learningView&&accessModel&&auth.user.roles.includes('student'))return {...auth,view:'learning',user:{...auth.user,role:'student'}};
     return auth;
   }

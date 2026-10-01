@@ -29,9 +29,11 @@ const app = document.getElementById('app');
 let pendingModalDismiss=null;
 let modalHandler, renderVersion = 0, toastTimer, renderedRoute=null;
 async function api(path, options={}) {
-  const res = await fetch(`/api${path}`, {credentials:'same-origin',...options,headers:{'Content-Type':'application/json',...(state.preview?{'X-Aula-Preview':state.preview,...(state.previewActivity?{'X-Aula-Activity-Preview':state.previewActivity}:{})}:state.viewMode==='learning'&&state.user?.roles?.includes('student')?{'X-Aula-View':'learning'}:{}),...options.headers},body:options.body === undefined ? undefined : JSON.stringify(options.body)});
+  const requestedView=state.viewMode;
+  const res = await fetch(`/api${path}`, {credentials:'same-origin',...options,headers:{'Content-Type':'application/json',...(state.preview?{'X-Aula-Preview':state.preview,...(state.previewActivity?{'X-Aula-Activity-Preview':state.previewActivity}:{})}:state.user?.roles?{'X-Aula-View':requestedView}:{}),...options.headers},body:options.body === undefined ? undefined : JSON.stringify(options.body)});
   let result; try { result = await res.json(); } catch { throw new Error('No pudimos conectar con el aula. Intenta nuevamente en unos momentos.'); }
   if (!res.ok) throw Object.assign(new Error(result.error || 'No se pudo completar la operación.'),{status:res.status,code:result.code});
+  if(state.user?.roles&&!state.preview){const contextualize=value=>{if(Array.isArray(value))value.forEach(contextualize);else if(value&&typeof value==='object')for(const [key,item] of Object.entries(value)){if(/url$/i.test(key)&&typeof item==='string'&&item.startsWith('/api/')){const address=new URL(item,location.origin);address.searchParams.set('aula_view',requestedView);value[key]=address.pathname+address.search;}else if(item&&typeof item==='object')contextualize(item);}};contextualize(result.data);}
   return result.data;
 }
 const post = (path, body={}) => api(path,{method:'POST',body});
@@ -313,7 +315,7 @@ async function viewResource(id) {
  if(student()&&!state.preview){const opened=await post(`/progress/${id}/open`);if(state.user?.id!==initialUser||route()!==initialRoute)return;state.progress=state.progress.filter(p=>p.resourceId!==id).concat(opened);}
  const url=safeUrl(r.url),embed=videoEmbed(url),file=r.fileUrl;let view='';
  if(['html','lab'].includes(r.kind)&&(r.content||file)){
-  view=`<iframe title="${e(r.title)}" sandbox="allow-scripts" referrerpolicy="no-referrer" src="/api/resources/${encodeURIComponent(r.id)}/preview"></iframe>`;
+  view=`<iframe title="${e(r.title)}" sandbox="allow-scripts" referrerpolicy="no-referrer" src="/api/resources/${encodeURIComponent(r.id)}/preview?aula_view=${!state.preview&&student()?'learning':'teaching'}"></iframe>`;
  }else if(embed)view=`<iframe class="video" title="${e(r.title)}" src="${e(embed)}" allow="fullscreen; picture-in-picture" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>`;
  else if(file&&(r.fileMime==='application/pdf'||r.fileName?.toLowerCase().endsWith('.pdf')))view=`<iframe title="${e(r.title)}" src="${e(file)}"></iframe>`;
  else if(r.kind==='image'&&(file||url))view=`<img src="${e(file||url)}" alt="${e(r.title)}">`;

@@ -15,7 +15,7 @@ test('a teacher who is also a student teaches one group and submits work in anot
   const response=await fetch(base+'/api'+path,{method,headers:{'Content-Type':'application/json',Origin:base,Cookie:[session,view==='learning'?'aula_view=learning':''].filter(Boolean).join('; '),...(view==='learning'?{'X-Aula-View':'learning'}:{})},body:body?JSON.stringify(body):undefined});
   if(response.headers.get('set-cookie'))session=response.headers.get('set-cookie').split(';')[0];
   const result=await response.json();assert.equal(response.status,expected,JSON.stringify(result));return result.data;
- };request.raw=path=>fetch(base+'/api'+path,{headers:{Cookie:session+'; aula_view=learning'}});return request;}
+ };request.raw=(path,view='learning',headers={})=>fetch(base+'/api'+path,{headers:{Cookie:session+'; aula_view='+view,...headers}});return request;}
  const master=client(),dual=client(),administrative=client();
  const owner=await master('/auth/login',{document:'99910001',password:'Master-Synthetic-2026!'});
  const person=await master('/platform/users',{document:'99910002',name:'Docente y estudiante',roles:['teacher','student']},'POST',201);
@@ -51,6 +51,8 @@ test('a teacher who is also a student teaches one group and submits work in anot
  assert.deepEqual((await dual('/community/presence?group='+taught.id)).people.find(u=>u.id===person.id).roles,['teacher']);
  await dual('/progress/'+material.id+'/open',{},'POST',200,'learning');
  const preview=await dual.raw('/resources/'+material.id+'/preview');assert.equal(preview.status,200);assert.match(await preview.text(),/<h1>Lectura<\/h1>/);
+ assert.equal((await dual.raw('/resources/'+material.id+'/preview?aula_view=learning','teaching')).status,200);
+ assert.equal((await dual.raw('/admin/courses','learning',{'X-Aula-View':'teaching'})).status,200);
  assert.equal((await dual.raw('/resources/'+hiddenMaterial.id+'/preview')).status,404);
  assert.equal((await dual('/academics/activities/'+activity.id,undefined,'GET',200,'learning')).activity.questions[0].correct,undefined);
  await dual('/auth/password',{currentPassword:'Docente-Estudiante-2026!',newPassword:'1234',confirmPassword:'1234'},'POST',400,'learning');
