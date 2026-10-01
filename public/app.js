@@ -20,7 +20,7 @@ const hasDualRole=()=>state.user?.roles?.includes('student')&&state.user.roles.s
 const syncViewCookie=()=>{document.cookie=`aula_view=${state.viewMode}; Path=/; SameSite=Lax${location.protocol==='https:'?'; Secure':''}`;};
 const setInitialView=()=>{state.viewMode=state.user?.roles?.includes('student')&&!hasDualRole()?'learning':hasDualRole()&&sessionStorage.getItem('aula-view-'+state.user.id)==='learning'?'learning':'teaching';syncViewCookie();};
 const admin = () => state.user?.role === 'admin'&&state.viewMode!=='learning'&&!state.preview;
-const student = () => state.user?.role === 'student'||state.viewMode==='learning'||!!state.preview;
+const student = () => Boolean(state.user&&(state.user.role==='student'||state.viewMode==='learning'||state.preview));
 state.academicOverview=[];state.learning={courses:[],recent:[],activities:[]};state.resourceFilter='all';
 const materialName = kind => !admin()&&kind==='html'?'Lección interactiva':kinds[kind];
 const route = () => state.user?.mustChangePassword ? 'crear-contrasena' : location.hash.slice(1) || (admin() ? 'inicio' : student() ? 'mis-cursos' : 'catalogo');

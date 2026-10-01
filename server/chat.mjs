@@ -24,7 +24,7 @@ export function createChat({db,accessModel:a,fail,json,readJson,readSession,isEn
  const supervisor=(id,c)=>a.p.can(id,c.id,'view');
  const supervises=(auth,c)=>a.staff(auth)&&supervisor(auth.user.id,c);
  const member=(id,c)=>a.p.active(id)&&(supervisor(id,c)||c.lifecycle==='active'&&!!c.published&&isEnrolled(id,c.id));
- const groups=auth=>all("SELECT * FROM courses WHERE entity_kind='group' ORDER BY title,cohort,group_code").filter(c=>auth.view==='learning'?c.lifecycle==='active'&&!!c.published&&isEnrolled(auth.user.id,c.id):member(auth.user.id,c));
+ const groups=auth=>all("SELECT * FROM courses WHERE entity_kind='group' ORDER BY title,cohort,group_code").filter(c=>a.staff(auth)?a.p.can(auth.user.id,c.id,'view'):c.lifecycle==='active'&&!!c.published&&isEnrolled(auth.user.id,c.id));
  const config=c=>{const s=one('SELECT * FROM chat_courses WHERE course_id=?',c.id);return {id:c.id,title:c.title,code:c.group_code,cohort:c.cohort,enabled:!!s?.enabled,studentStaff:s?!!s.student_staff:true,studentPeers:!!s?.student_peers};};
  const course=(id,auth)=>{const c=a.group(id);if(!groups(auth).some(group=>group.id===c.id))fail(403,'No tienes acceso al chat de este grupo.');return c;};
  const accepted=id=>one('SELECT accept_students FROM chat_preferences WHERE user_id=?',id)?.accept_students!==0;

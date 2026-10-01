@@ -11,11 +11,11 @@ test('a teacher who is also a student teaches one group and submits work in anot
  await new Promise(done=>app.server.listen(0,'127.0.0.1',done));
  const base='http://127.0.0.1:'+app.server.address().port;
  t.after(async()=>{await new Promise(done=>app.server.close(done));assert.ok(resolve(root).startsWith(resolve(tmpdir())+sep+'aula-dual-roles-'));await rm(root,{recursive:true,force:true});});
- function client(){let session='';return async(path,body,method=body?'POST':'GET',expected=200,view='teaching')=>{
+ function client(){let session='';const request=async(path,body,method=body?'POST':'GET',expected=200,view='teaching')=>{
   const response=await fetch(base+'/api'+path,{method,headers:{'Content-Type':'application/json',Origin:base,Cookie:[session,view==='learning'?'aula_view=learning':''].filter(Boolean).join('; '),...(view==='learning'?{'X-Aula-View':'learning'}:{})},body:body?JSON.stringify(body):undefined});
   if(response.headers.get('set-cookie'))session=response.headers.get('set-cookie').split(';')[0];
   const result=await response.json();assert.equal(response.status,expected,JSON.stringify(result));return result.data;
- };}
+ };request.raw=path=>fetch(base+'/api'+path,{headers:{Cookie:session+'; aula_view=learning'}});return request;}
  const master=client(),dual=client(),administrative=client();
  const owner=await master('/auth/login',{document:'99910001',password:'Master-Synthetic-2026!'});
  const person=await master('/platform/users',{document:'99910002',name:'Docente y estudiante',roles:['teacher','student']},'POST',201);
@@ -31,6 +31,7 @@ test('a teacher who is also a student teaches one group and submits work in anot
  await master('/admin/enrollments',{courseId:enrolled.id,studentId:person.id},'POST',201);
  const chapter=await master(`/admin/courses/${enrolled.id}/modules`,{title:'Capítulo',published:true},'POST',201);
  const material=await master(`/admin/modules/${chapter.id}/resources`,{title:'Lectura',kind:'html',content:'<h1>Lectura</h1>',published:true},'POST',201);
+ const hiddenMaterial=await master(`/admin/modules/${chapter.id}/resources`,{title:'Borrador privado',kind:'html',content:'<h1>Borrador</h1>',published:false},'POST',201);
  const activity=await master(`/academics/courses/${enrolled.id}/activities`,{title:'Prueba',kind:'quiz',status:'published',weight:100,moduleId:chapter.id,questions:[{id:'q1',type:'single',prompt:'¿Uno más uno?',options:['2','3'],correct:[0],points:1}]},'POST',201);
  const staffCourses=await dual('/admin/courses');assert.ok(staffCourses.some(c=>c.id===taught.id));assert.ok(!staffCourses.some(c=>c.id===enrolled.id));
  const roster=await master('/admin/students');assert.ok(roster.some(u=>u.id===person.id&&u.roles.includes('teacher')));
@@ -41,7 +42,15 @@ test('a teacher who is also a student teaches one group and submits work in anot
  assert.ok(studentCourses.some(c=>c.id===enrolled.id));assert.ok(!studentCourses.some(c=>c.id===taught.id));
  assert.deepEqual((await dual('/courses/'+enrolled.id,undefined,'GET',200,'learning')).permissions,{view:false,edit:false,grade:false,manage:false});
  assert.ok((await dual('/learning',undefined,'GET',200,'learning')).courses.some(c=>c.courseId===enrolled.id));
+ const learningChats=await dual('/chat',undefined,'GET',200,'learning');
+ assert.deepEqual(learningChats.groups.map(g=>g.id),[enrolled.id]);assert.equal(learningChats.canSupervise,false);assert.equal(learningChats.groups[0].canManage,false);
+ assert.deepEqual((await dual('/chat')).groups.map(g=>g.id),[taught.id]);
+ assert.deepEqual((await dual('/community/presence?group='+enrolled.id,undefined,'GET',200,'learning')).groups.map(g=>g.id),[enrolled.id]);
  await dual('/progress/'+material.id+'/open',{},'POST',200,'learning');
+ const preview=await dual.raw('/resources/'+material.id+'/preview');assert.equal(preview.status,200);assert.match(await preview.text(),/<h1>Lectura<\/h1>/);
+ assert.equal((await dual.raw('/resources/'+hiddenMaterial.id+'/preview')).status,404);
+ assert.equal((await dual('/academics/activities/'+activity.id,undefined,'GET',200,'learning')).activity.questions[0].correct,undefined);
+ await dual('/auth/password',{currentPassword:'Docente-Estudiante-2026!',newPassword:'1234',confirmPassword:'1234'},'POST',400,'learning');
  const submitted=await dual(`/academics/activities/${activity.id}/submit`,{requestId:'dual-student-submission',action:'submit',activityRevision:1,answers:{q1:[0]}},'POST',201,'learning');
  assert.equal(submitted.studentId,person.id);
  await dual('/courses/'+taught.id,undefined,'GET',403,'learning');
