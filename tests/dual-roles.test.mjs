@@ -45,7 +45,10 @@ test('a teacher who is also a student teaches one group and submits work in anot
  const learningChats=await dual('/chat',undefined,'GET',200,'learning');
  assert.deepEqual(learningChats.groups.map(g=>g.id),[enrolled.id]);assert.equal(learningChats.canSupervise,false);assert.equal(learningChats.groups[0].canManage,false);
  assert.deepEqual((await dual('/chat')).groups.map(g=>g.id),[taught.id]);
- assert.deepEqual((await dual('/community/presence?group='+enrolled.id,undefined,'GET',200,'learning')).groups.map(g=>g.id),[enrolled.id]);
+ const learningCommunity=await dual('/community/presence?group='+enrolled.id,undefined,'GET',200,'learning');
+ assert.deepEqual(learningCommunity.groups.map(g=>g.id),[enrolled.id]);assert.deepEqual(learningCommunity.people.find(u=>u.id===person.id).roles,['student']);
+ assert.deepEqual((await master('/chat/contacts?group='+enrolled.id)).people.find(u=>u.id===person.id).roles,['student']);
+ assert.deepEqual((await dual('/community/presence?group='+taught.id)).people.find(u=>u.id===person.id).roles,['teacher']);
  await dual('/progress/'+material.id+'/open',{},'POST',200,'learning');
  const preview=await dual.raw('/resources/'+material.id+'/preview');assert.equal(preview.status,200);assert.match(await preview.text(),/<h1>Lectura<\/h1>/);
  assert.equal((await dual.raw('/resources/'+hiddenMaterial.id+'/preview')).status,404);
