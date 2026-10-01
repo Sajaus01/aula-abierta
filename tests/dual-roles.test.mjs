@@ -1,0 +1,55 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join,resolve,sep} from 'node:path';
+import {createApp} from '../server/index.mjs';
+
+test('a teacher who is also a student teaches one group and submits work in another',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'aula-dual-roles-'));
+ const app=await createApp({dataDir:root,env:{NODE_ENV:'test',AULA_MODEL_V2:'1',ADMIN_DOCUMENT:'99910001',ADMIN_PASSWORD:'Master-Synthetic-2026!'}});
+ await new Promise(done=>app.server.listen(0,'127.0.0.1',done));
+ const base='http://127.0.0.1:'+app.server.address().port;
+ t.after(async()=>{await new Promise(done=>app.server.close(done));assert.ok(resolve(root).startsWith(resolve(tmpdir())+sep+'aula-dual-roles-'));await rm(root,{recursive:true,force:true});});
+ function client(){let session='';return async(path,body,method=body?'POST':'GET',expected=200,view='teaching')=>{
+  const response=await fetch(base+'/api'+path,{method,headers:{'Content-Type':'application/json',Origin:base,Cookie:[session,view==='learning'?'aula_view=learning':''].filter(Boolean).join('; '),...(view==='learning'?{'X-Aula-View':'learning'}:{})},body:body?JSON.stringify(body):undefined});
+  if(response.headers.get('set-cookie'))session=response.headers.get('set-cookie').split(';')[0];
+  const result=await response.json();assert.equal(response.status,expected,JSON.stringify(result));return result.data;
+ };}
+ const master=client(),dual=client(),administrative=client();
+ const owner=await master('/auth/login',{document:'99910001',password:'Master-Synthetic-2026!'});
+ const person=await master('/platform/users',{document:'99910002',name:'Docente y estudiante',roles:['teacher','student']},'POST',201);
+ assert.deepEqual(new Set(person.roles),new Set(['teacher','student']));
+ await dual('/auth/login',{document:'99910002',password:'99910002'});
+ await dual('/auth/first-password',{newPassword:'Docente-Estudiante-2026!',confirmPassword:'Docente-Estudiante-2026!'});
+ const teachingTemplate=await dual('/admin/courses',{title:'Curso que enseña'},'POST',201);
+ const taught=await dual(`/platform/courses/${teachingTemplate.id}/clone`,{kind:'group',title:'Grupo que enseña',cohort:'2026-2',code:'DOC'},'POST',201);
+ await dual(`/platform/courses/${taught.id}/state`,{state:'active'});
+ const learningTemplate=await master('/admin/courses',{title:'Curso que estudia'},'POST',201);
+ const enrolled=await master(`/platform/courses/${learningTemplate.id}/clone`,{kind:'group',title:'Grupo que estudia',cohort:'2026-2',code:'EST'},'POST',201);
+ await master(`/platform/courses/${enrolled.id}/state`,{state:'active'});
+ await master('/admin/enrollments',{courseId:enrolled.id,studentId:person.id},'POST',201);
+ const chapter=await master(`/admin/courses/${enrolled.id}/modules`,{title:'Capítulo',published:true},'POST',201);
+ const material=await master(`/admin/modules/${chapter.id}/resources`,{title:'Lectura',kind:'html',content:'<h1>Lectura</h1>',published:true},'POST',201);
+ const activity=await master(`/academics/courses/${enrolled.id}/activities`,{title:'Prueba',kind:'quiz',status:'published',weight:100,moduleId:chapter.id,questions:[{id:'q1',type:'single',prompt:'¿Uno más uno?',options:['2','3'],correct:[0],points:1}]},'POST',201);
+ const staffCourses=await dual('/admin/courses');assert.ok(staffCourses.some(c=>c.id===taught.id));assert.ok(!staffCourses.some(c=>c.id===enrolled.id));
+ const roster=await master('/admin/students');assert.ok(roster.some(u=>u.id===person.id&&u.roles.includes('teacher')));
+ assert.equal((await dual('/auth/me',undefined,'GET',200,'learning')).user.role,'admin');
+ await dual('/admin/courses',undefined,'GET',403,'learning');
+ await dual('/learning',undefined,'GET',403);
+ const studentCourses=await dual('/courses',undefined,'GET',200,'learning');
+ assert.ok(studentCourses.some(c=>c.id===enrolled.id));assert.ok(!studentCourses.some(c=>c.id===taught.id));
+ assert.deepEqual((await dual('/courses/'+enrolled.id,undefined,'GET',200,'learning')).permissions,{view:false,edit:false,grade:false,manage:false});
+ assert.ok((await dual('/learning',undefined,'GET',200,'learning')).courses.some(c=>c.courseId===enrolled.id));
+ await dual('/progress/'+material.id+'/open',{},'POST',200,'learning');
+ const submitted=await dual(`/academics/activities/${activity.id}/submit`,{requestId:'dual-student-submission',action:'submit',activityRevision:1,answers:{q1:[0]}},'POST',201,'learning');
+ assert.equal(submitted.studentId,person.id);
+ await dual('/courses/'+taught.id,undefined,'GET',403,'learning');
+ await dual(`/academics/courses/${enrolled.id}/gradebook`,undefined,'GET',403,'learning');
+ assert.ok((await dual('/admin/courses')).some(c=>c.id===taught.id));
+ const adminUser=await master('/platform/users',{document:'99910003',name:'Administrativo',roles:['admin']},'POST',201);
+ await administrative('/auth/login',{document:'99910003',password:'99910003'});
+ await administrative('/auth/first-password',{newPassword:'Administrative-2026!',confirmPassword:'Administrative-2026!'});
+ await administrative(`/platform/users/${owner.user.id}/roles`,{roles:['master','student']},'POST',403);
+ assert.ok(adminUser.roles.includes('admin'));
+});

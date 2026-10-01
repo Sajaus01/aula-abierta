@@ -26,6 +26,7 @@ export function createPermissions(db){
   assert(one('SELECT id FROM users WHERE id=?',target),'Cuenta no encontrada.');
   assert(Array.isArray(next)&&next.length>0&&new Set(next).size===next.length&&next.every(r=>validRoles.has(r)),'Selecciona roles válidos.');
   const previous=roles(target),masterChange=previous.includes('master')!==next.includes('master');
+  assert(!previous.includes('master')||roles(actor).includes('master'),'Solo el máster puede modificar una cuenta máster.');
   assert(!masterChange||roles(actor).includes('master'),'Solo el máster puede conceder o retirar ese rol.');
   protectLastMaster(target,next,one('SELECT account_status FROM users WHERE id=?',target).account_status);
   db.prepare('DELETE FROM user_roles WHERE user_id=?').run(target);

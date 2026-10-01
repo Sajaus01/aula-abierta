@@ -166,6 +166,8 @@ export async function createApp(options = {}) {
     const auth={user:decorate(session),assurance:session.assurance,tokenHash:digest(value)};
     const preview=req.headers['x-aula-preview'];
     if(preview&&accessModel){accessModel.requireScope(auth,preview,'view');const previewActivity=req.headers['x-aula-activity-preview'];if(previewActivity){accessModel.requireScope(auth,preview,'edit');if(!one('SELECT id FROM activities WHERE id=? AND course_id=?',previewActivity,preview))fail(404,'Actividad no encontrada.');}else accessModel.group(preview);return {...auth,preview,previewActivity,user:{...auth.user,role:'student'}};}
+    const learningView=req.headers['x-aula-view']==='learning'||(req.headers.cookie||'').split(';').some(part=>part.trim()==='aula_view=learning');
+    if(learningView&&accessModel&&auth.user.roles.includes('student'))return {...auth,view:'learning',user:{...auth.user,role:'student'}};
     return auth;
   }
   function issueSession(res, user, assurance) {
@@ -219,7 +221,7 @@ export async function createApp(options = {}) {
     const resourceCount = details ? resources.length : one(`SELECT COUNT(*) AS count ${resourceScope}`, course.id, Number(teacher)).count;
     const result = { id:course.id, title:course.title, description:course.description, accessMode:course.access_mode, published:Boolean(course.published), coverUrl:course.cover_url, createdAt:course.created_at, updatedAt:course.updated_at, enrolled:isEnrolled(auth?.user.id, course.id), locked:!canAccess(course, auth), resourceCount, moduleCount:modules.length };
     if(auth?.preview)result.enrolled=true;
-    if(accessModel)Object.assign(result,{entityKind:course.entity_kind,templateId:course.template_id,cohort:course.cohort,groupCode:course.group_code,lifecycle:course.lifecycle,appearance:JSON.parse(course.appearance||'{}'),permissions:Object.fromEntries(['view','edit','grade','manage'].map(k=>[k,Boolean(auth&&accessModel.p.can(auth.user.id,course.id,k))]))});
+    if(accessModel)Object.assign(result,{entityKind:course.entity_kind,templateId:course.template_id,cohort:course.cohort,groupCode:course.group_code,lifecycle:course.lifecycle,appearance:JSON.parse(course.appearance||'{}'),permissions:Object.fromEntries(['view','edit','grade','manage'].map(k=>[k,Boolean(accessModel.staff(auth)&&accessModel.p.can(auth.user.id,course.id,k))]))});
     if (auth?.user.role === 'admin') result.enrollmentCount = one("SELECT COUNT(*) AS count FROM enrollments WHERE course_id=? AND status='active'", course.id).count;
     if (details) result.modules = modules.map(module => ({ id:module.id, courseId:module.course_id, title:module.title, position:module.position, published:Boolean(module.published), resources:resources.filter(r => r.module_id === module.id).map(resourceView) }));
     if (details) {
@@ -476,7 +478,7 @@ export async function createApp(options = {}) {
       if (await quickResources.handler(req,res,path,method,auth)) return;
       if (path === '/api/status' && method === 'GET') return json(res, { setupRequired:!one("SELECT id FROM users WHERE role='admin'"), uploadMaxBytes:UPLOAD_MAX_BYTES,modelVersion:accessModel?2:1 });
       if (path === '/api/settings' && method === 'GET') return json(res, settings());
-      if (path === '/api/auth/me' && method === 'GET') return json(res, auth ? { user:userView(auth.user), assurance:auth.assurance } : { user:null, assurance:null });
+      if (path === '/api/auth/me' && method === 'GET') return json(res, auth ? { user:userView(accessModel?decorate(auth.user):auth.user), assurance:auth.assurance } : { user:null, assurance:null });
       if (path === '/api/auth/login' && method === 'POST') {
         const body = await readJson(req);
         const document = documentNumber(body.document);
@@ -509,7 +511,7 @@ export async function createApp(options = {}) {
         requireAuth(auth);
         if ((!accessModel&&auth.user.role !== 'student') || auth.assurance !== 'password' || !auth.user.must_change_password) fail(403, 'Ingresa con tu contraseña inicial para configurar la personal.', 'INITIAL_PASSWORD_REQUIRED');
         const body = await readJson(req);
-        const error = passwordError(body.newPassword, auth.user.role, auth.user.document);
+        const error = passwordError(body.newPassword, accessModel&&accessModel.p.staff(auth.user.id)?'admin':auth.user.role, auth.user.document);
         if (error) fail(400, error);
         if (body.confirmPassword !== body.newPassword) fail(400, 'Las contraseñas no coinciden.');
         authLimit(req, auth.user.document);
@@ -552,7 +554,7 @@ export async function createApp(options = {}) {
         requireAuth(auth);
         if (auth.assurance !== 'password') fail(403, 'Debes ingresar con contraseña o usar un código de activación.', 'PASSWORD_REQUIRED');
         const body = await readJson(req);
-        const error = passwordError(body.newPassword, auth.user.role, auth.user.document);
+        const error = passwordError(body.newPassword, accessModel&&accessModel.p.staff(auth.user.id)?'admin':auth.user.role, auth.user.document);
         if (error) fail(400, error);
         authLimit(req, auth.user.document);
         if (typeof body.currentPassword !== 'string' || body.currentPassword.length > 256 || !await verifyPassword(body.currentPassword, auth.user.password_hash)) fail(401, 'La contraseña actual no es correcta.', 'INVALID_CREDENTIALS');
@@ -659,7 +661,7 @@ export async function createApp(options = {}) {
           audit(auth.user, 'settings.update');
           return json(res, settings());
         }
-        if (path === '/api/admin/students' && method === 'GET') return json(res, query("SELECT * FROM users WHERE role='student' ORDER BY name COLLATE NOCASE").filter(u=>!accessModel||(accessModel.p.roles(u.id).includes('student')&&(accessModel.global(auth)||query('SELECT course_id FROM enrollments WHERE student_id=?',u.id).some(e=>accessModel.p.can(auth.user.id,e.course_id,'view'))))).map(studentView));
+        if (path === '/api/admin/students' && method === 'GET') return json(res, (accessModel?query("SELECT DISTINCT u.* FROM users u JOIN user_roles r ON r.user_id=u.id AND r.role='student' ORDER BY u.name COLLATE NOCASE"):query("SELECT * FROM users WHERE role='student' ORDER BY name COLLATE NOCASE")).filter(u=>!accessModel||accessModel.global(auth)||query('SELECT course_id FROM enrollments WHERE student_id=?',u.id).some(e=>accessModel.p.can(auth.user.id,e.course_id,'view'))).map(u=>({...studentView(u),...(accessModel?{roles:accessModel.p.roles(u.id)}:{})})));
         if (path === '/api/admin/students' && method === 'POST') {
           const body = await readJson(req);
           const student = await addStudent(body);

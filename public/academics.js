@@ -17,7 +17,7 @@ export function createAcademicUI({api,getState,openModal,toast,render,modal,btn,
  let page=null,reportUrl=null,pageGeneration=0;
  const tools=createAcademicTools({api,getState,openModal,modal,render,toast,questionEditor});
  const review=createActivityReview({api,modal,openModal,icon,toast,render,modern:()=>Boolean(getState().user?.roles),questionMedia});
- const admin=()=>getState().user?.role==='admin';
+ const admin=()=>getState().user?.role==='admin'&&getState().viewMode!=='learning'&&!getState().preview;
  const link=(label,href,style='secondary')=>`<a class="btn ${style}" href="${e(href)}">${e(label)}</a>`;
  const acceptedFiles='.pdf,.png,.jpg,.jpeg,.webp,.gif,.xlsx,.csv,.docx,.pptx,.txt';
  const fileLabel=name=>String(name||'').replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-/i,'');

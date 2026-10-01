@@ -4,8 +4,8 @@ import {createPermissions} from './permissions.mjs';
 // canonical roles and course_staff; the compatibility label grants no scope.
 export function createAccessModel(db,fail){
  const p=createPermissions(db),one=(sql,...v)=>db.prepare(sql).get(...v);
- const staff=a=>Boolean(a?.assurance==='password'&&!a.preview&&p.staff(a.user.id));
- const global=a=>Boolean(a?.assurance==='password'&&!a.preview&&p.global(a.user.id));
+ const staff=a=>Boolean(a?.assurance==='password'&&!a.preview&&a.view!=='learning'&&p.staff(a.user.id));
+ const global=a=>Boolean(a?.assurance==='password'&&!a.preview&&a.view!=='learning'&&p.global(a.user.id));
  function decorate(user){if(!user)return user;const roles=p.roles(user.id);return {...user,roles,primaryRole:['master','admin','teacher','student'].find(r=>roles.includes(r)),role:roles.some(r=>r!=='student')?'admin':'student'};}
  function requireScope(a,id,action='view'){if(!staff(a)||!p.can(a.user.id,id,action))fail(403,'No tienes permiso para esta acción en el curso o grupo.','SCOPE_REQUIRED');}
  function requireGlobal(a){if(!global(a))fail(403,'Se requiere una cuenta máster o administrativa.','ADMIN_REQUIRED');}

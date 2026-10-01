@@ -16,6 +16,7 @@ test('roles and scoped capabilities enforce master protection, account state and
   assert.throws(()=>p.setRoles('owner','owner',['admin']),/última/);
   assert.throws(()=>p.setStatus('owner','owner','suspended'),/última/);
   p.setRoles('owner','administrative',['admin']);
+  assert.throws(()=>p.setRoles('administrative','owner',['master','student']),/Solo el máster puede modificar/);
   assert.throws(()=>p.setRoles('administrative','student',['master']),/Solo el máster/);
   p.setRoles('administrative','teacher',['teacher']);p.setRoles('administrative','outsider',['teacher']);
   p.assign('owner','one','teacher',{edit:true,grade:false,manage:false});
