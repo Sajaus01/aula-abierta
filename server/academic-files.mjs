@@ -3,7 +3,7 @@ import {join} from 'node:path';
 import {writeFileSync,unlinkSync,statfsSync} from 'node:fs';
 
 export const submissionFiles = payload => payload.files ?? (payload.file ? [{...payload.file,id:'legacy'}] : []);
-export function createAcademicFiles({db,fail,validateFile,uploadsDir,accessModel}) {
+export function createAcademicFiles({db,fail,validateFile,uploadsDir,accessModel,storage}) {
  const all=(sql,...args)=>db.prepare(sql).all(...args);
  const instructionFiles=id=>all('SELECT id,file_key AS key,name,mime,size FROM activity_files WHERE activity_id=? ORDER BY position,id',id);
  function remove(file){if(db.prepare("SELECT name FROM sqlite_master WHERE name='activity_versions'").get()&&db.prepare("SELECT 1 FROM activity_versions v,json_each(v.files) f WHERE json_extract(f.value,'$.key')=? LIMIT 1").get(file.key))return;try{unlinkSync(join(uploadsDir,file.key));}catch(error){if(error.code!=='ENOENT')console.error('No se pudo retirar un adjunto académico.');}}
@@ -23,7 +23,7 @@ export function createAcademicFiles({db,fail,validateFile,uploadsDir,accessModel
   const metadata=f=>({id:f.id,key:f.key,name:f.name,mime:f.mime,size:f.size});
   const files=[...kept,...added.map(metadata)];
   if(files.reduce((n,f)=>n+f.size,0)>20*1024*1024)fail(413,'Los archivos juntos no pueden superar los 20 MB.');
-  if(added.length){const disk=statfsSync(uploadsDir);if(Number(disk.bavail)*Number(disk.bsize)<added.reduce((n,f)=>n+f.size,0)+50*1024*1024)fail(413,'No hay espacio disponible. Usa un enlace o consulta con tu docente.');}
+  if(added.length&&!storage){const disk=statfsSync(uploadsDir);if(Number(disk.bavail)*Number(disk.bsize)<added.reduce((n,f)=>n+f.size,0)+50*1024*1024)fail(413,'No hay espacio disponible. Usa un enlace o consulta con tu docente.');}
   return {files,added,removed:existing.filter(f=>!retainIds.includes(f.id))};
  }
  function write(plan){const written=[];try{for(const f of plan.added){writeFileSync(join(uploadsDir,f.key),f.buffer,{flag:'wx',mode:0o600});written.push(f);}}catch(error){written.forEach(remove);throw error;}}

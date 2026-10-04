@@ -36,9 +36,9 @@ export function courseInventory(db,id){
 }
 
 // Caller owns the DB transaction and cleans only newly-created files on rollback.
-export function copyCourseContent(db,uploadsDir,sourceId,destinationId,createdFiles=[]){
+export function copyCourseContent(db,uploadsDir,sourceId,destinationId,createdFiles=[],diskCheck=null){
  const all=(sql,...p)=>db.prepare(sql).all(...p),map=new Map();
- const duplicateFile=key=>{if(!key)return key;if(key!==basename(key)||/[\\/\x00]/.test(key))throw Error('Ruta de archivo inválida');const source=join(uploadsDir,key),disk=statfsSync(uploadsDir);if(disk.bavail*disk.bsize<statSync(source).size+67108864)throw Error('Espacio insuficiente para copiar contenidos');const next=randomUUID()+extname(key);copyFileSync(source,join(uploadsDir,next),1);createdFiles.push(next);return next;};
+ const duplicateFile=key=>{if(!key)return key;if(key!==basename(key)||/[\\/\x00]/.test(key))throw Error('Ruta de archivo inválida');const source=join(uploadsDir,key),disk=statfsSync(uploadsDir);if(diskCheck)diskCheck(statSync(source).size);if(!diskCheck&&disk.bavail*disk.bsize<statSync(source).size+67108864)throw Error('Espacio insuficiente para copiar contenidos');const next=randomUUID()+extname(key);copyFileSync(source,join(uploadsDir,next),1);createdFiles.push(next);return next;};
  for(const row of all('SELECT * FROM modules WHERE course_id=?',sourceId)){const id=randomUUID();map.set(row.id,id);insert(db,'modules',{...row,id,course_id:destinationId});}
  for(const row of all('SELECT r.* FROM resources r JOIN modules m ON m.id=r.module_id WHERE m.course_id=?',sourceId))insert(db,'resources',{...row,id:randomUUID(),module_id:map.get(row.module_id),file_key:duplicateFile(row.file_key)});
  for(const row of all('SELECT * FROM activities WHERE course_id=?',sourceId)){
@@ -50,14 +50,14 @@ export function copyCourseContent(db,uploadsDir,sourceId,destinationId,createdFi
  for(const row of all('SELECT * FROM course_staff WHERE course_id=?',sourceId))insert(db,'course_staff',{...row,course_id:destinationId});
 }
 
-export function cloneCourse(db,uploadsDir,sourceId,{kind='group',title,cohort='',code='',actorId}){
+export function cloneCourse(db,uploadsDir,sourceId,{kind='group',title,cohort='',code='',actorId,diskCheck=null}){
  if(!['group','template'].includes(kind))throw Error('Tipo de copia inválido');
  const files=[];db.exec('BEGIN IMMEDIATE');
  try{
   const source=db.prepare('SELECT * FROM courses WHERE id=?').get(sourceId);if(!source||source.entity_kind==='legacy')throw Error('Curso no disponible');
   if(kind==='group'&&(!cohort.trim()||!code.trim()))throw Error('Indica semestre y código de grupo');
   const id=randomUUID();insert(db,'courses',{...source,id,title:title?.trim()||source.title,entity_kind:kind,template_id:kind==='group'?(source.template_id||source.id):null,cohort:kind==='group'?cohort.trim():'',group_code:kind==='group'?code.trim():'',lifecycle:'draft',published:0,created_at:now(),updated_at:now()});
-  copyCourseContent(db,uploadsDir,sourceId,id,files);
+  copyCourseContent(db,uploadsDir,sourceId,id,files,diskCheck);
   if(actorId)db.prepare('INSERT INTO course_staff VALUES(?,?,1,1,1) ON CONFLICT(course_id,user_id) DO UPDATE SET can_edit=1,can_grade=1,can_manage=1').run(id,actorId);
   db.exec('COMMIT');return id;
  }catch(e){if(db.isTransaction)db.exec('ROLLBACK');for(const file of files)unlinkSync(join(uploadsDir,file));throw e;}

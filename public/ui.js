@@ -1,5 +1,6 @@
 import {escapeHtml as e} from './lib.js';
 const icons = {
+ refresh:'M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 12-2l2 3M4 16l2 3a7 7 0 0 0 12-2', alert:'m12 3 10 18H2zM12 9v5m0 3h.01',
  book:'M4 4h6a3 3 0 0 1 3 3v14a4 4 0 0 0-4-2H3V4h1zm9 3a3 3 0 0 1 3-3h6v15h-5a4 4 0 0 0-4 2',
  grid:'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z',
  users:'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M18 3a4 4 0 0 1 0 8M22 21v-2a4 4 0 0 0-3-3.9',

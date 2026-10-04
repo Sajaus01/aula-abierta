@@ -10,7 +10,7 @@ export function setupQuickResources(db){db.exec(`CREATE TABLE IF NOT EXISTS quic
 );CREATE INDEX IF NOT EXISTS quick_resources_course ON quick_resources(course_id);`);}
 
 export function createQuickResources(ctx){
- const {db,fail,json,readJson,readSession,requireAdmin,requireCourse,validateFile,fileResponse,uploadsDir,audit,string,webUrl,boolean}=ctx;
+ const {db,fail,json,readJson,readSession,requireAdmin,requireCourse,validateFile,fileResponse,uploadsDir,audit,string,webUrl,boolean,storage}=ctx;
  const one=(sql,...p)=>db.prepare(sql).get(...p),all=(sql,...p)=>db.prepare(sql).all(...p),run=(sql,...p)=>db.prepare(sql).run(...p);
  const teacher=a=>a?.user.role==='admin'&&a.assurance==='password';
  const view=r=>({id:r.id,courseId:r.course_id,title:r.title,description:r.description,kind:r.kind,url:r.url,imageUrl:r.image_url,visible:Boolean(r.visible),position:r.position,version:r.version,fileName:r.file_name,fileSize:r.file_size,fileUrl:r.file_key?`/api/quick-resources/${r.id}/file`:null});
@@ -42,10 +42,11 @@ export function createQuickResources(ctx){
   if(source==='link'&&(!url||body.file))fail(400,'Escribe un enlace válido y no adjuntes un archivo.');
   if(source==='file'&&kind==='video')fail(400,'Para videos, usa un enlace.');
   let file=null;
-  if(source==='file'&&body.file){if(!/\.(pdf|pptx|docx|xlsx|csv|png|jpe?g|gif|webp|txt)$/i.test(body.file.name||''))fail(400,'Sube PDF, documentos, hojas de cálculo o imágenes. Para aplicaciones, usa un enlace.');file=validateFile(body.file);const disk=statfsSync(uploadsDir);if(Number(disk.bavail)*Number(disk.bsize)<file.size+50*1024*1024)fail(413,'No hay espacio suficiente. Usa un enlace de descarga.');}
+  if(source==='file'&&body.file){if(!/\.(pdf|pptx|docx|xlsx|csv|png|jpe?g|gif|webp|txt)$/i.test(body.file.name||''))fail(400,'Sube PDF, documentos, hojas de cálculo o imágenes. Para aplicaciones, usa un enlace.');file=validateFile(body.file);if(!storage){const disk=statfsSync(uploadsDir);if(Number(disk.bavail)*Number(disk.bsize)<file.size+50*1024*1024)fail(413,'No hay espacio suficiente. Usa un enlace de descarga.');}}
   if(source==='file'&&!file&&!old?.file_key)fail(400,'Selecciona un archivo.');
   if(!old&&one('SELECT COUNT(*) n FROM quick_resources WHERE course_id=?',courseId).n>=30)fail(400,'Puedes añadir hasta 30 recursos rápidos por curso.');
   const id=old?.id||randomUUID(),key=source==='link'?null:file?.key||old.file_key;
+  if(file)storage?.assertUpload({userId:auth.user.id,courseId,added:[file],removed:old?.file_key?[old.file_key]:[]});
   try{
    if(file)writeFileSync(join(uploadsDir,file.key),file.buffer,{flag:'wx',mode:0o600});
    if(old)run('UPDATE quick_resources SET title=?,description=?,kind=?,url=?,image_url=?,visible=?,file_key=?,file_name=?,file_mime=?,file_size=?,version=version+1 WHERE id=?',title,description,kind,source==='link'?url:'',image,visible,key,key?(file?.name||old.file_name):null,key?(file?.mime||old.file_mime):null,key?(file?.size||old.file_size):null,id);

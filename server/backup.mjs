@@ -3,6 +3,7 @@ import {mkdirSync,existsSync,copyFileSync,readFileSync,writeFileSync,statSync,st
 import {resolve,join,basename} from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
+import {optimizeBackups} from './storage-disk.mjs';
 
 const sha=file=>createHash('sha256').update(readFileSync(file)).digest('hex');
 const quote=value=>"'"+String(value).replaceAll("'","''")+"'";
@@ -17,6 +18,7 @@ function fileKeys(db){
 }
 export function createBackup(dataDirectory,{label='manual'}={}){
  const root=resolve(dataDirectory),source=join(root,'aula.sqlite');if(!existsSync(source))throw Error('No existe una base de datos para respaldar.');
+ optimizeBackups(root);
  const holder=new DatabaseSync(source);holder.exec('PRAGMA busy_timeout=15000; BEGIN IMMEDIATE');let reader;
  try{
   reader=new DatabaseSync(source,{readOnly:true});
@@ -28,7 +30,7 @@ export function createBackup(dataDirectory,{label='manual'}={}){
   const counts=Object.fromEntries(tables(reader).map(t=>[t,reader.prepare(`SELECT COUNT(*) n FROM "${t.replaceAll('"','""')}"`).get().n]));
   const check=new DatabaseSync(join(destination,'aula.sqlite'),{readOnly:true});try{if(check.prepare('PRAGMA integrity_check').get().integrity_check!=='ok'||check.prepare('PRAGMA foreign_key_check').all().length)throw Error('El respaldo no supera la comprobación de integridad.');}finally{check.close();}
   const manifest={format:1,label,createdAt:new Date().toISOString(),databaseSha256:sha(join(destination,'aula.sqlite')),counts,files};
-  writeFileSync(join(destination,'manifest.json'),JSON.stringify(manifest,null,2),{mode:0o600,flag:'wx'});holder.exec('COMMIT');return {directory:destination,...manifest};
+  writeFileSync(join(destination,'manifest.json'),JSON.stringify(manifest,null,2),{mode:0o600,flag:'wx'});holder.exec('COMMIT');optimizeBackups(root);return {directory:destination,...manifest};
  }catch(error){if(holder.isTransaction)holder.exec('ROLLBACK');throw error;}finally{reader?.close();holder.close();}
 }
 export function restoreBackup(backupDirectory,destinationDirectory){

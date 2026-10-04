@@ -6,6 +6,7 @@ import {courseInventory} from './course-model.mjs';
 import {submissionFiles} from './academic-files.mjs';
 
 export function createPlatform(ctx){
+ const storage=ctx.storage;
  const {db,accessModel:a,fail,json,readJson,readSession,uploadsDir,addStudent,activation,hashPassword,token,audit,courseView,string,webUrl}=ctx;
  const all=(sql,...p)=>db.prepare(sql).all(...p),one=(sql,...p)=>db.prepare(sql).get(...p),run=(sql,...p)=>db.prepare(sql).run(...p),now=()=>new Date().toISOString();
  const clean=u=>({id:u.id,name:u.name,document:u.document,email:u.email,roles:a.p.roles(u.id),accountStatus:u.account_status,active:Boolean(u.active),mustChangePassword:Boolean(u.must_change_password)});
@@ -78,8 +79,9 @@ export function createPlatform(ctx){
     const b=await body();a.requireScope(auth,id,action==='appearance'?'edit':'manage');
     if(action==='clone'){
      const title=string(b.title,'el título',200,true),cohort=string(b.cohort,'el semestre',60),code=string(b.code,'el código',60);
-     let next;try{next=cloneCourse(db,uploadsDir,id,{kind:b.kind,title,cohort,code,actorId:auth.user.id});}catch(e){if(e.code?.startsWith('ERR_SQLITE')||/UNIQUE/.test(e.message))fail(409,'Ya existe ese grupo en el semestre.');fail(400,e.message);}
-     audit(auth.user,'course.clone',next);return send(courseView(one('SELECT * FROM courses WHERE id=?',next),auth,true),201);
+     storage?.checkCopy({userId:auth.user.id,sourceCourseId:id});
+     let next;try{next=cloneCourse(db,uploadsDir,id,{kind:b.kind,title,cohort,code,actorId:auth.user.id,diskCheck:storage?.assertDisk});}catch(e){if(e.code?.startsWith('ERR_SQLITE')||/UNIQUE/.test(e.message))fail(409,'Ya existe ese grupo en el semestre.');fail(400,e.message);}
+     storage?.setOwner(next,auth.user.id);audit(auth.user,'course.clone',next);return send(courseView(one('SELECT * FROM courses WHERE id=?',next),auth,true),201);
     }
     if(action==='staff')return send(a.p.assign(auth.user.id,id,b.userId,b));
     if(action==='state'){

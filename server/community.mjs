@@ -35,7 +35,7 @@ export function decodeAvatar(value,fail) {
  return {bytes,mime:'image/'+m[1],version:createHash('sha256').update(bytes).digest('hex').slice(0,16)};
 }
 
-export function createCommunity({db,accessModel:a,fail,json,readJson,readSession,requireCourse,isEnrolled,audit,chat=null,clock=Date.now}) {
+export function createCommunity({db,accessModel:a,fail,json,readJson,readSession,requireCourse,isEnrolled,audit,chat=null,clock=Date.now,storage}) {
  const all=(s,...p)=>db.prepare(s).all(...p),one=(s,...p)=>db.prepare(s).get(...p),run=(s,...p)=>db.prepare(s).run(...p);
  const now=()=>new Date(clock()).toISOString(),cutoff=()=>new Date(clock()-PRESENCE_TTL).toISOString();
  const membership=`(EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND r.role IN ('master','admin')) OR (EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND r.role='teacher') AND EXISTS(SELECT 1 FROM course_staff s WHERE s.user_id=u.id AND s.course_id=c.id)) OR (c.lifecycle='active' AND c.published=1 AND EXISTS(SELECT 1 FROM enrollments e WHERE e.student_id=u.id AND e.course_id=c.id AND e.status='active' AND (e.starts_at IS NULL OR e.starts_at<=?) AND (e.expires_at IS NULL OR e.expires_at>?))))`;
@@ -84,6 +84,7 @@ export function createCommunity({db,accessModel:a,fail,json,readJson,readSession
     if(typeof b.bio!=='string'||b.bio.length>240||typeof b.hidden!=='boolean'||(b.removePhoto!==undefined&&typeof b.removePhoto!=='boolean'))fail(400,'Revisa la presentación y la visibilidad.');
     if(b.hidden&&!a.p.staff(auth.user.id))fail(403,'Solo docentes y personal administrativo pueden ocultar su estado.');
     const old=one('SELECT * FROM profiles WHERE user_id=?',auth.user.id),photo=b.photo?decodeAvatar(b.photo,fail):null;
+    if(photo&&!b.removePhoto)storage?.assertUpload({userId:auth.user.id,added:[{size:photo.bytes.length}],removed:['avatar:'+auth.user.id],kind:'avatar'});
     run(`INSERT INTO profiles VALUES(?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET bio=excluded.bio,hidden=excluded.hidden,photo=excluded.photo,photo_mime=excluded.photo_mime,photo_version=excluded.photo_version,updated_at=excluded.updated_at`,auth.user.id,b.bio.trim(),Number(b.hidden),b.removePhoto?null:photo?.bytes||old?.photo||null,b.removePhoto?null:photo?.mime||old?.photo_mime||null,b.removePhoto?null:photo?.version||old?.photo_version||null,now());
     audit(auth.user,'profile.update',auth.user.id);return send(profile(auth.user,true));
    }

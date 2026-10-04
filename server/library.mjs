@@ -2,12 +2,13 @@ import {randomUUID} from 'node:crypto';
 import {copyFileSync,unlinkSync,statSync,statfsSync,readFileSync} from 'node:fs';
 import {join,extname,basename} from 'node:path';
 export function createLibrary(ctx){
+ const storage=ctx.storage;
  const {db,uploadsDir,accessModel:a,readJson,readSession,json,fail,audit,string,fileResponse}=ctx;
  db.exec(`CREATE TABLE IF NOT EXISTS library_items(id TEXT PRIMARY KEY,owner_id TEXT NOT NULL REFERENCES users(id),title TEXT NOT NULL,kind TEXT NOT NULL,payload TEXT NOT NULL,shared INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL);`);
  const all=(s,...p)=>db.prepare(s).all(...p),one=(s,...p)=>db.prepare(s).get(...p),run=(s,...p)=>db.prepare(s).run(...p);
  function add(table,row){const keys=Object.keys(row);db.prepare(`INSERT INTO ${table} (${keys.join(',')}) VALUES (${keys.map(()=>'?')})`).run(...Object.values(row));}
  const owned=(id,auth)=>{const r=one('SELECT * FROM library_items WHERE id=?',id);if(!r||(!r.shared&&r.owner_id!==auth.user.id&&!a.global(auth)))fail(404,'Elemento de biblioteca no encontrado.');return r;};
- function copyFile(key,created){if(!key)return key;if(key!==basename(key)||/[\\/\x00]/.test(key))fail(400,'Archivo inválido.');const disk=statfsSync(uploadsDir);if(disk.bavail*disk.bsize<statSync(join(uploadsDir,key)).size+67108864)fail(413,'No hay espacio para copiar el archivo.');const next=randomUUID()+extname(key);copyFileSync(join(uploadsDir,key),join(uploadsDir,next),1);created.push(next);return next;}
+ function copyFile(key,created){if(!key)return key;if(key!==basename(key)||/[\\/\x00]/.test(key))fail(400,'Archivo inválido.');const disk=statfsSync(uploadsDir);if(storage)storage.assertDisk(statSync(join(uploadsDir,key)).size);if(!storage&&disk.bavail*disk.bsize<statSync(join(uploadsDir,key)).size+67108864)fail(413,'No hay espacio para copiar el archivo.');const next=randomUUID()+extname(key);copyFileSync(join(uploadsDir,key),join(uploadsDir,next),1);created.push(next);return next;}
  function remapFiles(value,created){if(Array.isArray(value))return value.map(x=>remapFiles(x,created));if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).map(([k,v])=>[k,k==='file_key'?copyFile(v,created):remapFiles(v,created)]));return value;}
  function transact(fn){const created=[];db.exec('BEGIN IMMEDIATE');try{const result=fn(created);db.exec('COMMIT');return result;}catch(e){db.exec('ROLLBACK');for(const f of created)unlinkSync(join(uploadsDir,f));throw e;}}
  function snapshot(kind,id){
@@ -33,6 +34,7 @@ export function createLibrary(ctx){
   if(path==='/api/library'&&method==='POST'){
    const b=await readJson(req);auth=readSession(req);if(!a.staff(auth))fail(403,'La sesión cambió.');if(!['module','resource','activity'].includes(b.kind))fail(400,'Tipo no válido.');
    const type={module:'modules',resource:'resources',activity:'activities'}[b.kind],courseId=a.resolve(type,b.sourceId);a.requireScope(auth,courseId,'edit');
+   storage?.checkCopy({userId:auth.user.id,payload:snapshot(b.kind,b.sourceId)});
    const id=transact(created=>{const payload=remapFiles(snapshot(b.kind,b.sourceId),created),id=randomUUID();run('INSERT INTO library_items VALUES(?,?,?,?,?,?,?)',id,auth.user.id,string(b.title,'el título',200,true),b.kind,JSON.stringify(payload),Number(b.shared===true),new Date().toISOString());audit(auth.user,'library.create',id);return id;});return send({id},201);
   }
   const m=/^\/api\/library\/([^/]+)(?:\/(use|sharing|preview|file))?$/.exec(path);
@@ -45,7 +47,7 @@ export function createLibrary(ctx){
    if(!m[2]&&method==='GET'){const payload=JSON.parse(item.payload);return send({id:item.id,title:item.title,kind:item.kind,shared:!!item.shared,preview:previewTree(payload,item)});}
    if(method==='POST'){const b=await readJson(req);auth=readSession(req);if(!a.staff(auth))fail(403,'La sesión cambió.');item=owned(m[1],auth);
     if(m[2]==='sharing'){if(item.owner_id!==auth.user.id&&!a.global(auth))fail(403,'Solo el propietario puede compartir.');if(typeof b.shared!=='boolean')fail(400,'Estado no válido.');run('UPDATE library_items SET shared=? WHERE id=?',Number(b.shared),item.id);audit(auth.user,'library.share',item.id);return send({success:true});}
-    if(m[2]==='use'){a.requireScope(auth,b.courseId,'edit');if(item.kind==='resource'&&!b.moduleId)fail(400,'Selecciona el capítulo de destino.');if(b.moduleId&&!one('SELECT id FROM modules WHERE id=? AND course_id=?',b.moduleId,b.courseId))fail(400,'Capítulo no válido.');const id=transact(created=>place(item.kind,remapFiles(JSON.parse(item.payload),created),b.courseId,b.moduleId));audit(auth.user,'library.use',id);return send({id,courseId:b.courseId,kind:item.kind},201);}
+    if(m[2]==='use'){a.requireScope(auth,b.courseId,'edit');if(item.kind==='resource'&&!b.moduleId)fail(400,'Selecciona el capítulo de destino.');if(b.moduleId&&!one('SELECT id FROM modules WHERE id=? AND course_id=?',b.moduleId,b.courseId))fail(400,'Capítulo no válido.');storage?.checkCopy({userId:auth.user.id,courseId:b.courseId,payload:JSON.parse(item.payload)});const id=transact(created=>place(item.kind,remapFiles(JSON.parse(item.payload),created),b.courseId,b.moduleId));audit(auth.user,'library.use',id);return send({id,courseId:b.courseId,kind:item.kind},201);}
    }
   }
   fail(404,'Acción de biblioteca no encontrada.');

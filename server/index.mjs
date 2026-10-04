@@ -1,3 +1,4 @@
+import {createStorage} from './storage.mjs';
 import {setupCourseModel} from './course-model.mjs';
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
@@ -436,7 +437,8 @@ export async function createApp(options = {}) {
     stream.pipe(res);
   }
 
-  const academics = createAcademics({db,fail,json,readJson,readSession,requireAdmin,requireStudent,requireCourse,isEnrolled,validateFile,fileResponse,uploadsDir,audit,env,accessModel});
+  const storage=createStorage({db,dataDir,uploadsDir,accessModel,fail,json,readJson,readSession,audit,env});
+  const academics = createAcademics({storage,db,fail,json,readJson,readSession,requireAdmin,requireStudent,requireCourse,isEnrolled,validateFile,fileResponse,uploadsDir,audit,env,accessModel});
   if(accessModel){
     if(!one("SELECT name FROM sqlite_master WHERE type='table' AND name='profiles'"))createBackup(dataDir,{label:'before-community-panorama-v1'});
     setupCommunity(db);setupPanorama(db);
@@ -444,11 +446,11 @@ export async function createApp(options = {}) {
     setupChat(db);
   }
   const chat=accessModel?createChat({db,accessModel,fail,json,readJson,readSession,isEnrolled,audit}):null;
-  const community=accessModel?createCommunity({db,accessModel,fail,json,readJson,readSession,requireCourse,isEnrolled,audit,chat}):null;
+  const community=accessModel?createCommunity({storage,db,accessModel,fail,json,readJson,readSession,requireCourse,isEnrolled,audit,chat}):null;
   const panorama=accessModel?createPanorama({db,accessModel,fail,json}):null;
-  const quickResources = createQuickResources({db,fail,json,readJson,readSession,requireAdmin,requireCourse,validateFile,fileResponse,uploadsDir,audit,string,webUrl,boolean});
-  const platform=accessModel?createPlatform({db,accessModel,fail,json,readJson,readSession,uploadsDir,addStudent,activation,hashPassword,token,audit,courseView,string,webUrl}):null;
-  const library=accessModel?createLibrary({db,accessModel,fail,json,readJson,readSession,uploadsDir,audit,string,fileResponse}):null;
+  const quickResources = createQuickResources({storage,db,fail,json,readJson,readSession,requireAdmin,requireCourse,validateFile,fileResponse,uploadsDir,audit,string,webUrl,boolean});
+  const platform=accessModel?createPlatform({storage,db,accessModel,fail,json,readJson,readSession,uploadsDir,addStudent,activation,hashPassword,token,audit,courseView,string,webUrl}):null;
+  const library=accessModel?createLibrary({storage,db,accessModel,fail,json,readJson,readSession,uploadsDir,audit,string,fileResponse}):null;
   const analytics=accessModel?createAnalytics({db,accessModel,fail,json,readJson,readSession,requireCourse,audit,academics}):null;
   const questionImport=accessModel?createQuestionImport({accessModel,fail,json,readJson,readSession}):null;
   const handler = async (req, res) => {
@@ -469,6 +471,7 @@ export async function createApp(options = {}) {
       accessModel?.authorize(req,auth);
       const initialAllowed = (method === 'GET' && ['/api/status', '/api/settings', '/api/auth/me'].includes(path)) || (method === 'POST' && ['/api/auth/logout', '/api/auth/first-password'].includes(path));
       if (path.startsWith('/api/') && !initialAllowed) requirePersonalPassword(auth);
+      if(await storage.handler(req,res,path,method,auth))return;
       if(community&&await community.handler(req,res,path,method,auth))return;
       if(chat&&await chat.handler(req,res,path,method,auth))return;
       if(panorama&&await panorama.handler(req,res,path,method,auth))return;
@@ -747,6 +750,7 @@ export async function createApp(options = {}) {
           const published = own(body, 'published') ? boolean(body.published, 'Publicado') : 0;
           run('INSERT INTO courses(id,title,description,access_mode,published,cover_url,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)', id, title, description, accessMode, published, webUrl(body.coverUrl), at, at);
           if(accessModel){run("UPDATE courses SET entity_kind='template',lifecycle=? WHERE id=?",published?'active':'draft',id);run('INSERT INTO course_staff VALUES(?,?,1,1,1)',id,auth.user.id);}
+          storage.setOwner(id,auth.user.id);
           audit(auth.user, 'course.create', id);
           return json(res, courseView(existing('courses', id, 'Curso'), auth, true), 201);
         }
@@ -848,6 +852,7 @@ export async function createApp(options = {}) {
           const published = own(body, 'published') ? boolean(body.published, 'Publicado') : 0;
           const file = body.file ? validateFile(body.file) : null;
           if (!resourceUrl && !content && !file) fail(400, 'Agrega un archivo, un enlace o contenido al recurso.');
+          if(file)storage.assertUpload({userId:auth.user.id,courseId:module.course_id,added:[file]});
           if (file) writeFileSync(join(uploadsDir, file.key), file.buffer, { flag:'wx', mode:0o600 });
           try { run('INSERT INTO resources(id,module_id,title,kind,url,content,position,file_key,file_name,file_mime,file_size,created_at,updated_at,published) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)', id, module.id, title, kind, resourceUrl, content, order, file?.key || null, file?.name || null, file?.mime || null, file?.size || null, at, at, published); }
           catch (error) { if (file) deleteFiles([{ file_key:file.key }]); throw error; }
@@ -878,6 +883,7 @@ export async function createApp(options = {}) {
           const replaceFile = own(body, 'file');
           const fileKey = replaceFile ? file?.key || null : resource.file_key;
           if (!resourceUrl && !content && !fileKey) fail(400, 'Agrega un archivo, un enlace o contenido al recurso.');
+          if(file)storage.assertUpload({userId:auth.user.id,courseId:existing('modules',resource.module_id,'Capítulo').course_id,added:[file],removed:resource.file_key?[resource.file_key]:[]});
           if (file) writeFileSync(join(uploadsDir, file.key), file.buffer, { flag:'wx', mode:0o600 });
           try { run('UPDATE resources SET title=?,kind=?,url=?,content=?,position=?,file_key=?,file_name=?,file_mime=?,file_size=?,updated_at=?,published=? WHERE id=?', title, kind, resourceUrl, content, order, fileKey, replaceFile ? file?.name || null : resource.file_name, replaceFile ? file?.mime || null : resource.file_mime, replaceFile ? file?.size || null : resource.file_size, now(), published, resource.id); }
           catch (error) { if (file) deleteFiles([{ file_key:file.key }]); throw error; }
@@ -908,12 +914,13 @@ export async function createApp(options = {}) {
       return fileResponse(req, res, filePath, mime, basename(filePath));
     } catch (error) {
       if (res.headersSent) { res.destroy(); return; }
-      const status = error instanceof ApiError || error instanceof MigrationError || error instanceof PermissionError ? error.status : error instanceof URIError ? 400 : 500;
+      const diskFull=error.code==='ENOSPC'||error.errcode===13;
+      const status = diskFull?413:error instanceof ApiError || error instanceof MigrationError || error instanceof PermissionError ? error.status : error instanceof URIError ? 400 : 500;
       if (status === 500) console.error('Error interno:', error.message);
       res.removeHeader('Content-Length');
       res.removeHeader('Content-Disposition');
       res.writeHead(status, { 'Content-Type':'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ error:status === 500 ? 'No se pudo completar la solicitud.' : error.message, code:error.code || (status === 500 ? 'INTERNAL_ERROR' : 'INVALID_REQUEST') }));
+      res.end(JSON.stringify({ error:diskFull?'El disco del servidor está lleno. Administración debe revisar Almacenamiento.':status === 500 ? 'No se pudo completar la solicitud.' : error.message, code:diskFull?'STORAGE_DISK_FULL':error.code || (status === 500 ? 'INTERNAL_ERROR' : 'INVALID_REQUEST') }));
     }
   };
   const server = http.createServer({ maxHeaderSize:16384 }, handler);
