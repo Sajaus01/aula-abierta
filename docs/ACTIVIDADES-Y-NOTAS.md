@@ -33,7 +33,7 @@ Las fechas se introducen y muestran en la zona horaria del navegador, indicada e
 
 ## Enunciado y materiales del docente
 
-Al crear o editar una tarea, usa **Enunciado y materiales del docente** para agregar un enlace a las preguntas y adjuntar hasta **5 archivos, con un máximo conjunto de 20 MB**. Admite PDF, imágenes, PPTX, DOCX, XLSX, CSV y TXT. Puedes conservar o retirar cada archivo al editar; los cambios se guardan al guardar la actividad.
+Al crear o editar una tarea, usa **Enunciado y materiales del docente** para agregar un enlace a las preguntas y adjuntar hasta **5 archivos, con un máximo conjunto de 20 MB**. Admite cualquier formato; PDF e imágenes compatibles se previsualizan y los demás archivos se descargan. Puedes conservar o retirar cada archivo al editar; los cambios se guardan al guardar la actividad.
 
 Al abrir la actividad, el estudiante ve el enunciado y su formulario de entrega en la misma página. El primer PDF se muestra con controles de página y zoom; también puede **Ampliar** o **Descargar** los adjuntos. Las imágenes tienen vista previa. Los documentos de Office se descargan: para mostrar diapositivas dentro del aula, expórtalas a PDF. El visor PDF se sirve desde la propia plataforma y no envía los documentos a un servicio externo.
 
@@ -100,3 +100,18 @@ La variable opcional `SUBMISSIONS_MAX_BYTES` ajusta el cupo en bytes. Antes de a
 Respalda una copia coherente de **la base de datos completa y `uploads/`**, según [Publicación](PUBLICACION.md#persistencia-y-copias). El traslado JSON heredado del aula inicial no incluye actividades, entregas ni calificaciones y no sirve para respaldar esta función.
 
 Esta versión no incluye vigilancia de exámenes, banco aleatorio, detección de plagio, corrección por IA, entregas grupales ni integración con R2. La calificación se registra como una puntuación total acompañada de comentarios y motivo de corrección.
+
+## Imágenes y enlaces en las preguntas
+
+En el paso **2. Contenido**, abre **Imágenes y recursos de apoyo** en cada pregunta. Puedes subir imágenes desde tu equipo, agregar una imagen mediante URL HTTPS y escribir una descripción. Las imágenes se muestran junto al enunciado, conservan sus proporciones y permiten ampliarlas. La **Vista previa** también muestra las imágenes nuevas antes de guardar. Las imágenes generales de una tarea aparecen junto a sus instrucciones.
+
+Agrega un **Enlace de apoyo** o escribe una URL en el enunciado o las instrucciones. El estudiante puede desplegar una vista previa sin salir de la actividad. YouTube y archivos de Drive usan sus visores integrados. Si el sitio impide mostrarse dentro de otra página, estará disponible **Abrir en otra pestaña**. El archivo o enlace mantiene los permisos del proveedor.
+
+La plantilla Excel conserva las columnas anteriores y añade **Descripción imagen** y **Enlace de apoyo**. También admite imágenes insertadas **sobre las celdas**: coloca su esquina superior izquierda en la fila de la pregunta correspondiente. Usa PNG, JPG o GIF; hasta 5 imágenes por pregunta, 5 MB cada imagen y 10 MB para el Excel. No admite la función IMAGEN ni imágenes dentro de una celda. Las imágenes se incluyen al importar y se guardan como adjuntos privados de la actividad. Revisa sus miniaturas y la vista previa antes de guardar.
+
+## Entregas de CAD, simuladores y otros formatos
+
+Las tareas admiten archivos de cualquier formato, incluidos DWG, DXF, STEP, STL, SLDPRT, archivos de simuladores y ZIP. Se conservan los límites de **5 archivos, 10 MB por archivo y 20 MB por entrega**. En soportes de procedimientos, el docente puede seleccionar **Cualquier formato** o limitar los formatos permitidos. Las restricciones ya configuradas en actividades anteriores se conservan; edítalas si necesitas permitir otros formatos.
+
+Los PDF e imágenes compatibles tienen vista previa. Los demás archivos se descargan para abrirlos en su aplicación; no se ejecutan en el navegador. Las descargas requieren autorización para acceder a la actividad o revisar la entrega.
+

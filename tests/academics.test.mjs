@@ -34,7 +34,7 @@ test('editar adjuntos respeta versiones, valida pertenencia y revierte fallos si
  ok(await f.admin.call(endpoint,'PATCH',{version:a.version,retainAttachmentIds:[other.attachments[0].id]}),400);
  ok(await f.admin.call(endpoint,'PATCH',{version:0,attachments:[pdf]}),409);
  ok(await f.admin.call(endpoint,'PATCH',{version:a.version,attachments:Array(4).fill(pdf)}),400);
- ok(await f.admin.call(endpoint,'PATCH',{version:a.version,attachments:[{name:'malo.html',base64:Buffer.from('<script>x</script>').toString('base64')}]}),400);
+ ok(await f.admin.call(endpoint,'PATCH',{version:a.version,attachments:[{name:'../malo.html',base64:Buffer.from('<script>x</script>').toString('base64')}]}),400);
  assert.equal((await readdir(join(f.dir,'uploads'))).length,3);
  f.db.exec("CREATE TRIGGER reject_material BEFORE INSERT ON activity_files BEGIN SELECT RAISE(ABORT,'synthetic failure'); END");
  ok(await f.admin.call(endpoint,'PATCH',{version:a.version,retainAttachmentIds:[],attachments:[pdf]}),500);assert.equal((await readdir(join(f.dir,'uploads'))).length,3);ok(await f.student.call(original));
@@ -137,7 +137,7 @@ test('permisos requieren matrícula, contraseña, curso publicado y cambio inici
  ok(await f.admin.call(`/admin/courses/${f.course.id}`,'PATCH',{published:false}));ok(await f.other.call(`/academics/activities/${a.id}`),404);
 });
 test('archivos validan formato, límite total y sustitución sin huérfanos',async t=>{
- const f=await fixture(t,{SUBMISSIONS_MAX_BYTES:'100'}),a=await f.activity();ok(await f.submit(a,{file:{name:'x.html',base64:Buffer.from('<script>x</script>').toString('base64')}}),400);ok(await f.submit(a,{file:{name:'x.pdf',base64:Buffer.from('falso').toString('base64')}}),400);
+ const f=await fixture(t,{SUBMISSIONS_MAX_BYTES:'100'}),a=await f.activity();ok(await f.submit(a,{file:{name:'../x.html',base64:Buffer.from('<script>x</script>').toString('base64')}}),400);ok(await f.submit(a,{file:{name:'x.pdf',base64:Buffer.from('falso').toString('base64')}}),400);
  ok(await f.submit(a,{file:{name:'../x.pdf',base64:pdf.base64}}),400);ok(await f.submit(a,{file:{name:'largo.pdf',base64:Buffer.from('%PDF-'+'.'.repeat(110)).toString('base64')}}),413);
  const key=randomUUID();let s=ok(await f.submit(a,{action:'draft',requestId:key,file:pdf}),201);s=ok(await f.submit(a,{action:'draft',requestId:key,version:s.version,file:{name:'tabla.xlsx',base64:Buffer.from([0x50,0x4b,3,4,1,2,3,4]).toString('base64')}}),201);assert.equal((await readdir(join(f.dir,'uploads'))).length,1);assert.equal(s.fileName,'tabla.xlsx');
  s=ok(await f.submit(a,{action:'draft',requestId:key,version:s.version,removeFile:true}),201);assert.equal(s.fileName,null);assert.equal((await readdir(join(f.dir,'uploads'))).length,0);
@@ -259,4 +259,5 @@ test('devolver preserva respuestas y archivos, reabre el mismo intento y retira 
  assert.equal(ok(await f.book()).students[0].cells[0].points,2);
  assert.equal(f.db.prepare('SELECT count(*) n FROM submissions WHERE activity_id=?').get(a.id).n,1);
 });
+
 

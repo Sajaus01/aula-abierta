@@ -4,11 +4,11 @@ import {icon} from './ui.js';
 export function bindQuestionImport(form,{api,questionEditor,questionFields,toast}){
  const input=form.querySelector('#question-excel'),box=form.querySelector('#excel-mapping');if(!input)return;
  let generation=0;
- const fields=[['prompt','Enunciado'],['type','Tipo'],['option1','Opción 1'],['option2','Opción 2'],['option3','Opción 3'],['option4','Opción 4'],['correct','Correctas'],['points','Puntos'],['feedback','Retroalimentación'],['image','Imagen HTTPS'],['instructions','Instrucciones']];
+ const fields=[['prompt','Enunciado'],['type','Tipo'],['option1','Opción 1'],['option2','Opción 2'],['option3','Opción 3'],['option4','Opción 4'],['correct','Correctas'],['points','Puntos'],['feedback','Retroalimentación'],['image','Imagen HTTPS'],['instructions','Instrucciones'],['imageAlt','Descripción imagen'],['link','Enlace de apoyo']];
  input.onchange=async()=>{
   const version=++generation;
   try{
-   const file=input.files[0];if(!file)return;if(file.size>2*1048576)throw Error('El archivo supera 2 MB.');
+   const file=input.files[0];if(!file)return;if(file.size>10*1048576)throw Error('El archivo supera 10 MB.');
    input.disabled=true;box.textContent='Leyendo Excel…';
    const base64=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result.split(',')[1]);r.onerror=()=>reject(Error('No se pudo leer el archivo.'));r.readAsDataURL(file);});
    const data=await api('/question-import/read',{method:'POST',body:{base64}});
@@ -26,12 +26,12 @@ export function bindQuestionImport(form,{api,questionEditor,questionFields,toast
      const currentMapping=Object.fromEntries([...box.querySelectorAll('[data-map]')].map(s=>[s.dataset.map,Number(s.value)]));
      if(version!==generation||!form.isConnected||JSON.stringify(mapping)!==JSON.stringify(currentMapping))return;
      const valid=rows.length&&rows.every(r=>!r.errors.length);
-     target.innerHTML=`<div class="table-wrap"><table><thead><tr><th>Fila</th><th>Pregunta</th><th>Validación</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${r.row}</td><td>${e(r.question.prompt)}<br>${{single:'Una respuesta',multiple:'Selección múltiple',text:'Respuesta abierta'}[r.question.type]||e(r.question.type)} · ${r.question.points} puntos</td><td>${r.errors.map(e).join('<br>')||'Lista para importar'}</td></tr>`).join('')}</tbody></table></div>${valid?`<button type="button" class="btn" data-confirm-import>${icon('plus')}Añadir preguntas al editor</button>`:'<p class="field-hint">Corrige el archivo o la asignación de columnas y vuelve a validar.</p>'}`;
+     target.innerHTML=`<div class="table-wrap"><table><thead><tr><th>Fila</th><th>Pregunta e imágenes</th><th>Validación</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${r.row}</td><td>${e(r.question.prompt)}<br>${{single:'Una respuesta',multiple:'Selección múltiple',text:'Respuesta abierta'}[r.question.type]||e(r.question.type)} · ${r.question.points} puntos${r.question.embeddedImages?.length?`<div class="excel-image-thumbnails">${r.question.embeddedImages.map(img=>`<img src="data:${/\.png$/i.test(img.name)?'image/png':/\.gif$/i.test(img.name)?'image/gif':'image/jpeg'};base64,${e(img.base64)}" alt="${e(r.question.imageAlt||'Imagen de la pregunta')}">`).join('')}<small>${r.question.embeddedImages.length} imagen(es) incluidas</small></div>`:''}</td><td>${r.errors.map(e).join('<br>')||'Lista para importar'}</td></tr>`).join('')}</tbody></table></div>${valid?`<button type="button" class="btn" data-confirm-import>${icon('plus')}Añadir preguntas al editor</button>`:'<p class="field-hint">Corrige el archivo o la asignación de columnas y vuelve a validar.</p>'}`;
      target.querySelector('[data-confirm-import]')?.addEventListener('click',event=>{
       const list=form.querySelector('#question-list'),start=list.children.length;
       if(start+rows.length>50){toast('El cuestionario admite hasta 50 preguntas.');return;}
       event.currentTarget.disabled=true;
-      for(const row of rows){list.insertAdjacentHTML('beforeend',questionEditor(row.question,list.children.length+1));questionFields(list.lastElementChild,row.question);}
+      for(const row of rows){list.insertAdjacentHTML('beforeend',questionEditor(row.question,list.children.length+1));questionFields(list.lastElementChild,row.question);const images=row.question.embeddedImages||[];if(images.length){const transfer=new DataTransfer();for(const image of images){const bytes=Uint8Array.from(atob(image.base64),c=>c.charCodeAt(0));transfer.items.add(new File([bytes],image.name,{type:/\.png$/i.test(image.name)?'image/png':/\.gif$/i.test(image.name)?'image/gif':'image/jpeg'}));}const input=list.lastElementChild.querySelector('[name=qFiles]');input.files=transfer.files;input.dispatchEvent(new Event('change'));}}
       box.textContent=`${rows.length} preguntas añadidas. Revisa y guarda la actividad.`;input.value='';
       form.dispatchEvent(new Event('activity-editor-change'));list.children[start]?.querySelector('[name=qPrompt]').focus();
      });

@@ -16,8 +16,7 @@ export function createAcademicFiles({db,fail,validateFile,uploadsDir,accessModel
   const kept=existing.filter(f=>retainIds.includes(f.id));
   if(kept.length+uploads.length>limit)fail(400,`Puedes conservar hasta ${limit} archivos en total.`);
   const added=uploads.map(input=>{
-   if(!/\.(pdf|png|jpe?g|webp|gif|xlsx|csv|docx|pptx|txt)$/i.test(input?.name||''))fail(400,'Adjunta PDF, imágenes, PPTX, DOCX, XLSX, CSV o TXT.');
-   const file=validateFile(input);
+   const file=validateFile(input,{any:true});
    if(file.size>(teacher?20:10)*1024*1024)fail(413,`Cada archivo admite hasta ${teacher?20:10} MB.`);
    return {...file,id:randomUUID()};
   });

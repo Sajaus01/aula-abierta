@@ -93,19 +93,20 @@ async function readJsonBody(req, limit = 1024 * 1024) {
   return parsed;
 }
 
-export function validateFile(file) {
+export function validateFile(file, {any=false}={}) {
   if (!file || typeof file !== 'object' || Array.isArray(file)) fail(400, 'El archivo no es válido.');
   const name = string(file.name, 'el nombre del archivo', 180, true);
   if (/[\x00-\x1f\x7f\\/]/.test(name)) fail(400, 'El nombre del archivo contiene caracteres no permitidos.');
   const extension = extname(name).toLowerCase();
-  const mime = FILE_TYPES[extension];
+  const known = FILE_TYPES[extension];
+  const mime = any && (!known || known === 'text/html') ? 'application/octet-stream' : known;
   if (!mime) fail(400, 'Formato no admitido. Usa PDF, PPTX, DOCX, PNG, JPG, GIF, WebP, TXT o HTML.');
   if (typeof file.base64 !== 'string' || file.base64.length > Math.ceil(UPLOAD_MAX_BYTES / 3) * 4 || file.base64.length % 4 !== 0 || /[^A-Za-z0-9+/=]/.test(file.base64)) fail(400, 'El contenido del archivo no es válido.');
   const buffer = Buffer.from(file.base64, 'base64');
   if (buffer.toString('base64') !== file.base64) fail(400, 'El contenido del archivo no es válido.');
   if (!buffer.length || buffer.length > UPLOAD_MAX_BYTES) fail(413, 'El archivo debe tener contenido y pesar como máximo 20 MB.');
   const head = buffer.subarray(0, 12);
-  const signatureOK = extension === '.pdf' ? head.subarray(0, 5).toString() === '%PDF-'
+  const signatureOK = any && !known ? true : extension === '.pdf' ? head.subarray(0, 5).toString() === '%PDF-'
     : ['.pptx', '.docx', '.xlsx'].includes(extension) ? head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04
     : extension === '.png' ? head.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))
     : ['.jpg', '.jpeg'].includes(extension) ? head[0] === 255 && head[1] === 216 && head[2] === 255
@@ -455,7 +456,7 @@ export async function createApp(options = {}) {
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader('X-Frame-Options', 'SAMEORIGIN');
     res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:; font-src 'self'; connect-src 'self'; frame-src 'self' https:; media-src 'self' https:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: https: http:; font-src 'self'; connect-src 'self'; frame-src 'self' https:; media-src 'self' https:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'");
     res.setHeader('Cache-Control', 'no-store');
     if (secure) res.setHeader('Strict-Transport-Security', 'max-age=31536000');
     try {
@@ -939,3 +940,4 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => app.server.close(() => process.exit(0)));
   }).catch(error => { console.error(error.message); process.exitCode = 1; });
 }
+
