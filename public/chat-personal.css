@@ -17,6 +17,7 @@
 .chat-window .chat-bubble:hover .chat-message-menu>summary,.chat-window .chat-bubble:focus-within .chat-message-menu>summary,.chat-window .chat-message-menu[open]>summary{opacity:1}
 .chat-window .chat-message-menu>summary:hover{background:#ededf1;color:#1d1d1f}
 .chat-window .chat-message-menu[open]{z-index:5}
+.chat-window .chat-message-menu:not([open])>.chat-message-actions{display:none}
 .chat-window .chat-message-menu>.chat-message-actions{position:absolute;top:28px;right:0;display:grid;gap:1px;margin:0;padding:4px;width:143px;background:#fffffff5;border:1px solid #dedee4;border-radius:10px;box-shadow:0 5px 22px #1d1d1f1f;backdrop-filter:blur(12px)}
 .chat-window .chat-bubble.mine .chat-message-menu>.chat-message-actions{left:0;right:auto}
 .chat-window .chat-message-actions .btn{justify-content:flex-start;min-height:30px;padding:5px 8px;font-size:11px;color:#424249;white-space:nowrap;border:0;background:transparent;border-radius:6px}
