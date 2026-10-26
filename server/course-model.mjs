@@ -4,6 +4,11 @@ import {join,basename,extname} from 'node:path';
 import {setupPermissionAudit} from './permissions.mjs';
 
 const now=()=>new Date().toISOString();
+export const courseChapterOrder=course=>course?.chapter_order==='desc'||course?.chapterOrder==='desc'?'desc':'asc';
+export function sortCourseModules(modules=[],order='asc'){
+ const direction=order==='desc'?-1:1;
+ return [...modules].sort((left,right)=>direction*((Number(left.position)||0)-(Number(right.position)||0)||(String(left.id)<String(right.id)?-1:String(left.id)>String(right.id)?1:0)));
+}
 const ident=s=>'"'+s.replaceAll('"','""')+'"';
 function insert(db,table,row){const keys=Object.keys(row);db.prepare(`INSERT INTO ${ident(table)} (${keys.map(ident)}) VALUES (${keys.map(()=>'?')})`).run(...keys.map(k=>row[k]));}
 function add(db,table,name,definition){if(!db.prepare(`PRAGMA table_info(${table})`).all().some(c=>c.name===name))db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${definition}`);}
@@ -18,6 +23,7 @@ export function setupCourseModel(db){
  add(db,'courses','lifecycle',"TEXT NOT NULL DEFAULT 'draft' CHECK(lifecycle IN ('draft','active','archived'))");
  add(db,'resources','lab_results',"TEXT NOT NULL DEFAULT 'optional' CHECK(lab_results IN ('disabled','optional','required'))");
  add(db,'courses','appearance',"TEXT NOT NULL DEFAULT '{}'");
+ add(db,'courses','chapter_order',"TEXT NOT NULL DEFAULT 'asc' CHECK(chapter_order IN ('asc','desc'))");
  add(db,'users','account_status',"TEXT NOT NULL DEFAULT 'active' CHECK(account_status IN ('active','suspended','deactivated'))");
  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS groups_identity ON courses(template_id,cohort,group_code) WHERE entity_kind='group';
  CREATE TABLE IF NOT EXISTS user_roles(user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,role TEXT NOT NULL CHECK(role IN ('master','admin','teacher','student')),PRIMARY KEY(user_id,role));

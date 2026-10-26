@@ -1,5 +1,6 @@
 import {createStorage} from './storage.mjs';
-import {setupCourseModel} from './course-model.mjs';
+import {setupCourseModel,courseChapterOrder,sortCourseModules} from './course-model.mjs';
+import {summarizeCourseLearning} from '../public/learning.js';
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { createReadStream, existsSync, statSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
@@ -219,13 +220,23 @@ export async function createApp(options = {}) {
   function resourceView(row) {
     return { id:row.id, moduleId:row.module_id, labResults:row.lab_results||'optional', published:Boolean(row.published), title:row.title, kind:row.kind, url:row.url, content:row.content, position:row.position, fileName:row.file_name, fileMime:row.file_mime, fileSize:row.file_size, fileUrl:row.file_key ? `/api/resources/${row.id}/file` : null, previewUrl:['html','lab'].includes(row.kind) && (row.content || row.file_key) ? `/api/resources/${row.id}/preview` : null, createdAt:row.created_at, updatedAt:row.updated_at };
   }
+  function courseActivitySummaries(course,auth,modules,teacher=false) {
+    return query('SELECT id,module_id,config FROM activities WHERE course_id=? ORDER BY created_at,id',course.id).flatMap(row=>{
+      const a=JSON.parse(row.config);
+      if(!teacher&&(a.status!=='published'||row.module_id&&!modules.some(module=>module.id===row.module_id)))return [];
+      const latest=!teacher&&auth?.assurance==='password'?one('SELECT state,returned_at,return_due_at FROM submissions WHERE activity_id=? AND student_id=? AND superseded=0 ORDER BY attempt DESC,updated_at DESC LIMIT 1',row.id,auth.user.id):null;
+      const submitted=Boolean(latest&&!['draft','returned'].includes(latest.state));
+      const responseState=latest?.state==='draft'&&latest.returned_at?'returned':latest?.state||null;
+      return [{id:row.id,moduleId:row.module_id,title:a.title,kind:a.kind,status:a.status,weight:a.weight,dueAt:a.dueAt,opensAt:a.opensAt,closesAt:a.closesAt,submitted,responseState,returnDueAt:latest?.return_due_at||null}];
+    });
+  }
   function courseView(course, auth, details = false) {
     const teacher = auth?.user.role === 'admin' && auth.assurance === 'password';
-    const modules = query('SELECT * FROM modules WHERE course_id=? ORDER BY position,id', course.id).filter(m => teacher || m.published);
+    const modules = sortCourseModules(query('SELECT * FROM modules WHERE course_id=? ORDER BY position,id', course.id).filter(m => teacher || m.published),courseChapterOrder(course));
     const resourceScope = 'FROM resources r JOIN modules m ON m.id=r.module_id WHERE m.course_id=? AND (?=1 OR (r.published=1 AND m.published=1))';
     const resources = details ? query(`SELECT r.* ${resourceScope} ORDER BY r.position,r.id`, course.id, Number(teacher)) : [];
     const resourceCount = details ? resources.length : one(`SELECT COUNT(*) AS count ${resourceScope}`, course.id, Number(teacher)).count;
-    const result = { id:course.id, title:course.title, description:course.description, accessMode:course.access_mode, published:Boolean(course.published), coverUrl:course.cover_url, createdAt:course.created_at, updatedAt:course.updated_at, enrolled:isEnrolled(auth?.user.id, course.id), locked:!canAccess(course, auth), resourceCount, moduleCount:modules.length };
+    const result = { id:course.id, title:course.title, description:course.description, accessMode:course.access_mode, published:Boolean(course.published), coverUrl:course.cover_url, chapterOrder:courseChapterOrder(course), createdAt:course.created_at, updatedAt:course.updated_at, enrolled:isEnrolled(auth?.user.id, course.id), locked:!canAccess(course, auth), resourceCount, moduleCount:modules.length };
     if(auth?.preview)result.enrolled=true;
     if(accessModel)Object.assign(result,{entityKind:course.entity_kind,templateId:course.template_id,cohort:course.cohort,groupCode:course.group_code,lifecycle:course.lifecycle,appearance:JSON.parse(course.appearance||'{}'),permissions:Object.fromEntries(['view','edit','grade','manage'].map(k=>[k,Boolean(accessModel.staff(auth)&&accessModel.p.can(auth.user.id,course.id,k))]))});
     if (auth?.user.role === 'admin') result.enrollmentCount = one("SELECT COUNT(*) AS count FROM enrollments WHERE course_id=? AND status='active'", course.id).count;
@@ -233,14 +244,7 @@ export async function createApp(options = {}) {
     if (details) {
       const teacher = auth?.user.role === 'admin' && auth.assurance === 'password';
       // Course listings expose only activity metadata, never questions, keys or grades.
-      result.activities = !result.locked && (teacher || result.enrolled) ? query('SELECT id,module_id,config FROM activities WHERE course_id=? ORDER BY created_at,id', course.id).flatMap(row => {
-        const a = JSON.parse(row.config);
-        if (!teacher && (a.status !== 'published' || (row.module_id && !modules.some(m => m.id === row.module_id)))) return [];
-        const latestSubmission = !teacher && auth?.assurance === 'password' ? one('SELECT state,returned_at FROM submissions WHERE activity_id=? AND student_id=? AND superseded=0 ORDER BY attempt DESC,updated_at DESC LIMIT 1',row.id,auth.user.id) : null;
-        const submitted = Boolean(latestSubmission&&!['draft','returned'].includes(latestSubmission.state));
-        const responseState=latestSubmission?.state==='draft'&&latestSubmission.returned_at?'returned':latestSubmission?.state||null;
-        return [{id:row.id,moduleId:row.module_id,title:a.title,kind:a.kind,status:a.status,weight:a.weight,dueAt:a.dueAt,opensAt:a.opensAt,closesAt:a.closesAt,submitted,responseState}];
-      }) : [];
+      result.activities = !result.locked && (teacher || result.enrolled) ? courseActivitySummaries(course,auth,modules,teacher) : [];
     }
     if (details) result.quickResources = result.locked ? [] : quickResources.list(course.id, auth);
     return result;
@@ -254,19 +258,23 @@ export async function createApp(options = {}) {
     const byRecent = (a, b) => b.lastOpenedAt.localeCompare(a.lastOpenedAt) || a.id.localeCompare(b.id);
     for (const course of query('SELECT * FROM courses WHERE published=1 ORDER BY created_at DESC,id')) {
       if (!canAccess(course, auth)) continue;
+      const moduleOrder=courseChapterOrder(course)==='desc'?'DESC':'ASC';
       const resources = query(`SELECT r.id,r.title,r.kind,m.title AS module_title,
         p.completed,p.updated_at,p.opened_at,p.last_opened_at
         FROM resources r JOIN modules m ON m.id=r.module_id
         LEFT JOIN progress p ON p.resource_id=r.id AND p.user_id=?
-        WHERE m.course_id=? AND m.published=1 AND r.published=1 ORDER BY m.position,m.id,r.position,r.id`, auth.user.id, course.id);
+        WHERE m.course_id=? AND m.published=1 AND r.published=1 ORDER BY m.position ${moduleOrder},m.id ${moduleOrder},r.position,r.id`, auth.user.id, course.id);
       const opened = resources.filter(row => row.opened_at || row.last_opened_at || row.completed);
       const history = opened.map(row => ({ ...resourceSummary(row), lastOpenedAt:row.last_opened_at || row.opened_at || row.updated_at })).sort(byRecent);
       const next = resources.find(row => !row.completed);
+      const modules=query('SELECT id FROM modules WHERE course_id=? AND published=1',course.id);
+      const courseActivities=isEnrolled(auth.user.id,course.id)?courseActivitySummaries(course,auth,modules):[];
+      const overall=summarizeCourseLearning(resources.map(resourceSummary),courseActivities,resources.map(row=>({resourceId:row.id,completed:Boolean(row.completed),openedAt:row.opened_at,lastOpenedAt:row.last_opened_at})));
       courses.push({ courseId:course.id, total:resources.length, opened:opened.length,
         completed:resources.filter(row => row.completed).length,
         exercisesTotal:resources.filter(row => row.kind === 'exercise').length,
         exercisesCompleted:resources.filter(row => row.kind === 'exercise' && row.completed).length,
-        nextResource:next ? resourceSummary(next) : null, lastResource:history[0] || null });
+        nextResource:next ? resourceSummary(next) : null, lastResource:history[0] || null,overall });
       for (const row of history) recent.push({ courseId:course.id, courseTitle:course.title, resourceId:row.id, title:row.title, kind:row.kind, lastOpenedAt:row.lastOpenedAt });
       for (const row of resources) if (row.kind === 'exercise' && !row.completed && activities.length < 5) {
         activities.push({ courseId:course.id, courseTitle:course.title, resourceId:row.id, title:row.title, kind:row.kind });

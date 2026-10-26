@@ -3,6 +3,8 @@ export function materialStatus(resourceId, progress = []) {
   return entry?.completed ? 'completed' : entry?.openedAt || entry?.lastOpenedAt ? 'opened' : 'unopened';
 }
 
+const completionPercent=(completed,total)=>!total?0:completed===total?100:Math.min(99,Math.round(completed/total*100));
+
 export function summarizeLearning(resources = [], progress = []) {
   const unique = [...new Map(resources.map(resource => [resource.id, resource])).values()];
   const completed = unique.filter(resource => materialStatus(resource.id, progress) === 'completed').length;
@@ -12,11 +14,46 @@ export function summarizeLearning(resources = [], progress = []) {
   return {
     total: unique.length, completed, opened, pending: pending.length,
     unopened: unique.length - opened, inProgress: opened - completed,
-    percent: unique.length ? Math.round(completed / unique.length * 100) : 0,
+    percent: completionPercent(completed,unique.length),
     next: pending[0] || null,
     exercisesTotal: exercises.length,
     exercisesCompleted: exercises.filter(resource => materialStatus(resource.id, progress) === 'completed').length
   };
+}
+
+export function activityCompleted(activity) {
+  const response=activity?.responseState??activity?.submission?.state??(['pending','draft','returned','submitted','graded','missing'].includes(activity?.state)?activity.state:null);
+  if(response!==undefined&&response!==null&&response!=='')return response==='submitted'||response==='graded';
+  return activity?.submitted===true||activity?.state==='Entregada'||activity?.state==='submitted'||activity?.state==='graded';
+}
+
+// The input must come from the authorized course DTO. Scheduled publications
+// already visible in that DTO remain requirements, even before they can be sent.
+export function summarizeCourseLearning(resources=[],activities=[],progress=[],{now=Date.now()}={}) {
+  const visibleResources=[...new Map(resources.filter(item=>item&&item.id&&item.published!==false&&!item.hidden).map(item=>[item.id,item])).values()];
+  const visibleActivities=[...new Map(activities.filter(item=>item&&item.id&&(!item.status||item.status==='published')&&!item.hidden&&item.modulePublished!==false).map(item=>[item.id,item])).values()];
+  const materials=summarizeLearning(visibleResources,progress),at=typeof now==='number'?now:Date.parse(now);
+  const scheduled=item=>Boolean(item.opensAt&&Number.isFinite(Date.parse(item.opensAt))&&Date.parse(item.opensAt)>at);
+  const pending=visibleActivities.filter(item=>!activityCompleted(item));
+  const actionable=pending.filter(item=>!scheduled(item));
+  const future=pending.filter(scheduled);
+  const tasks=visibleActivities.filter(item=>item.kind!=='quiz'),quizzes=visibleActivities.filter(item=>item.kind==='quiz');
+  const activitySummary={
+    total:visibleActivities.length,completed:visibleActivities.length-pending.length,pending:pending.length,
+    tasksTotal:tasks.length,tasksCompleted:tasks.filter(activityCompleted).length,
+    quizzesTotal:quizzes.length,quizzesCompleted:quizzes.filter(activityCompleted).length,
+    returned:pending.filter(item=>item.responseState==='returned').length,
+    inProgress:pending.filter(item=>item.responseState==='draft').length,
+    scheduled:future.length,next:actionable[0]||future[0]||null
+  };
+  const total=materials.total+activitySummary.total,completed=materials.completed+activitySummary.completed;
+  const next=materials.next?{type:'resource',item:materials.next}:activitySummary.next?{type:'activity',item:activitySummary.next,scheduled:scheduled(activitySummary.next)}:null;
+  return {total,completed,pending:total-completed,percent:completionPercent(completed,total),materials,activities:activitySummary,next,
+    materialsTotal:materials.total,materialsCompleted:materials.completed,
+    activitiesTotal:activitySummary.total,activitiesCompleted:activitySummary.completed,
+    tasksTotal:activitySummary.tasksTotal,tasksCompleted:activitySummary.tasksCompleted,
+    quizzesTotal:activitySummary.quizzesTotal,quizzesCompleted:activitySummary.quizzesCompleted,
+    returned:activitySummary.returned,scheduled:activitySummary.scheduled};
 }
 
 export function quickGuide(role) {

@@ -305,7 +305,9 @@ test('resumen ordena capítulos y materiales, cuenta ejercicios y limita la acti
   const details = status(await app.student.request(`/api/courses/${courseId}`), 200);
   assert.deepEqual(details.modules.flatMap(module => module.resources.map(resource => resource.id)), order);
   let learning = status(await app.student.request('/api/learning'), 200);
-  assert.deepEqual(learning.courses.find(row => row.courseId === 'empty'), {
+  const {overall:emptyOverall,...emptyCourse}=learning.courses.find(row=>row.courseId==='empty');
+  assert.deepEqual([emptyOverall.total,emptyOverall.completed,emptyOverall.pending,emptyOverall.percent],[0,0,0,0]);
+  assert.deepEqual(emptyCourse, {
     courseId: 'empty', total: 0, opened: 0, completed: 0, exercisesTotal: 0, exercisesCompleted: 0, nextResource: null, lastResource: null
   });
   for (const id of order) {
@@ -345,6 +347,37 @@ test('resumen ordena capítulos y materiales, cuenta ejercicios y limita la acti
   assert.equal(course.lastResource.id, learning.recent[0].resourceId);
   assert.equal(course.lastResource.lastOpenedAt, learning.recent[0].lastOpenedAt);
   assert.deepEqual(status(await app.student.request('/api/learning'), 200), learning);
+});
+
+test('el resumen integral conserva actividades publicadas, entregas actuales y correcciones sin revelar contenido privado',async t=>{
+  const app=await fixture(t),courseId=app.course('overall',{accessMode:'password'});
+  app.enrollment(courseId);app.module('visible',courseId);app.module('hidden',courseId,1);
+  app.db.prepare('UPDATE modules SET published=0 WHERE id=?').run('hidden');
+  for(const id of ['material-one','material-two']){app.resource(id,'visible');app.progress(id,{completed:true});}
+  app.resource('hidden-material','hidden');app.progress('hidden-material',{completed:true});
+  const activity=(id,{kind='task',moduleId='visible',status='published',opensAt=null,dueAt=null}={})=>app.db.prepare('INSERT INTO activities(id,course_id,module_id,config,created_at) VALUES(?,?,?,?,?)').run(id,courseId,moduleId,JSON.stringify({title:'Actividad '+id,kind,status,weight:10,opensAt,dueAt,questions:[{prompt:'secret-answer-key'}]}),old);
+  const submission=(id,activityId,{studentId='student',state='submitted',returnedAt=null,superseded=0,published=false}={})=>app.db.prepare('INSERT INTO submissions(id,activity_id,student_id,request_key,attempt,state,payload,submitted_at,points,published,updated_at,returned_at,superseded) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').run(id,activityId,studentId,id,1,state,JSON.stringify({answers:{private:'secret-student-answer'}}),state==='draft'&&!returnedAt?null:old,93,Number(published),later,returnedAt,superseded);
+  activity('a-task');activity('b-quiz',{kind:'quiz'});activity('c-correction');activity('d-general',{moduleId:null,dueAt:old});activity('e-future',{kind:'quiz',opensAt:'2999-01-01T00:00:00.000Z'});activity('hidden-activity',{moduleId:'hidden'});activity('draft-activity',{status:'draft'});
+  submission('task-sent','a-task');submission('quiz-draft','b-quiz',{state:'draft'});submission('returned-draft','c-correction',{state:'draft',returnedAt:later});submission('other-student-general','d-general',{studentId:'other-student'});
+  app.db.prepare('UPDATE submissions SET return_due_at=? WHERE id=?').run('2998-01-01T00:00:00.000Z','returned-draft');
+  submission('old-superseded','e-future',{state:'graded',superseded:1});
+  const read=async()=>{const response=await app.student.request('/api/learning');assert.doesNotMatch(response.text,/secret-answer-key|secret-student-answer|hidden-activity|draft-activity|hidden-material/);return status(response,200).courses.find(row=>row.courseId===courseId);};
+  let course=await read();
+  assert.equal(course.total,2);assert.equal(course.completed,2);
+  assert.equal(course.overall.total,7);assert.equal(course.overall.completed,3);assert.equal(course.overall.pending,4);assert.equal(course.overall.percent,43);
+  assert.equal(course.overall.activities.tasksTotal,3);assert.equal(course.overall.activities.quizzesTotal,2);assert.equal(course.overall.activities.scheduled,1);assert.equal(course.overall.activities.returned,1);assert.equal(course.overall.activities.inProgress,1);
+  assert.equal(course.overall.next.type,'activity');assert.equal(course.overall.next.scheduled,false);
+  const dto=status(await app.student.request('/api/courses/'+courseId),200);
+  assert.equal(dto.activities.find(row=>row.id==='c-correction').responseState,'returned');
+  assert.equal(dto.activities.find(row=>row.id==='c-correction').returnDueAt,'2998-01-01T00:00:00.000Z');
+  app.db.prepare("UPDATE submissions SET state='submitted',submitted_at=?,returned_at=NULL WHERE id IN ('quiz-draft','returned-draft')").run(latest);
+  submission('private-graded','d-general',{state:'graded'});
+  course=await read();assert.equal(course.overall.completed,6);assert.equal(course.overall.pending,1);assert.equal(course.overall.percent,86);assert.equal(course.overall.activities.returned,0);assert.equal(course.overall.activities.inProgress,0);assert.equal(course.overall.next.item.id,'e-future');assert.equal(course.overall.next.scheduled,true);
+  submission('future-current','e-future');course=await read();assert.equal(course.overall.percent,100);assert.equal(course.overall.next,null);
+  app.db.prepare('UPDATE submissions SET superseded=1 WHERE id=?').run('future-current');
+  course=await read();assert.equal(course.overall.percent,86);assert.equal(course.overall.pending,1);
+  app.db.prepare("UPDATE enrollments SET status='revoked' WHERE course_id=? AND student_id='student'").run(courseId);
+  assert.ok(!status(await app.student.request('/api/learning'),200).courses.some(row=>row.courseId===courseId));
 });
 
 test('actividades devuelve hasta cinco ejercicios pendientes accesibles en el orden de los cursos y capítulos', async t => {

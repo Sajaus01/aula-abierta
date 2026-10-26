@@ -50,8 +50,8 @@ export function createPlatform(ctx){
    }
   }
   if(path==='/api/platform/collaborators'&&method==='GET'){staff();return send(all("SELECT DISTINCT u.id,u.name FROM users u JOIN user_roles r ON r.user_id=u.id WHERE u.active=1 AND r.role IN ('master','admin','teacher') ORDER BY u.name"));}
-  m=/^\/api\/platform\/courses\/([^/]+)\/(clone|staff|state|appearance|groups|delete)$/.exec(path);
-  if(m){const [,id,action]=m;staff();a.requireScope(auth,id,action==='groups'?'view':action==='appearance'?'edit':'manage');
+  m=/^\/api\/platform\/courses\/([^/]+)\/(clone|staff|state|appearance|chapter-order|groups|delete)$/.exec(path);
+  if(m){const [,id,action]=m;staff();a.requireScope(auth,id,action==='groups'?'view':['appearance','chapter-order'].includes(action)?'edit':'manage');
    if(action==='delete'&&method==='GET')return send(deletionPreview(id));
    if(action==='delete'&&method==='DELETE'){
     const b=await body();a.requireScope(auth,id,'manage');
@@ -77,7 +77,13 @@ export function createPlatform(ctx){
    if(action==='groups'&&method==='GET')return send(all("SELECT * FROM courses WHERE template_id=? AND entity_kind='group'",id).filter(c=>a.p.can(auth.user.id,c.id,'view')).map(c=>courseView(c,auth)));
    if(action==='staff'&&method==='GET')return send(all('SELECT s.*,u.name FROM course_staff s JOIN users u ON u.id=s.user_id WHERE s.course_id=?',id));
    if(method==='POST'){
-    const b=await body();a.requireScope(auth,id,action==='appearance'?'edit':'manage');
+    const b=await body();a.requireScope(auth,id,['appearance','chapter-order'].includes(action)?'edit':'manage');
+    if(action==='chapter-order'){
+     if(!['asc','desc'].includes(b.chapterOrder))fail(400,'Selecciona un orden de capítulos válido.');
+     const previous=one('SELECT chapter_order FROM courses WHERE id=?',id).chapter_order;
+     if(previous!==b.chapterOrder){run('UPDATE courses SET chapter_order=?,updated_at=? WHERE id=?',b.chapterOrder,now(),id);audit(auth.user,'course.chapter-order',id,{before:previous,after:b.chapterOrder});}
+     return send({chapterOrder:b.chapterOrder});
+    }
     if(action==='clone'){
      const title=string(b.title,'el título',200,true),cohort=string(b.cohort,'el semestre',60),code=string(b.code,'el código',60);
      storage?.checkCopy({userId:auth.user.id,sourceCourseId:id});

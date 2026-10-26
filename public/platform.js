@@ -83,6 +83,25 @@ export function createPlatformUI(ctx){
   if(!global()){const account=document.querySelector('[href="#ajustes"]');if(account){account.href='#cuenta';account.innerHTML=icon('settings')+'Mi cuenta';account.classList.toggle('active',route==='cuenta');if(route==='cuenta')account.setAttribute('aria-current','page');}for(const el of document.querySelectorAll('[data-action="new-student"],[data-action="import-students"],[data-action^="edit-student:"],[data-action^="delete-student:"],[data-action^="reset-student:"]'))el.remove();}
   for(const el of document.querySelectorAll('[data-action^="edit-course:"]')){const id=el.dataset.action.split(':')[1];if(getState().courses.find(c=>c.id===id)?.permissions?.edit===false)el.remove();}
   if(!route.startsWith('curso/'))return;const c=getState().currentCourse;if(!c?.entityKind)return;
+  const contentHeading=document.querySelector('.detail-grid > section > .section-head');
+  if(c.permissions.edit&&contentHeading&&!contentHeading.querySelector('.course-chapter-order')){
+   contentHeading.insertAdjacentHTML('beforeend',`<label class="course-chapter-order">Orden de capítulos<select data-course-chapter-order="${e(c.id)}" title="Ascendente: primero el primer capítulo. Descendente: primero el último capítulo."><option value="asc" ${c.chapterOrder!=='desc'?'selected':''}>Ascendente</option><option value="desc" ${c.chapterOrder==='desc'?'selected':''}>Descendente</option></select></label>`);
+   const select=contentHeading.querySelector('[data-course-chapter-order]');
+   select.addEventListener('change',async()=>{
+    const state=getState(),owner=state.user?.id,view=state.viewMode,currentRoute=location.hash,previous=c.chapterOrder||'asc',next=select.value,scroll=window.scrollY;
+    if(select.disabled||state.preview||view==='learning'||!state.currentCourse?.permissions.edit){select.value=previous;return;}
+    select.disabled=true;let persisted=false;
+    try{
+     const result=await post('/courses/'+c.id+'/chapter-order',{chapterOrder:next});
+     persisted=true;
+     if(getState().user?.id!==owner||getState().viewMode!==view||getState().preview)return;
+     c.chapterOrder=result.chapterOrder;
+     await refresh();
+     if(getState().user?.id===owner&&location.hash===currentRoute){await render();window.scrollTo(0,scroll);toast('Orden de capítulos guardado.');}
+    }catch(error){if(select.isConnected)select.value=persisted?next:previous;if(getState().user?.id===owner)toast(persisted?'El orden se guardó. Recarga para actualizar la lista.':error.message||'No se pudo guardar el orden. Intenta de nuevo.');}
+    finally{if(select.isConnected)select.disabled=false;}
+   });
+  }
   const header=document.querySelector('.course-header');if(header&&getState().user.role==='admin'){
    header.insertAdjacentHTML('beforebegin',`<div class="course-context">${icon(c.entityKind==='template'?'book':'users')}<span>${c.entityKind==='template'?'Curso plantilla':`Grupo ${e(c.groupCode)} · ${e(c.cohort)}`}</span><span class="badge ${c.lifecycle==='active'?'green':'gray'}">${{draft:'Borrador',active:'Activo',archived:'Archivado'}[c.lifecycle]}</span>${c.templateId&&getState().courses.some(v=>v.id===c.templateId)?`<a class="text-button" href="#curso/${e(c.templateId)}">Ver plantilla ${icon('arrow')}</a>`:''}</div>`);
    header.insertAdjacentHTML('afterend',`<div class="flex wrap platform-toolbar" aria-label="Herramientas del curso">${c.permissions.manage?btn(c.entityKind==='template'?'Crear grupo':'Duplicar grupo','platform-clone:'+c.id,'secondary','copy')+btn('Docentes y permisos','platform-staff:'+c.id,'ghost','users')+btn('Estado','platform-state:'+c.id,'ghost','settings'):''}${c.permissions.edit?btn('Apariencia','platform-appearance:'+c.id,'ghost','palette'):''}${c.entityKind==='group'?btn('Vista estudiante','platform-preview:'+c.id,'secondary','eye')+(c.permissions.grade?`<a class="btn ghost" href="#estadisticas/${e(c.id)}">${icon('chart')}Seguimiento</a>`:''):''}</div>`);
