@@ -15,7 +15,8 @@
   "dependencies": {
     "exceljs": "4.4.0",
     "jszip": "3.10.1",
-    "pdfjs-dist": "6.3.289"
+    "pdfjs-dist": "6.3.289",
+    "archiver": "5.3.2"
   },
   "overrides": {
     "exceljs": {

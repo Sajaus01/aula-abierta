@@ -4,16 +4,22 @@
 
 Abre la actividad y pulsa **Comenzar revisión** o **Revisar** en la fila del estudiante. La revisión ocupa toda la pantalla: a la izquierda están los estudiantes y filtros; en el centro, las respuestas y archivos; a la derecha, la calificación y devolución. Puedes buscar por nombre o cédula y avanzar con **Anterior / Siguiente**. En pantallas pequeñas, **Calificar / Devolver** lleva directamente al panel de acciones.
 
-- **Devolver para corregir** está al principio del panel y también en la lista de entregas. Escribe las indicaciones y, si lo necesitas, un nuevo plazo. El estudiante conserva sus respuestas, archivos y el mismo intento; la nota anterior se retira hasta el reenvío.
-- **Guardar sin publicar** conserva una calificación interna; si ya estaba publicada, la retira de la vista del estudiante. **Publicar nota y comentarios** hace visibles ambos. **Guardar y revisar siguiente** conserva la visibilidad que tenía la nota y abre el siguiente registro de la lista filtrada.
-- Asigna puntos directamente o usa **Automática**, **Máxima** o **Cero**. Puedes añadir comentarios, usar textos de apoyo y cambiar el motivo que quedará en el historial de calificaciones. Los soportes requeridos deben confirmarse como revisados para publicar.
+- **Pedir corrección** permite reabrir la entrega. Escribe las indicaciones y, si lo necesitas, un nuevo plazo. El estudiante conserva sus respuestas, archivos y el mismo intento; la nota anterior se retira hasta el reenvío.
+- Las notas y los comentarios se guardan automáticamente como borrador privado. **Devolver** los hace visibles al estudiante; **Devolver a todos** publica las calificaciones listas de la actividad en una sola acción. Si editas una nota que ya estaba devuelta, el estudiante conserva la versión publicada hasta que vuelvas a devolverla. Puedes escribir comentarios antes de asignar puntos.
+- Asigna puntos directamente o usa **Usar automática** cuando esté disponible. Puedes añadir comentarios y usar textos de apoyo. Las modificaciones quedan registradas en el historial sin pedir un motivo en cada guardado. Los soportes requeridos deben confirmarse como revisados para publicar.
 - Las preguntas muestran las opciones seleccionadas y la respuesta correcta, con un índice para saltar entre ellas. Los PDF e imágenes se previsualizan junto a las respuestas; los documentos de Office se descargan. **Ver enunciado** permite consultar las instrucciones sin abandonar la revisión.
 - Un borrador permite consultar el avance guardado, pero no calificar. Una entrega devuelta permite consultar la corrección y **Ajustar indicaciones o ampliar el plazo**. Esta actualización conserva las respuestas e inicia de nuevo el temporizador del cuestionario al volver a abrirlo.
 - Los intentos de versiones anteriores están en el filtro de historial y son de consulta. Solo se devuelve el último intento enviado, sin otro intento en borrador. Si la actividad está oculta, primero debe publicarse para admitir correcciones.
 
-El sistema avisa antes de cambiar de estudiante o cerrar si hay cambios sin guardar, y evita sobrescribir una entrega modificada desde otra sesión. **Actualizar** consulta las respuestas más recientes guardadas en el servidor.
+Al cambiar de estudiante o cerrar la revisión, el sistema espera a que termine el guardado. Si no puede guardar, conserva los cambios en pantalla y permite reintentar; no sobrescribe una entrega modificada desde otra sesión. **Actualizar** consulta las respuestas más recientes guardadas en el servidor.
 
 En el **Libro de calificaciones** también puedes buscar por nombre o cédula y filtrar estudiantes con evaluación completa o incompleta. La columna de nombres permanece visible al desplazar las actividades horizontalmente.
+
+## Descargar entregas
+
+**Descargar ZIP** reúne los archivos y las respuestas de una actividad. **Descargar entregas del grupo** reúne todas sus actividades en un solo ZIP, con una única carpeta por estudiante y subcarpetas por actividad e intento. Se incluyen los borradores guardados y el historial; también se conservan los enunciados adjuntos. Las respuestas escritas y las de cuestionarios se exportan a `Respuesta.txt`, incluso cuando no hay archivos adjuntos.
+
+Los enlaces externos se incluyen como texto y no se descargan. Si falta un archivo en el almacenamiento, `LEEME.txt` identifica cuál no pudo incluirse. Estas descargas requieren permiso de calificación del curso o grupo. Los estudiantes no pueden descargarlas.
 
 ## Crear actividades
 
@@ -71,11 +77,11 @@ Cada envío queda cerrado. Si hay más intentos, puede enviar otro que sustituye
 
 Desde el listado del curso puedes **Publicar** u **Ocultar** una actividad con el mismo botón de publicación que tienen los materiales. Dentro de la actividad, **Seguimiento de respuestas** distingue entregas enviadas, borradores, correcciones devueltas y versiones anteriores. Puedes filtrarlas y consultar cuándo se guardó por última vez cada avance. Solo las entregas enviadas se pueden calificar.
 
-Pulsa **Revisar** para ver los archivos, el texto, el enlace y las respuestas. Puedes asignar puntos de cero al máximo, incluso una puntuación distinta de la calculada automáticamente, con motivo registrado en el historial. Añade comentarios y guarda la nota sin publicar o marca **Publicar esta nota y los comentarios**. También puedes iniciar la revisión desde la celda **Revisar nota** del libro de notas.
+Pulsa **Revisar** para ver los archivos, el texto, el enlace y las respuestas. Los puntos y comentarios se guardan automáticamente en privado. **Devolver** los comparte con el estudiante; **Devolver a todos** comparte las notas listas de la actividad. También puedes abrir la revisión desde la celda **Revisar nota** del libro de notas.
 
-Pulsa **Devolver para corregir** y escribe indicaciones. La nota se retira del cálculo y de la vista del estudiante hasta que este reenvíe; sus respuestas y archivos se conservan. La devolución no consume otro intento y queda registrada en el historial de calificaciones. Mientras corrige, el docente puede ver el avance que el estudiante vaya guardando. Tras el reenvío, califica de nuevo y publica la nota cuando corresponda. Si la nota final del curso estaba publicada, se retira para revisar el resultado actualizado.
+Pulsa **Pedir corrección** y escribe indicaciones. La nota se retira del cálculo y de la vista del estudiante hasta que este reenvíe; sus respuestas y archivos se conservan. La devolución no consume otro intento y queda registrada en el historial de calificaciones. Mientras corrige, el docente puede ver el avance que el estudiante vaya guardando. Tras el reenvío, califica de nuevo y publica la nota cuando corresponda. Si la nota final del curso estaba publicada, se retira para revisar el resultado actualizado.
 
-En **Libro de notas** ves la matriz del curso. **Publicar notas disponibles** muestra todas las notas guardadas o calculadas de actividades publicadas, incluidos los cuestionarios automáticos. Los envíos aún sin nota siguen pendientes. **Descargar libro CSV** incluye las notas guardadas, aunque todavía no estén publicadas; un campo vacío no representa cero.
+En **Libro de notas** ves la matriz del curso. **Devolver notas del grupo** comparte las notas listas de actividades publicadas, incluidos los cuestionarios automáticos. Se devuelve únicamente el último intento vigente de cada estudiante. Los envíos sin nota o con soportes pendientes de revisión siguen pendientes. **Descargar libro CSV** incluye las notas guardadas, aunque todavía no estén publicadas; un campo vacío no representa cero.
 
 En **Configurar evaluación** defines la escala, inicialmente 0–5, y el umbral aprobatorio, inicialmente 3. El promedio provisional usa solo los porcentajes ya evaluados; para estudiantes, solo notas publicadas.
 
@@ -87,7 +93,7 @@ Ejemplo: tarea de 60 % con 80/100 y cuestionario de 40 % con 1/1 producen **4,4 
 
 Publicar la nota final requiere porcentajes que sumen 100 % y notas publicadas de las entregas de estudiantes con matrícula activa. La opción **Contar como cero las actividades sin entrega cuando termine su plazo** solo afecta a faltantes con plazo ya cerrado. Una entrega enviada pero aún sin calificar nunca se convierte automáticamente en cero. Sin cierre efectivo, no hay faltante definitivo.
 
-Editar una actividad, recibir un nuevo envío, cambiar una nota o volver a publicar notas disponibles retira la publicación final; debes revisarla y confirmarla otra vez. Las notas individuales ya publicadas siguen visibles salvo que las retires o una entrega posterior las sustituya para el cálculo.
+Editar una actividad, recibir un nuevo envío o devolver una calificación modificada retira la publicación final; debes revisarla y confirmarla otra vez. Preparar un cambio privado no altera la nota final que ve el estudiante. Las notas individuales ya publicadas siguen visibles salvo que las retires o una entrega posterior las sustituya para el cálculo.
 
 ## Almacenamiento y respaldo
 

@@ -35,7 +35,7 @@ export function createAccessModel(db,fail){
    if(path==='/api/academics/courses'||path==='/api/academics/storage')return;
    const m=/^\/api\/academics\/(courses|activities|submissions)\/([^/]+)(.*)$/.exec(path);if(!m)fail(403,'Ruta académica no autorizada.');
    const id=resolve(m[1],m[2]);let action='view';
-   if(m[1]==='submissions'||/\/(gradebook|release|settings|submissions)$/.test(m[3]))action='grade';
+   if(m[1]==='submissions'||/\/(gradebook|release|settings|submissions|download)$/.test(m[3]))action='grade';
    else if(!['GET','HEAD'].includes(method))action='edit';
    requireScope(auth,id,action);
   }
