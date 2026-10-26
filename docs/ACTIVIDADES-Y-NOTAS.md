@@ -2,16 +2,16 @@
 
 ## Revisar y calificar entregas
 
-Abre la actividad y pulsa **Comenzar revisión** o **Revisar** en la fila del estudiante. La revisión ocupa toda la pantalla: a la izquierda están los estudiantes y filtros; en el centro, las respuestas y archivos; a la derecha, la calificación y devolución. Puedes buscar por nombre o cédula y avanzar con **Anterior / Siguiente**. En pantallas pequeñas, **Calificar / Devolver** lleva directamente al panel de acciones.
+Abre la actividad y pulsa **Revisar entregas** o **Revisar** en la fila del estudiante. La revisión ocupa toda la pantalla: a la izquierda están los estudiantes y filtros; en el centro, las respuestas y archivos; a la derecha, la calificación y devolución. Puedes buscar por nombre o cédula y avanzar con **Anterior / Siguiente**. En pantallas pequeñas, **Nota** lleva directamente al panel de acciones.
 
 - **Pedir corrección** permite reabrir la entrega. Escribe las indicaciones y, si lo necesitas, un nuevo plazo. El estudiante conserva sus respuestas, archivos y el mismo intento; la nota anterior se retira hasta el reenvío.
 - Las notas y los comentarios se guardan automáticamente como borrador privado. **Devolver** los hace visibles al estudiante; **Devolver a todos** publica las calificaciones listas de la actividad en una sola acción. Si editas una nota que ya estaba devuelta, el estudiante conserva la versión publicada hasta que vuelvas a devolverla. Puedes escribir comentarios antes de asignar puntos.
 - Asigna puntos directamente o usa **Usar automática** cuando esté disponible. Puedes añadir comentarios y usar textos de apoyo. Las modificaciones quedan registradas en el historial sin pedir un motivo en cada guardado. Los soportes requeridos deben confirmarse como revisados para publicar.
 - Las preguntas muestran las opciones seleccionadas y la respuesta correcta, con un índice para saltar entre ellas. Los PDF e imágenes se previsualizan junto a las respuestas; los documentos de Office se descargan. **Ver enunciado** permite consultar las instrucciones sin abandonar la revisión.
-- Un borrador permite consultar el avance guardado, pero no calificar. Una entrega devuelta permite consultar la corrección y **Ajustar indicaciones o ampliar el plazo**. Esta actualización conserva las respuestas e inicia de nuevo el temporizador del cuestionario al volver a abrirlo.
+- Un borrador permite consultar el avance guardado, pero no calificar. Una entrega devuelta permite consultar la corrección y **Ajustar indicaciones y plazo**. Esta actualización conserva las respuestas e inicia de nuevo el temporizador del cuestionario al volver a abrirlo.
 - Los intentos de versiones anteriores están en el filtro de historial y son de consulta. Solo se devuelve el último intento enviado, sin otro intento en borrador. Si la actividad está oculta, primero debe publicarse para admitir correcciones.
 
-Al cambiar de estudiante o cerrar la revisión, el sistema espera a que termine el guardado. Si no puede guardar, conserva los cambios en pantalla y permite reintentar; no sobrescribe una entrega modificada desde otra sesión. **Actualizar** consulta las respuestas más recientes guardadas en el servidor.
+Al cambiar de estudiante o cerrar la revisión, el sistema espera a que termine el guardado. Si no puede guardar, conserva los cambios en pantalla y permite reintentar; no sobrescribe una entrega modificada desde otra sesión.
 
 En el **Libro de calificaciones** también puedes buscar por nombre o cédula y filtrar estudiantes con evaluación completa o incompleta. La columna de nombres permanece visible al desplazar las actividades horizontalmente.
 
