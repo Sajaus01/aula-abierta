@@ -9,7 +9,7 @@ import {setupNotifications,validPushSubscription} from '../server/notifications.
 
 async function fixture(t){
  const dir=await mkdtemp(join(tmpdir(),'aula-notifications-')),pushes=[],transport={status:0};
- const app=await createApp({dataDir:dir,notificationPushSend:async(subscription,payload,options)=>{pushes.push({subscription,payload:JSON.parse(payload),options});if(transport.status)throw Object.assign(new Error('synthetic transport error'),{statusCode:transport.status});},env:{NODE_ENV:'test',AULA_MODEL_V2:'1',ADMIN_DOCUMENT:'99880001',ADMIN_PASSWORD:'Master-Notifications-2026!'}});
+ const app=await createApp({dataDir:dir,notificationPushSend:async(subscription,payload,options)=>{pushes.push({subscription,payload:JSON.parse(payload),options});if(transport.wait)await transport.wait;if(transport.status)throw Object.assign(new Error('synthetic transport error'),{statusCode:transport.status});},env:{NODE_ENV:'test',AULA_MODEL_V2:'1',ADMIN_DOCUMENT:'99880001',ADMIN_PASSWORD:'Master-Notifications-2026!'}});
  await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+app.server.address().port;
  t.after(async()=>{await app.notifications.flush();await new Promise(r=>app.server.close(r));await rm(dir,{recursive:true,force:true,maxRetries:5,retryDelay:100});});
  function client(){let cookie='';return async(path,body,method=body?'POST':'GET',status=200,headers={})=>{const response=await fetch(base+'/api'+path,{method,headers:{Origin:base,'Content-Type':'application/json',Cookie:cookie,...headers},body:body===undefined?undefined:JSON.stringify(body)});if(response.headers.get('set-cookie'))cookie=response.headers.get('set-cookie').split(';')[0];const value=await response.json();assert.equal(response.status,status,path+': '+JSON.stringify(value));return value.data;};}
@@ -148,4 +148,63 @@ test('push: reading and revoked access cancel retries, account switching reassig
  await f.student.call('/notifications/push/subscriptions',{endpoint:sub.endpoint},'DELETE');assert.equal(f.db.prepare('SELECT COUNT(*) n FROM notification_push_subscriptions').get().n,1);
  f.transport.status=0;await f.announcement();await f.notifications.flush();assert.equal(f.pushes.length,sent+1);assert.equal(f.db.prepare("SELECT COUNT(*) n FROM notification_push_deliveries WHERE state='sent'").get().n,1);
  await f.peer.call('/notifications/push/subscriptions',{endpoint:sub.endpoint},'DELETE');assert.equal(f.db.prepare('SELECT COUNT(*) n FROM notification_push_subscriptions').get().n,0);
+});
+
+test('chat push: quiet recipients receive a private immediate alert, retries deduplicate and older messages stay quiet',async t=>{
+ const f=await fixture(t),{db,course,student,peer}=f;
+ await f.master('/chat/courses/'+course.id,{enabled:true,studentStaff:true,studentPeers:true},'PUT');
+ const conversation=await student.call('/chat/conversations',{groupId:course.id,userId:peer.id},'POST',201);
+ const path='/chat/conversations/'+conversation.id+'/messages';
+ await student.call(path,{body:'Mensaje anterior al permiso',clientKey:randomUUID(),groupId:course.id},'POST',201);
+ const sub=subscription('chat-device');await peer.call('/notifications/push/subscriptions',{subscription:sub},'POST',201);await f.notifications.flush();
+ assert.equal(f.pushes.length,0);assert.equal(db.prepare('SELECT COUNT(*) n FROM notification_chat_push_deliveries').get().n,0);
+ const body={body:'Mi respuesta privada es 27.5 y no debe salir del aula',clientKey:randomUUID(),groupId:course.id};
+ const sent=await student.call(path,body,'POST',201);await f.notifications.settled();
+ assert.equal(f.pushes.length,1,'sending reaches the quiet recipient without another recipient request');
+ assert.equal(f.pushes[0].subscription.endpoint,sub.endpoint);assert.equal(f.pushes[0].payload.kind,'chat');assert.equal(f.pushes[0].payload.eventId,sent.id);
+ assert.equal(f.pushes[0].payload.body,'Tienes un mensaje nuevo.');assert.equal(f.pushes[0].payload.url,'#mensajes');assert.equal(f.pushes[0].options.urgency,'high');
+ assert.ok(!JSON.stringify(f.pushes[0].payload).includes('27.5'));assert.ok(!JSON.stringify(f.pushes[0].payload).includes('Estudiante'));
+ await student.call(path,body);await f.notifications.flush();assert.equal(f.pushes.length,1,'retrying the same send does not create another push');
+ db.exec('BEGIN IMMEDIATE');db.prepare('INSERT INTO chat_messages(conversation_id,sender_id,body,created_at,client_key,course_id) VALUES(?,?,?,?,?,?)').run(conversation.id,student.id,'No confirmado',new Date().toISOString(),randomUUID(),course.id);
+ assert.equal(db.prepare('SELECT COUNT(*) n FROM notification_chat_push_deliveries').get().n,2);db.exec('ROLLBACK');await f.notifications.flush();assert.equal(f.pushes.length,1,'a rolled back message never leaves the server');
+ assert.equal(db.prepare('PRAGMA foreign_key_check').all().length,0);
+});
+
+test('chat push: muted, read, removed, revoked and switched devices cancel durable retries',async t=>{
+ const f=await fixture(t),{db,course,student,peer}=f;
+ await f.master('/chat/courses/'+course.id,{enabled:true,studentStaff:true,studentPeers:true},'PUT');
+ const conversation=await student.call('/chat/conversations',{groupId:course.id,userId:peer.id},'POST',201),chat='/chat/conversations/'+conversation.id;
+ const sub=subscription('chat-safety');await peer.call('/notifications/push/subscriptions',{subscription:sub},'POST',201);
+ const send=()=>student.call(chat+'/messages',{body:'Pregunta reservada',clientKey:randomUUID(),groupId:course.id},'POST',201);
+ const retry=async()=>{db.prepare("UPDATE notification_chat_push_deliveries SET next_attempt='2000-01-01T00:00:00.000Z' WHERE state='pending'").run();await f.notifications.flush();};
+ await peer.call(chat+'/state',{muted:true},'PUT');await send();await f.notifications.flush();assert.equal(f.pushes.length,0);
+ await peer.call(chat+'/state',{muted:false},'PUT');await f.notifications.flush();assert.equal(f.pushes.length,0,'unmuting does not replay suppressed alerts');
+ f.transport.status=429;const read=await send();await f.notifications.flush();assert.equal(f.pushes.length,1);
+ await peer.call(chat+'/read',{id:read.id});await retry();assert.equal(f.pushes.length,1,'a read message does not retry');
+ const deleted=await send();await f.notifications.flush();assert.equal(f.pushes.length,2);
+ await student.call('/chat/messages/'+deleted.id,undefined,'DELETE');await retry();assert.equal(f.pushes.length,2,'a deleted message does not retry');
+ await send();await f.notifications.flush();assert.equal(f.pushes.length,3);
+ await f.master('/chat/conversations/'+conversation.id+'/remove',{confirm:conversation.id,groupId:course.id});await retry();assert.equal(f.pushes.length,3,'withdrawing its origin stops queued alerts');
+ await f.master('/chat/conversations/'+conversation.id+'/restore',{confirm:conversation.id,groupId:course.id});await send();await f.notifications.flush();assert.equal(f.pushes.length,4);
+ db.prepare("UPDATE enrollments SET status='revoked' WHERE student_id=?").run(peer.id);await retry();assert.equal(f.pushes.length,4,'revoked membership stops queued alerts');
+ db.prepare("UPDATE enrollments SET status='active' WHERE student_id=?").run(peer.id);await send();await f.notifications.flush();assert.equal(f.pushes.length,5);
+ await student.call('/notifications/push/subscriptions',{subscription:sub},'POST',201);assert.equal(db.prepare('SELECT COUNT(*) n FROM notification_chat_push_deliveries').get().n,0);
+ await retry();assert.equal(f.pushes.length,5,'an opted-in device never inherits a previous account’s queued messages');
+ f.transport.status=0;await peer.call(chat+'/messages',{body:'Respuesta nueva',clientKey:randomUUID(),groupId:course.id},'POST',201);await f.notifications.flush();assert.equal(f.pushes.length,6);
+ await student.call('/notifications/push/subscriptions',{endpoint:sub.endpoint},'DELETE');assert.equal(db.prepare('SELECT COUNT(*) n FROM notification_chat_push_deliveries').get().n,0);
+ assert.equal(db.prepare('PRAGMA foreign_key_check').all().length,0);
+});
+
+test('chat push: a message arriving during another push is drained without waiting for the scheduler',async t=>{
+ const f=await fixture(t),{course,student,peer}=f;
+ await f.master('/chat/courses/'+course.id,{enabled:true,studentStaff:true,studentPeers:true},'PUT');
+ const conversation=await student.call('/chat/conversations',{groupId:course.id,userId:peer.id},'POST',201);
+ await peer.call('/notifications/push/subscriptions',{subscription:subscription('chat-overlap')},'POST',201);
+ let release;f.transport.wait=new Promise(resolve=>release=resolve);
+ const send=()=>student.call('/chat/conversations/'+conversation.id+'/messages',{body:'Nuevo mensaje',clientKey:randomUUID(),groupId:course.id},'POST',201);
+ const first=await send();assert.equal(f.pushes.length,1);
+ const second=await send();assert.equal(f.pushes.length,1,'the first transport remains in flight');
+ const pending=f.notifications.settled();release();await pending;
+ assert.deepEqual(f.pushes.map(push=>push.payload.eventId),[first.id,second.id]);
+ assert.equal(f.db.prepare("SELECT COUNT(*) n FROM notification_chat_push_deliveries WHERE state='sent'").get().n,2);
 });

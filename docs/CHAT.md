@@ -46,6 +46,10 @@ Antes de actualizar una instalación con chats anteriores, el servidor crea una 
 
 ## Operación
 
+La página mantiene una conexión de eventos con el servidor para actualizar mensajes, lecturas y escritura sin recargar ni mover el cursor. Al reconectar vuelve a consultar el estado autorizado; las consultas periódicas quedan como respaldo si se interrumpe esa conexión. Cada evento se dirige a las personas afectadas y no incluye el texto del mensaje ni archivos.
+
+Con **Activar avisos del navegador**, los mensajes personales nuevos también pueden generar un aviso cuando la página está en segundo plano o cerrada. Los avisos respetan las conversaciones silenciadas, la lectura del mensaje y los permisos vigentes. El texto externo es general para conservar la privacidad de la conversación.
+
 No requiere un proveedor adicional ni cambiar el plan actual de Render. Consume el almacenamiento persistente y capacidad del servicio existente. Antes de ampliar el número de usuarios simultáneos, observa el uso real del disco, memoria y CPU. El sistema limita ráfagas a 40 mensajes por usuario por minuto y evita duplicar un mismo envío reintentado. Las fotos se conservan en el sistema de perfiles existente.
 
 Para volver al modelo anterior de conversaciones por grupo hace falta restaurar la copia previa, además del código correspondiente: la base migrada tiene una restricción de identidad global y lecturas individuales que el código antiguo no administra. Detén el servicio, restaura el respaldo en un directorio vacío y verifica su integridad antes de cambiar `DATA_DIR`. La restauración descarta los cambios posteriores a la copia; consérvalos antes si hubo actividad después de la actualización. No sobrescribas una base activa.

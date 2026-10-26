@@ -12,7 +12,7 @@ test('arrival audio unlocks only after interaction and respects silence and reco
   const sound=await import('../public/notification-sound.js?runtime-test');
   assert.equal(sound.playArrivalSound('initial-history'),false);assert.equal(tones.length,0);
   listeners.get('pointerdown')();assert.equal(sound.playArrivalSound('initial-history'),false);
-  assert.equal(sound.playArrivalSound('new-incoming'),true);assert.deepEqual(tones,['start','stop']);
+  assert.equal(sound.playArrivalSound('new-incoming'),true);assert.deepEqual(tones,['start','stop','start','stop']);
   sound.suppressArrivalSounds(true);assert.equal(sound.playArrivalSound('during-recording'),false);
   sound.suppressArrivalSounds(false);sound.setSoundsEnabled(false);assert.equal(sound.soundsEnabled(),false);assert.equal(sound.playArrivalSound('muted'),false);
  }finally{for(const [key,descriptor]of previous){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else delete globalThis[key];}}

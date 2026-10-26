@@ -22,6 +22,8 @@ import {createQuestionImport} from './question-import.mjs';
 import {createLibrary} from './library.mjs';
 import {setupChat,createChat} from './chat.mjs';
 import {createNotifications} from './notifications.mjs';
+import {createRealtime} from './realtime.mjs';
+import {presenceOnline} from './presence.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
@@ -448,7 +450,8 @@ export async function createApp(options = {}) {
     else if(!one("SELECT name FROM sqlite_master WHERE type='table' AND name='chat_identity_migrations'")||!one('SELECT 1 FROM chat_identity_migrations WHERE id=1'))createBackup(dataDir,{label:'before-chat-person-v2'});
     setupChat(db);
   }
-  const chat=accessModel?createChat({db,accessModel,fail,json,readJson,readSession,isEnrolled,audit,storage,validateFile,uploadsDir,fileResponse}):null;
+  const realtime=accessModel?createRealtime({readSession,fail,appOrigin,heartbeatMs:options.realtimeHeartbeatMs||15000,scopeSignature:auth=>JSON.stringify([query('SELECT e.id,e.status,e.starts_at,e.expires_at,c.published,c.lifecycle,CASE WHEN e.status=\'active\' AND (e.starts_at IS NULL OR e.starts_at<=?) AND (e.expires_at IS NULL OR e.expires_at>?) THEN 1 ELSE 0 END AS currently_active FROM enrollments e JOIN courses c ON c.id=e.course_id WHERE e.student_id=? ORDER BY e.id',now(),now(),auth.user.id),query('SELECT s.*,c.published,c.lifecycle FROM course_staff s JOIN courses c ON c.id=s.course_id WHERE s.user_id=? ORDER BY s.course_id',auth.user.id)])}):null;
+  const chat=accessModel?createChat({db,accessModel,fail,json,readJson,readSession,isEnrolled,audit,storage,validateFile,uploadsDir,fileResponse,notifyUsers:realtime.notifyUsers,onMessageSent:message=>notifications?.chatMessageSent?.(message)}):null;
   const community=accessModel?createCommunity({storage,db,accessModel,fail,json,readJson,readSession,requireCourse,isEnrolled,audit,chat}):null;
   const panorama=accessModel?createPanorama({db,accessModel,fail,json}):null;
   const quickResources = createQuickResources({storage,db,fail,json,readJson,readSession,requireAdmin,requireCourse,validateFile,fileResponse,uploadsDir,audit,string,webUrl,boolean});
@@ -456,7 +459,7 @@ export async function createApp(options = {}) {
   const library=accessModel?createLibrary({storage,db,accessModel,fail,json,readJson,readSession,uploadsDir,audit,string,fileResponse}):null;
   const analytics=accessModel?createAnalytics({db,accessModel,fail,json,readJson,readSession,requireCourse,audit,academics}):null;
   const questionImport=accessModel?createQuestionImport({accessModel,fail,json,readJson,readSession}):null;
-  const notifications=accessModel?createNotifications({db,accessModel,fail,json,readJson,readSession,isEnrolled,audit,appOrigin,pushSend:options.notificationPushSend}):null;
+  const notifications=accessModel?createNotifications({db,accessModel,fail,json,readJson,readSession,isEnrolled,audit,appOrigin,pushSend:options.notificationPushSend,notifyUsers:realtime.notifyUsers}):null;
   const flushNotifications=()=>{void notifications?.flush().catch(()=>console.error('No se pudo procesar la cola de avisos.'));};
   const handler = async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -477,9 +480,12 @@ export async function createApp(options = {}) {
       accessModel?.authorize(req,auth);
       const initialAllowed = (method === 'GET' && ['/api/status', '/api/settings', '/api/auth/me'].includes(path)) || (method === 'POST' && ['/api/auth/logout', '/api/auth/first-password'].includes(path));
       if (path.startsWith('/api/') && !initialAllowed) requirePersonalPassword(auth);
+      if(!['GET','HEAD'].includes(method)&&/^\/api\/(auth|admin|platform|community\/profile)(?:\/|$)/.test(path))res.once('finish',()=>{if(res.statusCode<400)realtime?.revalidate();});
+      if(realtime?.handler(req,res,path,method,auth))return;
       if(notifications&&await notifications.handler(req,res,path,method,auth))return;
       if(await storage.handler(req,res,path,method,auth))return;
-      if(community&&await community.handler(req,res,path,method,auth))return;
+      const presenceBefore=auth&&path==='/api/community/heartbeat'&&method==='POST'?presenceOnline(db,auth.user.id):null;
+      if(community&&await community.handler(req,res,path,method,auth)){if(presenceBefore!==null&&presenceBefore!==presenceOnline(db,auth.user.id)||auth&&path==='/api/community/profile'&&!['GET','HEAD'].includes(method))chat.notifyPresence(auth.user.id);return;}
       if(chat&&await chat.handler(req,res,path,method,auth))return;
       if(panorama&&await panorama.handler(req,res,path,method,auth))return;
       if(analytics&&await analytics.handler(req,res,path,method,auth))return;
@@ -937,8 +943,9 @@ export async function createApp(options = {}) {
   server.keepAliveTimeout = 5000;
   let notificationTimer;
   server.once('listening',()=>{if(notifications){flushNotifications();notificationTimer=setInterval(flushNotifications,15000);notificationTimer.unref();}});
+  const closeServer=server.close.bind(server);server.close=(...args)=>{realtime?.stop();chat?.stop();return closeServer(...args);};
   server.on('close', () => {clearInterval(notificationTimer);notifications?.stop();db.close();});
-  return { server, db, dataDir, notifications };
+  return { server, db, dataDir, notifications, realtime };
 }
 
 export async function start(options = {}) {

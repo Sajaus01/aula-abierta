@@ -36,6 +36,19 @@ export function setupNotifications(db){
  attempts INTEGER NOT NULL DEFAULT 0,next_attempt TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'pending',
  PRIMARY KEY(inbox_id,subscription_id));
  CREATE INDEX IF NOT EXISTS notification_push_pending ON notification_push_deliveries(state,next_attempt);
+ CREATE TABLE IF NOT EXISTS notification_chat_push_deliveries(
+ message_id INTEGER NOT NULL REFERENCES chat_messages(id) ON DELETE CASCADE,
+ subscription_id TEXT NOT NULL REFERENCES notification_push_subscriptions(id) ON DELETE CASCADE,
+ recipient_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+ attempts INTEGER NOT NULL DEFAULT 0,next_attempt TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'pending',
+ PRIMARY KEY(message_id,subscription_id));
+ CREATE INDEX IF NOT EXISTS notification_chat_push_pending ON notification_chat_push_deliveries(state,next_attempt);
+ CREATE TRIGGER IF NOT EXISTS notification_chat_message AFTER INSERT ON chat_messages BEGIN
+ INSERT OR IGNORE INTO notification_chat_push_deliveries(message_id,subscription_id,recipient_id,next_attempt)
+ SELECT NEW.id,s.id,s.user_id,NEW.created_at FROM chat_conversations v JOIN notification_push_subscriptions s
+ ON s.user_id=CASE WHEN NEW.sender_id=v.user_a THEN v.user_b ELSE v.user_a END
+ WHERE v.id=NEW.conversation_id AND NEW.sender_id IN(v.user_a,v.user_b) AND NEW.deleted_at IS NULL;
+ END;
  CREATE TRIGGER IF NOT EXISTS notification_capture_recipients AFTER INSERT ON notification_events BEGIN
  INSERT OR IGNORE INTO notification_recipients(event_id,user_id,enrollment_id)
  SELECT NEW.id,e.student_id,e.id FROM enrollments e JOIN users u ON u.id=e.student_id
@@ -162,7 +175,7 @@ export function createNotifications(ctx){
  function decrypt(value){const data=Buffer.from(value,'base64'),cipher=createDecipheriv('aes-256-gcm',encryptionKey,data.subarray(0,12));cipher.setAuthTag(data.subarray(12,28));return JSON.parse(Buffer.concat([cipher.update(data.subarray(28)),cipher.final()]).toString('utf8'));}
  function reconcile(){
   if(db.isTransaction)return;
-  const time=stamp();db.exec('BEGIN IMMEDIATE');
+  const time=stamp(),changed=new Set();db.exec('BEGIN IMMEDIATE');
   try{
    const visibility=new Map();
    const pending=all(`SELECT e.*,r.user_id FROM notification_recipients r JOIN notification_events e ON e.id=r.event_id
@@ -173,7 +186,7 @@ export function createNotifications(ctx){
     AND c.entity_kind='group' AND c.published=1 AND c.lifecycle='active' ORDER BY e.id`,time,time);
    for(const r of pending){
     if(!visibility.has(r.id))visibility.set(r.id,visible(r,time));if(!visibility.get(r.id))continue;
-    run('INSERT OR IGNORE INTO notification_inbox(event_id,user_id,created_at) VALUES(?,?,?)',r.id,r.user_id,time);
+    if(run('INSERT OR IGNORE INTO notification_inbox(event_id,user_id,created_at) VALUES(?,?,?)',r.id,r.user_id,time).changes)changed.add(r.user_id);
     run('UPDATE notification_recipients SET delivered_at=? WHERE event_id=? AND user_id=?',time,r.id,r.user_id);
    }
    run(`INSERT OR IGNORE INTO notification_push_deliveries(inbox_id,subscription_id,next_attempt)
@@ -182,6 +195,7 @@ export function createNotifications(ctx){
     (SELECT 1 FROM notification_push_deliveries d WHERE d.inbox_id=i.id AND d.subscription_id=s.id)`,time);
    db.exec('COMMIT');
   }catch(error){db.exec('ROLLBACK');throw error;}
+  if(changed.size)ctx.notifyUsers?.([...changed],['notifications']);
  }
  function ownItems(auth){return all('SELECT i.*,e.id event_id,e.course_id,e.kind,e.object_type,e.object_id,e.student_id,e.title,e.body,e.created_at event_created_at,e.cancelled FROM notification_inbox i JOIN notification_events e ON e.id=i.event_id WHERE i.user_id=? ORDER BY i.id DESC',auth.user.id).filter(r=>enrolled(auth.user.id,r.course_id)&&visible({...r,id:r.event_id}));}
  function list(auth,search,courseId){
@@ -202,11 +216,48 @@ export function createNotifications(ctx){
   }
   return {items,courses,unread:ownRows.filter(r=>!r.read_at).length,cursor,hasMore,nextBefore, ...(courseId?{course:courses.find(c=>c.id===courseId)}:{})};
  }
- let running=null,stopped=false;
+ function chatEligible(delivery,time){
+  const m=one('SELECT m.*,v.user_a,v.user_b,v.course_id AS fallback_course FROM chat_messages m JOIN chat_conversations v ON v.id=m.conversation_id WHERE m.id=?',delivery.message_id);
+  if(!m||m.deleted_at||m.sender_id===delivery.user_id||![m.user_a,m.user_b].includes(delivery.user_id)||!currentUser(m.sender_id)||!currentUser(delivery.user_id)||Date.parse(m.created_at)<Date.parse(time)-86400000)return false;
+  if(!one('SELECT id FROM chat_settings WHERE id=1 AND enabled=1'))return false;
+  const c=getCourse(m.course_id||m.fallback_course),settings=c&&one('SELECT * FROM chat_courses WHERE course_id=? AND enabled=1',c.id);
+  if(!activeCourse(c)||!settings||one('SELECT 1 FROM chat_conversation_groups WHERE conversation_id=? AND course_id=? AND deleted_at IS NOT NULL',m.conversation_id,c.id))return false;
+  const supervisor=id=>a.p.can(id,c.id,'view'),member=id=>supervisor(id)||enrolled(id,c.id),senderStaff=supervisor(m.sender_id),recipientStaff=supervisor(delivery.user_id);
+  if(!member(m.sender_id)||!member(delivery.user_id)||one('SELECT 1 FROM chat_blocks WHERE course_id=? AND user_id=?',c.id,m.sender_id))return false;
+  if(!senderStaff&&!recipientStaff&&!settings.student_peers||!senderStaff&&recipientStaff&&(!settings.student_staff||one('SELECT accept_students FROM chat_preferences WHERE user_id=?',delivery.user_id)?.accept_students===0))return false;
+  const state=one('SELECT muted,hidden_id FROM chat_members WHERE conversation_id=? AND user_id=?',m.conversation_id,delivery.user_id);
+  if(state?.muted||state?.hidden_id>=m.id||one('SELECT 1 FROM chat_message_reads WHERE message_id=? AND user_id=?',m.id,delivery.user_id))return false;
+  return m;
+ }
+ async function flushChat(time){
+  const pending=all(`SELECT d.*,s.user_id,s.cipher FROM notification_chat_push_deliveries d
+   JOIN notification_push_subscriptions s ON s.id=d.subscription_id WHERE d.state='pending' AND d.next_attempt<=?
+   ORDER BY d.message_id LIMIT 30`,time);
+  for(const delivery of pending){
+   if(stopped)break;
+   const subscriptionRow=one('SELECT user_id FROM notification_push_subscriptions WHERE id=?',delivery.subscription_id),message=subscriptionRow?.user_id===delivery.recipient_id&&chatEligible(delivery,time);
+   if(!message){run("UPDATE notification_chat_push_deliveries SET state='cancelled' WHERE message_id=? AND subscription_id=?",delivery.message_id,delivery.subscription_id);continue;}
+   const claim=run("UPDATE notification_chat_push_deliveries SET attempts=attempts+1,next_attempt=? WHERE message_id=? AND subscription_id=? AND state='pending' AND next_attempt<=?",new Date(Date.now()+60000).toISOString(),delivery.message_id,delivery.subscription_id,time);
+   if(!claim.changes)continue;
+   try{
+    const subscription=decrypt(delivery.cipher);if(!validPushSubscription(subscription))throw Object.assign(new Error('Invalid subscription'),{statusCode:410});
+    const payload=JSON.stringify({title:'Aula Abierta',body:'Tienes un mensaje nuevo.',kind:'chat',eventId:message.id,conversationId:message.conversation_id,url:'#mensajes',tag:'aula-chat-'+message.conversation_id});
+    await (ctx.pushSend||webpush.sendNotification.bind(webpush))(subscription,payload,{TTL:3600,urgency:'high',timeout:10000,vapidDetails:{subject:ctx.appOrigin||'https://aula-abierta.onrender.com',publicKey:vapid.publicKey,privateKey:vapid.privateKey}});
+    if(!stopped)run("UPDATE notification_chat_push_deliveries SET state='sent' WHERE message_id=? AND subscription_id=?",delivery.message_id,delivery.subscription_id);
+   }catch(error){
+    if(stopped)break;const status=Number(error.statusCode)||0;
+    if(status===404||status===410){run('DELETE FROM notification_push_subscriptions WHERE id=?',delivery.subscription_id);continue;}
+    const attempts=delivery.attempts+1,retry=attempts<5&&(!status||status===429||status>=500);
+    run('UPDATE notification_chat_push_deliveries SET state=?,next_attempt=? WHERE message_id=? AND subscription_id=?',retry?'pending':'failed',new Date(Date.now()+Math.min(3600000,60000*2**attempts)).toISOString(),delivery.message_id,delivery.subscription_id);
+   }
+  }
+ }
+ let running=null,stopped=false,rerun=false;
  async function flush(){
-  if(stopped||db.isTransaction)return;if(running)return running;
+  if(stopped||db.isTransaction)return;if(running){rerun=true;return running;}
   running=(async()=>{
    reconcile();const time=stamp();
+   await flushChat(time);
    const pending=all(`SELECT d.*,s.user_id,s.cipher,i.event_id,i.read_at FROM notification_push_deliveries d
     JOIN notification_push_subscriptions s ON s.id=d.subscription_id JOIN notification_inbox i ON i.id=d.inbox_id
     WHERE d.state='pending' AND d.next_attempt<=? ORDER BY d.inbox_id LIMIT 30`,time);
@@ -225,7 +276,7 @@ export function createNotifications(ctx){
     if(!claim.changes)continue;
     try{
      const subscription=decrypt(delivery.cipher);if(!validPushSubscription(subscription))throw Object.assign(new Error('Invalid subscription'),{statusCode:410});
-     const payload=JSON.stringify({title:'Aula Abierta',body:'Tienes novedades en uno de tus cursos.',url:'#notificaciones?course='+encodeURIComponent(event.course_id),tag:'aula-course-'+event.course_id,eventId:delivery.inbox_id});
+     const payload=JSON.stringify({title:'Aula Abierta',body:'Tienes novedades en uno de tus cursos.',kind:'course',url:'#notificaciones?course='+encodeURIComponent(event.course_id),tag:'aula-course-'+event.course_id,eventId:delivery.inbox_id});
      await (ctx.pushSend||webpush.sendNotification.bind(webpush))(subscription,payload,{TTL:3600,urgency:'normal',timeout:10000,vapidDetails:{subject:ctx.appOrigin||'https://aula-abierta.onrender.com',publicKey:vapid.publicKey,privateKey:vapid.privateKey}});
      if(!stopped)run("UPDATE notification_push_deliveries SET state='sent' WHERE inbox_id=? AND subscription_id=?",delivery.inbox_id,delivery.subscription_id);
     }catch(error){
@@ -236,7 +287,8 @@ export function createNotifications(ctx){
      run('UPDATE notification_push_deliveries SET state=?,next_attempt=? WHERE inbox_id=? AND subscription_id=?',retry?'pending':'failed',new Date(Date.now()+Math.min(3600000,60000*2**attempts)).toISOString(),delivery.inbox_id,delivery.subscription_id);
     }
    }
-  })().finally(()=>{running=null;});return running;
+   if(!stopped&&(one("SELECT 1 FROM notification_chat_push_deliveries WHERE state='pending' AND next_attempt<=? LIMIT 1",stamp())||one("SELECT 1 FROM notification_push_deliveries WHERE state='pending' AND next_attempt<=? LIMIT 1",stamp())))rerun=true;
+  })().finally(()=>{running=null;if(rerun&&!stopped){rerun=false;return flush();}});return running;
  }
  async function handler(req,res,path,method,auth){
   if(!path.startsWith('/api/notifications'))return false;requireAuth(auth);
@@ -257,7 +309,7 @@ export function createNotifications(ctx){
    const id=old?.id||randomUUID(),time=stamp();reconcile();
    run(`INSERT INTO notification_push_subscriptions VALUES(?,?,?,?,?,?,?) ON CONFLICT(endpoint_hash) DO UPDATE SET
     user_id=excluded.user_id,cipher=excluded.cipher,after_inbox_id=CASE WHEN notification_push_subscriptions.user_id=excluded.user_id THEN notification_push_subscriptions.after_inbox_id ELSE excluded.after_inbox_id END,updated_at=excluded.updated_at`,id,auth.user.id,hash,encrypt(subscription),maximum(),time,time);
-   if(old&&old.user_id!==auth.user.id)run('DELETE FROM notification_push_deliveries WHERE subscription_id=?',id);
+   if(old&&old.user_id!==auth.user.id){run('DELETE FROM notification_push_deliveries WHERE subscription_id=?',id);run('DELETE FROM notification_chat_push_deliveries WHERE subscription_id=?',id);}
    return send({id,enabled:true},201);
   }
   if(path==='/api/notifications/read'&&method==='POST'){
@@ -267,7 +319,7 @@ export function createNotifications(ctx){
    if(body.courseId)requireCourse(auth,body.courseId);
    const ids=new Set(body.all===true?[]:body.ids),time=stamp();
    for(const row of ownItems(auth))if(!row.read_at&&(!body.courseId||row.course_id===body.courseId)&&(body.all===true||ids.has(row.id)))run('UPDATE notification_inbox SET read_at=? WHERE id=? AND user_id=?',time,row.id,auth.user.id);
-   return send(list(auth,new URLSearchParams(),body.courseId));
+   ctx.notifyUsers?.([auth.user.id],['notifications']);return send(list(auth,new URLSearchParams(),body.courseId));
   }
   match=/^\/api\/notifications\/courses\/([^/]+)(?:\/(announcements))?$/.exec(path);
   if(match){const id=decodeURIComponent(match[1]);requireCourse(auth,id);
@@ -284,5 +336,5 @@ export function createNotifications(ctx){
   }
   fail(404,'Ruta de avisos no encontrada.');
  }
- return {handler,flush,reconcile,stop(){stopped=true;},settled:()=>running};
+ return {handler,flush,reconcile,chatMessageSent(){void flush().catch(()=>console.error('No se pudo procesar un aviso de mensaje.'));},stop(){stopped=true;},settled:()=>running};
 }

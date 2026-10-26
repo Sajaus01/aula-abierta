@@ -1,4 +1,8 @@
 /* Compact personal messages on the shared campus palette. */
+.chat-arrival-toast{position:fixed;z-index:135;right:78px;top:66px;display:flex;align-items:center;width:285px;max-width:calc(100vw - 28px);padding:6px 5px 6px 10px;background:#fffffff5;border:1px solid #dddfe7;border-radius:14px;box-shadow:0 7px 28px #20202c20;backdrop-filter:blur(14px)}
+.chat-arrival-open{display:flex;align-items:center;gap:9px;min-width:0;flex:1;padding:4px 0;border:0;background:transparent;text-align:left;color:#34343b;cursor:pointer;font:inherit}
+.chat-arrival-open>.person-avatar{flex:0 0 33px;width:33px;height:33px;min-width:33px;flex-basis:33px;font-size:11px}.chat-arrival-open>span:not(.person-avatar){display:grid;gap:3px;min-width:0;flex:1}.chat-arrival-open strong{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.chat-arrival-open small{font-size:10px;color:#6d7483}.chat-arrival-open>.icon{width:16px;height:16px;color:#0071e3;flex:none}.chat-arrival-toast>.icon-btn{color:#9999a2;width:27px;height:30px;min-width:27px;margin-left:5px;padding:5px}.chat-arrival-toast>.icon-btn>.icon{width:14px;height:14px}
+@media(max-width:580px){.chat-arrival-toast{right:12px;top:62px}}
 .chat-dock{right:78px;bottom:14px;max-width:calc(100vw - 96px)}
 .chat-dock .chat-window{display:flex;width:352px;flex-basis:352px;max-width:calc(100vw - 96px);height:min(590px,calc(100dvh - 88px));border-radius:16px;border-color:#dedee5;box-shadow:0 10px 42px #20202c24}
 .chat-dock .chat-window.minimized{display:none}

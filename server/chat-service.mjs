@@ -4,7 +4,7 @@ import {join} from 'node:path';
 import {createChatMedia} from './chat-media.mjs';
 import {createChatContext} from './chat-context.mjs';
 
-export function createChat({db,accessModel:a,fail,json,readJson,readSession,isEnrolled,audit,storage,validateFile,uploadsDir,fileResponse}){
+export function createChat({db,accessModel:a,fail,json,readJson,readSession,isEnrolled,audit,storage,validateFile,uploadsDir,fileResponse,notifyUsers=()=>{},onMessageSent=()=>{}}){
  const all=(s,...p)=>db.prepare(s).all(...p),one=(s,...p)=>db.prepare(s).get(...p),run=(s,...p)=>db.prepare(s).run(...p),now=()=>new Date().toISOString();
  const globalOn=()=>!!one('SELECT enabled FROM chat_settings WHERE id=1').enabled;
  const supervisor=(id,c)=>Boolean(c&&a.p.can(id,c.id,'view'));
@@ -84,6 +84,11 @@ export function createChat({db,accessModel:a,fail,json,readJson,readSession,isEn
    return {id:m.id,senderId:m.sender_id,groupId:m.course_id||ctx.v.course_id,body:m.deleted_at?'':m.body,files:!m.deleted_at||moderate?media.publicFiles(m.id):[],context:(!m.deleted_at||moderate)&&m.context_json?JSON.parse(m.context_json):null,createdAt:m.created_at,editedAt:m.edited_at,deleted:!!m.deleted_at,replyId:reply?m.reply_id:null,reply:reply?{senderId:reply.sender_id,body:reply.deleted_at?'Mensaje eliminado':reply.body.slice(0,200)||filePreview(reply.id)}:null,readByPeer:!!receipt,readAt:receipt?.read_at||null,canModerate:moderate,canDelete:!m.deleted_at&&(moderate||ctx.own&&m.sender_id===ctx.auth.user.id),canReport:ctx.own,...(moderate?{originalBody:m.deleted_at?m.body:null,history:all('SELECT body,changed_at AS changedAt FROM chat_edits WHERE message_id=? ORDER BY id DESC LIMIT 20',m.id),reports:all('SELECT id,reason,created_at AS createdAt,resolved_at AS resolvedAt FROM chat_reports WHERE message_id=?',m.id)}:{})};
   }),hasOlder:!!rows.length&&!!one(`SELECT 1 FROM chat_messages m WHERE ${filter.sql} AND m.id<? LIMIT 1`,...filter.params,rows[0].id),typing:ctx.own?all('SELECT user_id FROM chat_typing WHERE conversation_id=? AND user_id<>? AND expires_at>?',ctx.v.id,ctx.auth.user.id,now()).filter(r=>ctx.common.some(c=>member(r.user_id,c))&&presenceOnline(db,r.user_id)).map(r=>person(r.user_id,ctx.c)):[]};
  }
+ const typingTimers=new Map();
+ const changed=(v,extra=[])=>notifyUsers([v.user_a,v.user_b,...extra],['chat']);
+ const audience=c=>all("SELECT id FROM users WHERE active=1 AND account_status='active'").filter(u=>member(u.id,c)).map(u=>u.id);
+ function notifyPresence(userId){const rows=all('SELECT * FROM chat_conversations WHERE user_a=? OR user_b=?',userId,userId);for(const v of rows)changed(v);}
+ function typingExpiry(ctx){const key=ctx.v.id+':'+ctx.auth.user.id;clearTimeout(typingTimers.get(key));const timer=setTimeout(()=>{typingTimers.delete(key);const old=one('SELECT expires_at FROM chat_typing WHERE conversation_id=? AND user_id=?',ctx.v.id,ctx.auth.user.id);if(old&&old.expires_at<=now()){run('DELETE FROM chat_typing WHERE conversation_id=? AND user_id=? AND expires_at<=?',ctx.v.id,ctx.auth.user.id,now());changed(ctx.v);}},7100);timer.unref?.();typingTimers.set(key,timer);}
  const bool=(b,k)=>{if(typeof b[k]!=='boolean')fail(400,'Revisa las opciones del chat.');return Number(b[k]);};
  const text=(b,k,max)=>{if(typeof b[k]!=='string'||!b[k].trim()||b[k].trim().length>max)fail(400,`Escribe ${k==='body'?'un mensaje':'un motivo'} de entre 1 y ${max} caracteres.`);return b[k].trim();};
  async function handler(req,res,path,method,auth){
@@ -102,10 +107,10 @@ export function createChat({db,accessModel:a,fail,json,readJson,readSession,isEn
    res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Content-Type-Options','nosniff');
    fileResponse(req,res,join(uploadsDir,f.file_key),f.mime,f.name,f.kind==='file'||q.get('download')==='1',true);return true;
   }
-  if(path==='/api/chat/global'&&method==='PUT'){const b=await body();a.requireGlobal(auth);run('UPDATE chat_settings SET enabled=? WHERE id=1',bool(b,'enabled'));audit(auth.user,'chat.global',null,{enabled:b.enabled});return send({enabled:globalOn()});}
-  if(path==='/api/chat/preferences'&&method==='PUT'){const b=await body();if(!a.staff(auth))fail(403,'Esta opción es para docentes.');run('INSERT INTO chat_preferences VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET accept_students=excluded.accept_students',auth.user.id,bool(b,'acceptStudents'));return send({acceptStudents:accepted(auth.user.id)});}
+  if(path==='/api/chat/global'&&method==='PUT'){const b=await body();a.requireGlobal(auth);run('UPDATE chat_settings SET enabled=? WHERE id=1',bool(b,'enabled'));audit(auth.user,'chat.global',null,{enabled:b.enabled});notifyUsers(all('SELECT id FROM users WHERE active=1').map(u=>u.id),['chat']);return send({enabled:globalOn()});}
+  if(path==='/api/chat/preferences'&&method==='PUT'){const b=await body();if(!a.staff(auth))fail(403,'Esta opción es para docentes.');run('INSERT INTO chat_preferences VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET accept_students=excluded.accept_students',auth.user.id,bool(b,'acceptStudents'));for(const c of groups(auth))notifyUsers(audience(c),['chat']);return send({acceptStudents:accepted(auth.user.id)});}
   const setting=/^\/api\/chat\/courses\/([^/]+)$/.exec(path);
-  if(setting){if(method==='GET'){const c=course(setting[1],auth);return send({...config(c),canManage:supervises(auth,c),globalEnabled:globalOn()});}if(method==='PUT'){const b=await body(),c=course(setting[1],auth);if(!supervises(auth,c))fail(403,'Solo el docente de este grupo puede configurar su chat.');run('INSERT INTO chat_courses VALUES(?,?,?,?) ON CONFLICT(course_id) DO UPDATE SET enabled=excluded.enabled,student_staff=excluded.student_staff,student_peers=excluded.student_peers',c.id,bool(b,'enabled'),bool(b,'studentStaff'),bool(b,'studentPeers'));audit(auth.user,'chat.configure',c.id,{courseId:c.id,...b});return send(config(c));}}
+  if(setting){if(method==='GET'){const c=course(setting[1],auth);return send({...config(c),canManage:supervises(auth,c),globalEnabled:globalOn()});}if(method==='PUT'){const b=await body(),c=course(setting[1],auth);if(!supervises(auth,c))fail(403,'Solo el docente de este grupo puede configurar su chat.');run('INSERT INTO chat_courses VALUES(?,?,?,?) ON CONFLICT(course_id) DO UPDATE SET enabled=excluded.enabled,student_staff=excluded.student_staff,student_peers=excluded.student_peers',c.id,bool(b,'enabled'),bool(b,'studentStaff'),bool(b,'studentPeers'));audit(auth.user,'chat.configure',c.id,{courseId:c.id,...b});notifyUsers(audience(c),['chat']);return send(config(c));}}
   if(path==='/api/chat/contacts'&&method==='GET'){
    const selected=scope?course(scope,auth):null,search=(q.get('search')||'').toLocaleLowerCase('es').slice(0,160),gs=groups(auth),people=[];
    for(const u of all("SELECT id FROM users WHERE active=1 AND account_status='active' AND id<>? ORDER BY name",auth.user.id)){
@@ -116,7 +121,7 @@ export function createChat({db,accessModel:a,fail,json,readJson,readSession,isEn
    return send({group:selected?config(selected):null,groups:gs.map(config),people:people.slice(0,100),truncated:people.length>100});
   }
   const block=/^\/api\/chat\/courses\/([^/]+)\/users\/([^/]+)$/.exec(path);
-  if(block&&method==='PUT'){const b=await body(),c=course(block[1],auth);if(!supervises(auth,c))fail(403,'Solo docentes pueden moderar este grupo.');if(supervisor(block[2],c)||!member(block[2],c))fail(400,'Selecciona un estudiante del grupo.');if(bool(b,'blocked'))run('INSERT OR IGNORE INTO chat_blocks VALUES(?,?)',c.id,block[2]);else run('DELETE FROM chat_blocks WHERE course_id=? AND user_id=?',c.id,block[2]);audit(auth.user,'chat.moderate',block[2],{courseId:c.id,blocked:b.blocked});return send({ok:true});}
+  if(block&&method==='PUT'){const b=await body(),c=course(block[1],auth);if(!supervises(auth,c))fail(403,'Solo docentes pueden moderar este grupo.');if(supervisor(block[2],c)||!member(block[2],c))fail(400,'Selecciona un estudiante del grupo.');if(bool(b,'blocked'))run('INSERT OR IGNORE INTO chat_blocks VALUES(?,?)',c.id,block[2]);else run('DELETE FROM chat_blocks WHERE course_id=? AND user_id=?',c.id,block[2]);audit(auth.user,'chat.moderate',block[2],{courseId:c.id,blocked:b.blocked});notifyUsers([block[2],auth.user.id],['chat']);return send({ok:true});}
   if(path==='/api/chat/conversations'&&method==='POST'){
    const b=await body();if(typeof b.userId!=='string'||b.userId===auth.user.id)fail(400,'Selecciona otra persona.');
    const candidates=shared(auth.user.id,b.userId),c=b.groupId?course(b.groupId,auth):candidates.find(c=>!permission(c,auth.user.id,b.userId));
@@ -128,7 +133,7 @@ export function createChat({db,accessModel:a,fail,json,readJson,readSession,isEn
     if(!v){const id=randomUUID();run('INSERT INTO chat_conversations(id,course_id,user_a,user_b,created_at) VALUES(?,?,?,?,?)',id,c.id,...pair,now());v=one('SELECT * FROM chat_conversations WHERE id=?',id);for(const user of pair)run('INSERT INTO chat_members(conversation_id,user_id) VALUES(?,?)',id,user);}
     associate(v,c);run('UPDATE chat_members SET hidden_id=-1,archived=0 WHERE conversation_id=? AND user_id=?',v.id,auth.user.id);db.exec('COMMIT');
    }catch(error){db.exec('ROLLBACK');throw error;}
-   return send(view(conversation(v.id,auth,c.id)),201);
+   changed(v);return send(view(conversation(v.id,auth,c.id)),201);
   }
   const route=/^\/api\/chat\/conversations\/([^/]+)(?:\/(messages|read|state|typing|remove|restore))?$/.exec(path);
   if(route){
@@ -147,26 +152,26 @@ export function createChat({db,accessModel:a,fail,json,readJson,readSession,isEn
     if(b.replyId!=null&&(!Number.isSafeInteger(b.replyId)||!(()=>{const f=messageFilter(ctx);return one(`SELECT 1 FROM chat_messages m WHERE ${f.sql} AND m.id=?`,...f.params,b.replyId);})()))fail(400,'El mensaje citado no pertenece a esta conversación.');
     if(one('SELECT count(*) n FROM chat_messages WHERE sender_id=? AND created_at>?',auth.user.id,new Date(Date.now()-60000).toISOString()).n>=40)fail(429,'Has enviado muchos mensajes. Espera un minuto.');
     db.exec('BEGIN IMMEDIATE');let message;try{associate(v,c);message=Number(run('INSERT INTO chat_messages(conversation_id,sender_id,body,created_at,reply_id,client_key,course_id,context_json) VALUES(?,?,?,?,?,?,?,?)',id,auth.user.id,content,now(),b.replyId||null,b.clientKey,c.id,origin?JSON.stringify(origin):null).lastInsertRowid);media.save(message,plan,{userId:auth.user.id,courseId:c.id});run('UPDATE chat_members SET archived=0 WHERE conversation_id=?',id);run('DELETE FROM chat_typing WHERE conversation_id=? AND user_id=?',id,auth.user.id);db.exec('COMMIT');}catch(error){if(db.isTransaction)db.exec('ROLLBACK');media.rollback(plan);throw error;}
-    audit(auth.user,'chat.message.send',String(message),{courseId:c.id,object:{id,title:'Conversación personal',type:'chat'}});return send({id:message,files:media.publicFiles(message),context:origin},201);
+    audit(auth.user,'chat.message.send',String(message),{courseId:c.id,object:{id,title:'Conversación personal',type:'chat'}});changed(v);onMessageSent({messageId:message,conversationId:id,senderId:auth.user.id,recipientId:ctx.other});return send({id:message,files:media.publicFiles(message),context:origin},201);
    }
    if(tail==='read'&&method==='POST'){
     const b=await body(),ctx=conversation(route[1],auth,scope);if(!ctx.own)fail(403,'La supervisión no modifica las confirmaciones de lectura.');
     const filter=messageFilter(ctx),last=Number(one(`SELECT COALESCE(MAX(m.id),0) n FROM chat_messages m WHERE ${filter.sql}`,...filter.params).n);if(!Number.isSafeInteger(b.id)||b.id<0||b.id>last)fail(400,'Lectura no válida.');
-    db.exec('BEGIN IMMEDIATE');try{run(`INSERT OR IGNORE INTO chat_message_reads(message_id,user_id,read_at) SELECT m.id,?,? FROM chat_messages m WHERE ${filter.sql} AND m.id<=? AND m.sender_id<>?`,auth.user.id,now(),...filter.params,b.id,auth.user.id);run('UPDATE chat_members SET read_id=MAX(read_id,?) WHERE conversation_id=? AND user_id=?',b.id,ctx.v.id,auth.user.id);db.exec('COMMIT');}catch(error){db.exec('ROLLBACK');throw error;}return send({ok:true});
+    let newReads=0;const previousRead=one('SELECT read_id FROM chat_members WHERE conversation_id=? AND user_id=?',ctx.v.id,auth.user.id)?.read_id||0;db.exec('BEGIN IMMEDIATE');try{newReads=Number(run(`INSERT OR IGNORE INTO chat_message_reads(message_id,user_id,read_at) SELECT m.id,?,? FROM chat_messages m WHERE ${filter.sql} AND m.id<=? AND m.sender_id<>?`,auth.user.id,now(),...filter.params,b.id,auth.user.id).changes);run('UPDATE chat_members SET read_id=MAX(read_id,?) WHERE conversation_id=? AND user_id=?',b.id,ctx.v.id,auth.user.id);db.exec('COMMIT');}catch(error){db.exec('ROLLBACK');throw error;}if(newReads||b.id>previousRead)changed(ctx.v);return send({ok:true});
    }
    if(tail==='typing'&&method==='POST'){
     const b=await body(),ctx=conversation(route[1],auth,scope);if(!ctx.own||!view(ctx).canSend)fail(403,'No puedes escribir en esta conversación.');
-    if(bool(b,'typing')){run('DELETE FROM chat_typing WHERE expires_at<?',now());run('INSERT INTO chat_typing VALUES(?,?,?) ON CONFLICT(conversation_id,user_id) DO UPDATE SET expires_at=excluded.expires_at',ctx.v.id,auth.user.id,new Date(Date.now()+7000).toISOString());}else run('DELETE FROM chat_typing WHERE conversation_id=? AND user_id=?',ctx.v.id,auth.user.id);return send({ok:true});
+    if(bool(b,'typing')){run('DELETE FROM chat_typing WHERE expires_at<?',now());run('INSERT INTO chat_typing VALUES(?,?,?) ON CONFLICT(conversation_id,user_id) DO UPDATE SET expires_at=excluded.expires_at',ctx.v.id,auth.user.id,new Date(Date.now()+7000).toISOString());}else run('DELETE FROM chat_typing WHERE conversation_id=? AND user_id=?',ctx.v.id,auth.user.id);typingExpiry(ctx);changed(ctx.v);return send({ok:true});
    }
    if(tail==='state'&&method==='PUT'){
     const b=await body(),ctx=conversation(route[1],auth,scope);if(!ctx.own)fail(403,'Solo puedes organizar tus propias conversaciones.');
     const id=ctx.v.id;if(b.hidden===true){const f=messageFilter(ctx),last=Number(one(`SELECT COALESCE(MAX(m.id),0) n FROM chat_messages m WHERE ${f.sql}`,...f.params).n);run('UPDATE chat_members SET hidden_id=? WHERE conversation_id=? AND user_id=?',last,id,auth.user.id);}else if(b.hidden===false)run('UPDATE chat_members SET hidden_id=-1 WHERE conversation_id=? AND user_id=?',id,auth.user.id);
-    for(const [key,column] of [['archived','archived'],['muted','muted']])if(b[key]!==undefined)run(`UPDATE chat_members SET ${column}=? WHERE conversation_id=? AND user_id=?`,bool(b,key),id,auth.user.id);return send({ok:true});
+    for(const [key,column] of [['archived','archived'],['muted','muted']])if(b[key]!==undefined)run(`UPDATE chat_members SET ${column}=? WHERE conversation_id=? AND user_id=?`,bool(b,key),id,auth.user.id);notifyUsers([auth.user.id],['chat']);return send({ok:true});
    }
    if(['remove','restore'].includes(tail)&&method==='POST'){
     const b=await body(),ctx=conversation(route[1],auth,scope||b.groupId||'');if(!ctx.monitor)fail(403,'Solo docentes pueden retirar conversaciones en sus grupos.');
     if(b.confirm!==ctx.v.id&&b.confirm!==route[1])fail(400,'Confirma la conversación que deseas gestionar.');
-    run('UPDATE chat_conversation_groups SET deleted_at=?,deleted_by=? WHERE conversation_id=? AND course_id=?',tail==='remove'?now():null,tail==='remove'?auth.user.id:null,ctx.v.id,ctx.c.id);run('DELETE FROM chat_typing WHERE conversation_id=?',ctx.v.id);audit(auth.user,`chat.${tail}`,ctx.v.id,{courseId:ctx.c.id});return send({ok:true});
+    run('UPDATE chat_conversation_groups SET deleted_at=?,deleted_by=? WHERE conversation_id=? AND course_id=?',tail==='remove'?now():null,tail==='remove'?auth.user.id:null,ctx.v.id,ctx.c.id);run('DELETE FROM chat_typing WHERE conversation_id=?',ctx.v.id);audit(auth.user,`chat.${tail}`,ctx.v.id,{courseId:ctx.c.id});changed(ctx.v,audience(ctx.c).filter(id=>supervisor(id,ctx.c)));return send({ok:true});
    }
   }
   const messageRoute=/^\/api\/chat\/messages\/(\d+)(?:\/(report))?$/.exec(path);
@@ -175,19 +180,19 @@ export function createChat({db,accessModel:a,fail,json,readJson,readSession,isEn
    const b=await body(),m=one('SELECT * FROM chat_messages WHERE id=?',Number(messageRoute[1]));if(!m)fail(404,'Mensaje no disponible.');
    const ctx=conversation(m.conversation_id,auth,scope);if(!ctx.visible.includes(m.course_id||ctx.v.course_id))fail(403,'No puedes acceder a este mensaje.');
    const origin=one('SELECT * FROM courses WHERE id=?',m.course_id||ctx.v.course_id),moderate=canModerateMessage(ctx,m);
-   if(messageRoute[2]==='report'&&method==='POST'){if(!ctx.own)fail(403,'Solo participantes pueden reportar un mensaje.');run('INSERT INTO chat_reports VALUES(?,?,?,?,?,NULL) ON CONFLICT(message_id,reporter_id) DO UPDATE SET reason=excluded.reason,resolved_at=NULL',randomUUID(),m.id,auth.user.id,text(b,'reason',1000),now());audit(auth.user,'chat.report',String(m.id),{courseId:origin.id});return send({ok:true});}
+   if(messageRoute[2]==='report'&&method==='POST'){if(!ctx.own)fail(403,'Solo participantes pueden reportar un mensaje.');run('INSERT INTO chat_reports VALUES(?,?,?,?,?,NULL) ON CONFLICT(message_id,reporter_id) DO UPDATE SET reason=excluded.reason,resolved_at=NULL',randomUUID(),m.id,auth.user.id,text(b,'reason',1000),now());audit(auth.user,'chat.report',String(m.id),{courseId:origin.id});changed(ctx.v,audience(origin).filter(id=>supervisor(id,origin)));return send({ok:true});}
    if(['PATCH','DELETE'].includes(method)){
     if(removed(ctx.v,origin))fail(403,'La conversación está retirada en este grupo.');
     if(!ctx.own&&!moderate||m.sender_id!==auth.user.id&&!moderate)fail(403,'No puedes modificar mensajes de otra persona.');
     if(method==='PATCH'){
      if(m.sender_id!==auth.user.id||m.deleted_at||permission(origin,auth.user.id,ctx.other))fail(403,'No puedes editar este mensaje.');const content=text(b,'body',5000);
      db.exec('BEGIN IMMEDIATE');try{run('INSERT INTO chat_edits(message_id,body,changed_at) VALUES(?,?,?)',m.id,m.body,now());run('UPDATE chat_messages SET body=?,edited_at=? WHERE id=?',content,now(),m.id);db.exec('COMMIT');}catch(error){db.exec('ROLLBACK');throw error;}
-    }else{run('UPDATE chat_messages SET deleted_at=COALESCE(deleted_at,?) WHERE id=?',now(),m.id);audit(auth.user,'chat.message.remove',String(m.id),{courseId:origin.id});}return send({ok:true});
+    }else{run('UPDATE chat_messages SET deleted_at=COALESCE(deleted_at,?) WHERE id=?',now(),m.id);audit(auth.user,'chat.message.remove',String(m.id),{courseId:origin.id});}changed(ctx.v);return send({ok:true});
    }
   }
   const report=/^\/api\/chat\/reports\/([^/]+)$/.exec(path);
-  if(report&&method==='PUT'){await body();const r=one('SELECT r.*,m.conversation_id,m.course_id FROM chat_reports r JOIN chat_messages m ON m.id=r.message_id WHERE r.id=?',report[1]);if(!r)fail(404,'Reporte no disponible.');const ctx=conversation(r.conversation_id,auth,scope);if(!canModerateMessage(ctx,{course_id:r.course_id}))fail(403,'Solo docentes del grupo de este mensaje pueden resolver reportes.');run('UPDATE chat_reports SET resolved_at=? WHERE id=?',now(),r.id);return send({ok:true});}
+  if(report&&method==='PUT'){await body();const r=one('SELECT r.*,m.conversation_id,m.course_id FROM chat_reports r JOIN chat_messages m ON m.id=r.message_id WHERE r.id=?',report[1]);if(!r)fail(404,'Reporte no disponible.');const ctx=conversation(r.conversation_id,auth,scope);if(!canModerateMessage(ctx,{course_id:r.course_id}))fail(403,'Solo docentes del grupo de este mensaje pueden resolver reportes.');run('UPDATE chat_reports SET resolved_at=? WHERE id=?',now(),r.id);changed(ctx.v,[auth.user.id]);return send({ok:true});}
   fail(404,'Opción de mensajes no encontrada.');
  }
- return {handler,canMessage:(auth,c,target)=>{if(auth?.assurance!=='password'||auth.preview||auth.user.id===target||!member(auth.user.id,c)||permission(c,auth.user.id,target))return false;const pair=[auth.user.id,target].sort(),v=one('SELECT * FROM chat_conversations WHERE user_a=? AND user_b=?',...pair);return !v||!removed(v,c);}};
+ return {handler,notifyPresence,stop(){for(const timer of typingTimers.values())clearTimeout(timer);typingTimers.clear();},canMessage:(auth,c,target)=>{if(auth?.assurance!=='password'||auth.preview||auth.user.id===target||!member(auth.user.id,c)||permission(c,auth.user.id,target))return false;const pair=[auth.user.id,target].sort(),v=one('SELECT * FROM chat_conversations WHERE user_a=? AND user_b=?',...pair);return !v||!removed(v,c);}};
 }
