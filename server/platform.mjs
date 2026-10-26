@@ -15,6 +15,7 @@ export function createPlatform(ctx){
   const keys=new Set();const add=key=>{if(typeof key==='string'&&key)keys.add(key);};
   all('SELECT r.file_key FROM resources r JOIN modules m ON m.id=r.module_id WHERE m.course_id=?',id).forEach(r=>add(r.file_key));
   all('SELECT file_key FROM quick_resources WHERE course_id=?',id).forEach(r=>add(r.file_key));
+  if(one("SELECT name FROM sqlite_master WHERE type='table' AND name='chat_files'"))all('SELECT f.file_key FROM chat_files f JOIN chat_messages m ON m.id=f.message_id WHERE m.course_id=?',id).forEach(r=>add(r.file_key));
   all('SELECT f.file_key FROM activity_files f JOIN activities a ON a.id=f.activity_id WHERE a.course_id=?',id).forEach(r=>add(r.file_key));
   all('SELECT s.payload FROM submissions s JOIN activities a ON a.id=s.activity_id WHERE a.course_id=?',id).forEach(r=>submissionFiles(JSON.parse(r.payload)).forEach(f=>add(f.key)));
   all('SELECT v.files FROM activity_versions v JOIN activities a ON a.id=v.activity_id WHERE a.course_id=?',id).forEach(r=>JSON.parse(r.files).forEach(f=>add(f.key||f.file_key)));

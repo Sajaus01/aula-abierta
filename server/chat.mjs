@@ -18,5 +18,8 @@ export function setupChat(db) {
  CREATE TABLE IF NOT EXISTS chat_blocks(course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,PRIMARY KEY(course_id,user_id));
  CREATE TABLE IF NOT EXISTS chat_reports(id TEXT PRIMARY KEY,message_id INTEGER NOT NULL REFERENCES chat_messages(id) ON DELETE CASCADE,reporter_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,reason TEXT NOT NULL,created_at TEXT NOT NULL,resolved_at TEXT,UNIQUE(message_id,reporter_id));`);
  migrateChatIdentity(db);
+ if(!db.prepare('PRAGMA table_info(chat_messages)').all().some(c=>c.name==='context_json'))db.exec('ALTER TABLE chat_messages ADD COLUMN context_json TEXT');
+ db.exec(`CREATE TABLE IF NOT EXISTS chat_files(id TEXT PRIMARY KEY,message_id INTEGER NOT NULL REFERENCES chat_messages(id) ON DELETE CASCADE,file_key TEXT NOT NULL UNIQUE,name TEXT NOT NULL,mime TEXT NOT NULL,size INTEGER NOT NULL CHECK(size>0),kind TEXT NOT NULL CHECK(kind IN ('image','audio','file')),position INTEGER NOT NULL);
+ CREATE INDEX IF NOT EXISTS chat_files_message ON chat_files(message_id,position);`);
 }
 

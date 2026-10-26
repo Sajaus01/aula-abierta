@@ -10,7 +10,7 @@ const quote=value=>"'"+String(value).replaceAll("'","''")+"'";
 function tables(db){return db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all().map(x=>x.name);}
 function fileKeys(db){
  const names=tables(db),keys=new Set();
- for(const table of ['resources','quick_resources','activity_files'])if(names.includes(table))for(const row of db.prepare(`SELECT file_key FROM ${table} WHERE file_key IS NOT NULL`).all())keys.add(row.file_key);
+ for(const table of ['resources','quick_resources','activity_files','chat_files'])if(names.includes(table))for(const row of db.prepare(`SELECT file_key FROM ${table} WHERE file_key IS NOT NULL`).all())keys.add(row.file_key);
  if(names.includes('submissions'))for(const row of db.prepare('SELECT payload FROM submissions').all()){const p=JSON.parse(row.payload);for(const f of p.files??(p.file?[p.file]:[]))keys.add(f.key);}
  if(names.includes('activity_versions'))for(const row of db.prepare('SELECT files FROM activity_versions').all())for(const f of JSON.parse(row.files))keys.add(f.key);
  if(names.includes('library_items')){const walk=v=>{if(Array.isArray(v))v.forEach(walk);else if(v&&typeof v==='object')for(const [k,x] of Object.entries(v)){if(k==='file_key'&&x)keys.add(x);else walk(x);}};for(const row of db.prepare('SELECT payload FROM library_items').all())walk(JSON.parse(row.payload));}

@@ -1,0 +1,14 @@
+const preferenceKey='aula-arrival-sounds',leaseKey='aula-arrival-sound-lease';
+const read=key=>{try{return globalThis.localStorage?.getItem(key);}catch{return null;}};
+const write=(key,value)=>{try{globalThis.localStorage?.setItem(key,value);}catch{}};
+let preferenceOverride=null;
+export const soundsEnabled=()=>preferenceOverride??(read(preferenceKey)!=='off');
+export function setSoundsEnabled(enabled){preferenceOverride=Boolean(enabled);write(preferenceKey,enabled?'on':'off');}
+export function createArrivalSoundGate({now=()=>Date.now(),burstMs=2000,maxKeys=300}={}){const seen=new Map();let last=-Infinity;return {remember(key,played=false){if(played)last=now();seen.set(String(key),now());if(seen.size>maxKeys)seen.delete(seen.keys().next().value);},accept(key,{enabled=true,suppressed=false,ready=true}={}){key=String(key||'');if(!key||seen.has(key))return false;const time=now();seen.set(key,time);if(seen.size>maxKeys)seen.delete(seen.keys().next().value);if(!enabled||suppressed||!ready||time-last<burstMs)return false;last=time;return true;}};}
+const gate=createArrivalSoundGate();let context=null,suppressed=false,channel=null;
+try{if(typeof window!=='undefined'&&typeof BroadcastChannel!=='undefined'){channel=new BroadcastChannel('aula-arrival-sounds');channel.onmessage=event=>{if(typeof event.data?.key==='string')gate.remember(event.data.key,true);};}}catch{}
+if(typeof window!=='undefined')window.addEventListener?.('storage',event=>{if(event.key===preferenceKey)preferenceOverride=event.newValue!=='off';});
+function unlock(){const Audio=globalThis.AudioContext||globalThis.webkitAudioContext;if(!Audio)return;try{context??=new Audio();if(context.state==='suspended')void context.resume().catch(()=>{});}catch{}}
+if(typeof document!=='undefined'){document.addEventListener('pointerdown',unlock,{capture:true,passive:true});document.addEventListener('keydown',unlock,{capture:true,passive:true});}
+export function suppressArrivalSounds(value){suppressed=Boolean(value);}
+export function playArrivalSound(key){if(!gate.accept(key,{enabled:soundsEnabled(),suppressed,ready:context?.state==='running'}))return false;const now=Date.now();let lease;try{lease=JSON.parse(read(leaseKey)||'null');}catch{}if(lease&&now-Number(lease.at)<2000)return false;write(leaseKey,JSON.stringify({key:String(key),at:now}));try{channel?.postMessage({key:String(key)});const start=context.currentTime,osc=context.createOscillator(),gain=context.createGain();osc.type='sine';osc.frequency.setValueAtTime(740,start);osc.frequency.exponentialRampToValueAtTime(990,start+.09);gain.gain.setValueAtTime(.0001,start);gain.gain.exponentialRampToValueAtTime(.045,start+.018);gain.gain.exponentialRampToValueAtTime(.0001,start+.19);osc.connect(gain);gain.connect(context.destination);osc.start(start);osc.stop(start+.2);osc.onended=()=>{osc.disconnect();gain.disconnect();};return true;}catch{return false;}}

@@ -21,6 +21,7 @@ import {createBackup} from './backup.mjs';
 import {createQuestionImport} from './question-import.mjs';
 import {createLibrary} from './library.mjs';
 import {setupChat,createChat} from './chat.mjs';
+import {createNotifications} from './notifications.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
@@ -447,7 +448,7 @@ export async function createApp(options = {}) {
     else if(!one("SELECT name FROM sqlite_master WHERE type='table' AND name='chat_identity_migrations'")||!one('SELECT 1 FROM chat_identity_migrations WHERE id=1'))createBackup(dataDir,{label:'before-chat-person-v2'});
     setupChat(db);
   }
-  const chat=accessModel?createChat({db,accessModel,fail,json,readJson,readSession,isEnrolled,audit}):null;
+  const chat=accessModel?createChat({db,accessModel,fail,json,readJson,readSession,isEnrolled,audit,storage,validateFile,uploadsDir,fileResponse}):null;
   const community=accessModel?createCommunity({storage,db,accessModel,fail,json,readJson,readSession,requireCourse,isEnrolled,audit,chat}):null;
   const panorama=accessModel?createPanorama({db,accessModel,fail,json}):null;
   const quickResources = createQuickResources({storage,db,fail,json,readJson,readSession,requireAdmin,requireCourse,validateFile,fileResponse,uploadsDir,audit,string,webUrl,boolean});
@@ -455,12 +456,15 @@ export async function createApp(options = {}) {
   const library=accessModel?createLibrary({storage,db,accessModel,fail,json,readJson,readSession,uploadsDir,audit,string,fileResponse}):null;
   const analytics=accessModel?createAnalytics({db,accessModel,fail,json,readJson,readSession,requireCourse,audit,academics}):null;
   const questionImport=accessModel?createQuestionImport({accessModel,fail,json,readJson,readSession}):null;
+  const notifications=accessModel?createNotifications({db,accessModel,fail,json,readJson,readSession,isEnrolled,audit,appOrigin,pushSend:options.notificationPushSend}):null;
+  const flushNotifications=()=>{void notifications?.flush().catch(()=>console.error('No se pudo procesar la cola de avisos.'));};
   const handler = async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: https: http:; font-src 'self'; connect-src 'self'; frame-src 'self' https:; media-src 'self' https:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'");
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(self), geolocation=()');
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: https: http:; font-src 'self'; connect-src 'self'; frame-src 'self' https:; media-src 'self' blob: https:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'");
+    if(!['GET','HEAD'].includes(req.method))res.once('finish',flushNotifications);
     res.setHeader('Cache-Control', 'no-store');
     if (secure) res.setHeader('Strict-Transport-Security', 'max-age=31536000');
     try {
@@ -473,6 +477,7 @@ export async function createApp(options = {}) {
       accessModel?.authorize(req,auth);
       const initialAllowed = (method === 'GET' && ['/api/status', '/api/settings', '/api/auth/me'].includes(path)) || (method === 'POST' && ['/api/auth/logout', '/api/auth/first-password'].includes(path));
       if (path.startsWith('/api/') && !initialAllowed) requirePersonalPassword(auth);
+      if(notifications&&await notifications.handler(req,res,path,method,auth))return;
       if(await storage.handler(req,res,path,method,auth))return;
       if(community&&await community.handler(req,res,path,method,auth))return;
       if(chat&&await chat.handler(req,res,path,method,auth))return;
@@ -769,6 +774,7 @@ export async function createApp(options = {}) {
             if(accessModel){run("UPDATE courses SET lifecycle='archived',published=0 WHERE id=?",course.id);audit(auth.user,'course.archived',course.id);return json(res,{success:true,archived:true});}
             const files = query('SELECT r.file_key FROM resources r JOIN modules m ON m.id=r.module_id WHERE m.course_id=?', course.id).concat(academics.courseFiles(course.id));
             files.push(...query('SELECT file_key FROM quick_resources WHERE course_id=?', course.id));
+            if(one("SELECT name FROM sqlite_master WHERE type='table' AND name='chat_files'"))files.push(...query('SELECT f.file_key FROM chat_files f JOIN chat_messages m ON m.id=f.message_id WHERE m.course_id=?',course.id));
             run('DELETE FROM courses WHERE id=?', course.id);
             deleteFiles(files);
             audit(auth.user, 'course.delete', course.id);
@@ -929,8 +935,10 @@ export async function createApp(options = {}) {
   server.requestTimeout = 60000;
   server.headersTimeout = 15000;
   server.keepAliveTimeout = 5000;
-  server.on('close', () => db.close());
-  return { server, db, dataDir };
+  let notificationTimer;
+  server.once('listening',()=>{if(notifications){flushNotifications();notificationTimer=setInterval(flushNotifications,15000);notificationTimer.unref();}});
+  server.on('close', () => {clearInterval(notificationTimer);notifications?.stop();db.close();});
+  return { server, db, dataDir, notifications };
 }
 
 export async function start(options = {}) {

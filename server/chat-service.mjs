@@ -1,7 +1,10 @@
 import {randomUUID} from 'node:crypto';
 import {presenceOnline} from './presence.mjs';
+import {join} from 'node:path';
+import {createChatMedia} from './chat-media.mjs';
+import {createChatContext} from './chat-context.mjs';
 
-export function createChat({db,accessModel:a,fail,json,readJson,readSession,isEnrolled,audit}){
+export function createChat({db,accessModel:a,fail,json,readJson,readSession,isEnrolled,audit,storage,validateFile,uploadsDir,fileResponse}){
  const all=(s,...p)=>db.prepare(s).all(...p),one=(s,...p)=>db.prepare(s).get(...p),run=(s,...p)=>db.prepare(s).run(...p),now=()=>new Date().toISOString();
  const globalOn=()=>!!one('SELECT enabled FROM chat_settings WHERE id=1').enabled;
  const supervisor=(id,c)=>Boolean(c&&a.p.can(id,c.id,'view'));
@@ -16,6 +19,9 @@ export function createChat({db,accessModel:a,fail,json,readJson,readSession,isEn
  const person=(id,c=null)=>{const u=one('SELECT u.id,u.name,p.photo_version FROM users u LEFT JOIN profiles p ON p.user_id=u.id WHERE u.id=?',id);return u?{id:u.id,name:u.name,roles:c?(supervisor(id,c)?a.p.roles(id).filter(r=>r!=='student'):['student']):a.p.roles(id),avatarUrl:u.photo_version?`/api/community/avatar/${id}?v=${u.photo_version}`:null,online:presenceOnline(db,id)}:null;};
  const origins=v=>all('SELECT c.*,g.deleted_at AS chat_deleted_at FROM chat_conversation_groups g JOIN courses c ON c.id=g.course_id WHERE g.conversation_id=? ORDER BY c.title,c.id',v.id);
  const removed=(v,c)=>Boolean(one('SELECT deleted_at FROM chat_conversation_groups WHERE conversation_id=? AND course_id=?',v.id,c.id)?.deleted_at);
+ const media=createChatMedia({db,fail,storage,validateFile,uploadsDir});
+ const context=createChatContext({db,fail,supervises,person,permission,removed});
+ const filePreview=id=>{const files=media.rows(id);return files.length?(files.every(f=>f.kind==='audio')?'Audio':files.every(f=>f.kind==='image')?(files.length===1?'Imagen':'Imágenes'):`${files.length} archivo${files.length===1?'':'s'}`):'';};
  function permission(c,from,to){
   const s=config(c),fs=supervisor(from,c),ts=supervisor(to,c);
   if(!globalOn())return 'La mensajería está desactivada por la administración.';
@@ -39,7 +45,7 @@ export function createChat({db,accessModel:a,fail,json,readJson,readSession,isEn
    const candidates=common.filter(g=>(!scope||g.id===scope)&&(!removed(v,g)||supervises(auth,g)));
    if(!candidates.length)fail(404,'La conversación fue retirada por un docente.');
    c=candidates.find(g=>!permission(g,auth.user.id,other))||candidates[0];
-   visible=registered.filter(g=>!g.chat_deleted_at||supervises(auth,g)).map(g=>g.id);
+   visible=registered.filter(g=>(member(auth.user.id,g)||supervises(auth,g))&&(!g.chat_deleted_at||supervises(auth,g))).map(g=>g.id);
   }else{
    const candidates=monitored.filter(g=>!scope||g.id===scope);
    if(!candidates.length)fail(403,'No puedes acceder a esta conversación.');
@@ -57,7 +63,7 @@ export function createChat({db,accessModel:a,fail,json,readJson,readSession,isEn
   const moderated=[...ctx.originById.values()].filter(g=>ctx.visible.includes(g.id)&&supervises(auth,g)).map(g=>g.id);
   const pendingReports=moderated.length?one(`SELECT count(*) n FROM chat_reports r JOIN chat_messages m ON m.id=r.message_id WHERE ${filter.sql} AND COALESCE(m.course_id,?) IN (${moderated.map(()=>'?').join(',')}) AND r.resolved_at IS NULL`,...filter.params,v.course_id,...moderated).n:0;
   const peer=own&&last?one('SELECT read_at FROM chat_message_reads WHERE message_id=? AND user_id=?',last.id,other):null;
-  return {id:v.id,...(own?{legacyIds:all('SELECT id FROM chat_conversation_aliases WHERE conversation_id=? ORDER BY id',v.id).map(x=>x.id)}:{}),group:config(c),groups:common.map(config),sendGroupId:send?.id||null,participants:[person(v.user_a,c),person(v.user_b,c)],own,supervised:!own,pendingReports,deleted:removed(v,c),archived:!!m?.archived,hidden:!!m&&m.hidden_id>=Number(last?.id||0),muted:!!m?.muted,unread,readId:unread?Math.min(m?.read_id||0,unreadSummary.first-1):m?.read_id||0,peerReadId:own?one('SELECT read_id FROM chat_members WHERE conversation_id=? AND user_id=?',v.id,other)?.read_id||0:0,lastId:Number(last?.id||0),lastAt:last?.created_at||v.created_at,lastSenderId:last?.sender_id||null,lastReadByPeer:!!peer,preview:last?(last.deleted_at?'Mensaje eliminado':last.body.slice(0,150)):'Sin mensajes',canSend:!!send,reason:!own?'Modo de supervisión: solo lectura.':send?'':removed(v,c)?'Conversación retirada en este grupo.':permission(c,auth.user.id,other),canModerate:supervises(auth,c),moderationGroups:origins(v).filter(g=>supervises(auth,g)).map(config)};
+  return {id:v.id,...(own?{legacyIds:all('SELECT id FROM chat_conversation_aliases WHERE conversation_id=? ORDER BY id',v.id).map(x=>x.id)}:{}),group:config(c),groups:common.map(config),visibleGroupIds:ctx.visible,sendGroupId:send?.id||null,participants:[person(v.user_a,c),person(v.user_b,c)],own,supervised:!own,pendingReports,deleted:removed(v,c),archived:!!m?.archived,hidden:!!m&&m.hidden_id>=Number(last?.id||0),muted:!!m?.muted,unread,readId:unread?Math.min(m?.read_id||0,unreadSummary.first-1):m?.read_id||0,peerReadId:own?one('SELECT read_id FROM chat_members WHERE conversation_id=? AND user_id=?',v.id,other)?.read_id||0:0,lastId:Number(last?.id||0),lastAt:last?.created_at||v.created_at,lastSenderId:last?.sender_id||null,lastReadByPeer:!!peer,preview:last?(last.deleted_at?'Mensaje eliminado':last.body.slice(0,150)||filePreview(last.id)):'Sin mensajes',canSend:!!send,reason:!own?'Modo de supervisión: solo lectura.':send?'':removed(v,c)?'Conversación retirada en este grupo.':permission(c,auth.user.id,other),canModerate:supervises(auth,c),moderationGroups:origins(v).filter(g=>supervises(auth,g)).map(config)};
  }
  function inbox(auth,q){
   const gs=groups(auth),scope=q.get('group')||'',mode=q.get('mode')||'inbox';
@@ -75,7 +81,7 @@ export function createChat({db,accessModel:a,fail,json,readJson,readSession,isEn
   const filter=messageFilter(ctx),rows=all(`SELECT m.* FROM chat_messages m WHERE ${filter.sql} ${before?'AND m.id<?':''} ORDER BY m.id DESC LIMIT 60`,...filter.params,...(before?[Number(before)]:[])).reverse();
   return {...view(ctx),messages:rows.map(m=>{
    const moderate=canModerateMessage(ctx,m),reply=m.reply_id?one(`SELECT m.* FROM chat_messages m WHERE ${filter.sql} AND m.id=?`,...filter.params,m.reply_id):null,receipt=ctx.own?one('SELECT read_at FROM chat_message_reads WHERE message_id=? AND user_id=?',m.id,ctx.other):null;
-   return {id:m.id,senderId:m.sender_id,groupId:m.course_id||ctx.v.course_id,body:m.deleted_at?'':m.body,createdAt:m.created_at,editedAt:m.edited_at,deleted:!!m.deleted_at,replyId:reply?m.reply_id:null,reply:reply?{senderId:reply.sender_id,body:reply.deleted_at?'Mensaje eliminado':reply.body.slice(0,200)}:null,readByPeer:!!receipt,readAt:receipt?.read_at||null,canModerate:moderate,canDelete:!m.deleted_at&&(moderate||ctx.own&&m.sender_id===ctx.auth.user.id),canReport:ctx.own,...(moderate?{originalBody:m.deleted_at?m.body:null,history:all('SELECT body,changed_at AS changedAt FROM chat_edits WHERE message_id=? ORDER BY id DESC LIMIT 20',m.id),reports:all('SELECT id,reason,created_at AS createdAt,resolved_at AS resolvedAt FROM chat_reports WHERE message_id=?',m.id)}:{})};
+   return {id:m.id,senderId:m.sender_id,groupId:m.course_id||ctx.v.course_id,body:m.deleted_at?'':m.body,files:!m.deleted_at||moderate?media.publicFiles(m.id):[],context:(!m.deleted_at||moderate)&&m.context_json?JSON.parse(m.context_json):null,createdAt:m.created_at,editedAt:m.edited_at,deleted:!!m.deleted_at,replyId:reply?m.reply_id:null,reply:reply?{senderId:reply.sender_id,body:reply.deleted_at?'Mensaje eliminado':reply.body.slice(0,200)||filePreview(reply.id)}:null,readByPeer:!!receipt,readAt:receipt?.read_at||null,canModerate:moderate,canDelete:!m.deleted_at&&(moderate||ctx.own&&m.sender_id===ctx.auth.user.id),canReport:ctx.own,...(moderate?{originalBody:m.deleted_at?m.body:null,history:all('SELECT body,changed_at AS changedAt FROM chat_edits WHERE message_id=? ORDER BY id DESC LIMIT 20',m.id),reports:all('SELECT id,reason,created_at AS createdAt,resolved_at AS resolvedAt FROM chat_reports WHERE message_id=?',m.id)}:{})};
   }),hasOlder:!!rows.length&&!!one(`SELECT 1 FROM chat_messages m WHERE ${filter.sql} AND m.id<? LIMIT 1`,...filter.params,rows[0].id),typing:ctx.own?all('SELECT user_id FROM chat_typing WHERE conversation_id=? AND user_id<>? AND expires_at>?',ctx.v.id,ctx.auth.user.id,now()).filter(r=>ctx.common.some(c=>member(r.user_id,c))&&presenceOnline(db,r.user_id)).map(r=>person(r.user_id,ctx.c)):[]};
  }
  const bool=(b,k)=>{if(typeof b[k]!=='boolean')fail(400,'Revisa las opciones del chat.');return Number(b[k]);};
@@ -85,8 +91,17 @@ export function createChat({db,accessModel:a,fail,json,readJson,readSession,isEn
   if(!auth)fail(401,'Inicia sesión para usar mensajes.');
   if(auth.preview||auth.assurance!=='password')fail(403,'Los mensajes requieren tu sesión personal con contraseña.');
   const q=new URL(req.url,'http://localhost').searchParams,scope=q.get('group')||'',send=(d,s=200)=>{json(res,d,s);return true;};
-  const body=async()=>{const b=await readJson(req,24000),fresh=readSession(req);if(!fresh||fresh.user.id!==auth.user.id||fresh.preview||fresh.assurance!=='password'||fresh.user.must_change_password)fail(401,'La sesión terminó.');auth=fresh;return b;};
+  const body=async(limit=24000)=>{const b=await readJson(req,limit),fresh=readSession(req);if(!fresh||fresh.user.id!==auth.user.id||fresh.preview||fresh.assurance!=='password'||fresh.user.must_change_password)fail(401,'La sesión terminó.');auth=fresh;return b;};
   if(path==='/api/chat'&&method==='GET')return send(inbox(auth,q));
+  if(path==='/api/chat/context'&&method==='GET'){const input=Object.fromEntries(q),c=course(input.courseId,auth);return send({context:context.resolve(input,auth,c),teachers:context.teachers(auth,c)});}
+  const fileRoute=/^\/api\/chat\/files\/([^/]+)$/.exec(path);
+  if(fileRoute&&['GET','HEAD'].includes(method)){
+   const f=one('SELECT f.*,m.conversation_id,m.course_id,m.deleted_at FROM chat_files f JOIN chat_messages m ON m.id=f.message_id WHERE f.id=?',fileRoute[1]);if(!f)fail(404,'Archivo no disponible.');
+   const ctx=conversation(f.conversation_id,auth,scope),origin=ctx.originById.get(f.course_id||ctx.v.course_id),moderate=canModerateMessage(ctx,f);
+   if(!origin||!ctx.visible.includes(origin.id)||!moderate&&(!member(auth.user.id,origin)||removed(ctx.v,origin)||f.deleted_at))fail(403,'No puedes acceder a este archivo.');
+   res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Content-Type-Options','nosniff');
+   fileResponse(req,res,join(uploadsDir,f.file_key),f.mime,f.name,f.kind==='file'||q.get('download')==='1',true);return true;
+  }
   if(path==='/api/chat/global'&&method==='PUT'){const b=await body();a.requireGlobal(auth);run('UPDATE chat_settings SET enabled=? WHERE id=1',bool(b,'enabled'));audit(auth.user,'chat.global',null,{enabled:b.enabled});return send({enabled:globalOn()});}
   if(path==='/api/chat/preferences'&&method==='PUT'){const b=await body();if(!a.staff(auth))fail(403,'Esta opción es para docentes.');run('INSERT INTO chat_preferences VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET accept_students=excluded.accept_students',auth.user.id,bool(b,'acceptStudents'));return send({acceptStudents:accepted(auth.user.id)});}
   const setting=/^\/api\/chat\/courses\/([^/]+)$/.exec(path);
@@ -119,16 +134,20 @@ export function createChat({db,accessModel:a,fail,json,readJson,readSession,isEn
   if(route){
    const tail=route[2];if(!tail&&method==='GET')return send(messages(conversation(route[1],auth,scope),q));
    if(tail==='messages'&&method==='POST'){
-    const b=await body(),ctx=conversation(route[1],auth,scope),{v}=ctx,id=v.id;
+    const b=await body(29*1024*1024),ctx=conversation(route[1],auth,scope),{v}=ctx,id=v.id;
     if(!ctx.own)fail(403,'Esta conversación es de solo lectura.');
     const candidates=ctx.common.filter(c=>!removed(v,c)),c=b.groupId?candidates.find(c=>c.id===b.groupId):candidates.find(c=>!permission(c,auth.user.id,ctx.other));
     if(!c)fail(403,'No hay un grupo compartido habilitado para enviar.');const reason=permission(c,auth.user.id,ctx.other);if(reason)fail(403,reason);
-    const content=text(b,'body',5000);if(typeof b.clientKey!=='string'||! /^[\w-]{16,80}$/.test(b.clientKey))fail(400,'Identificador de envío no válido.');
-    const existing=(route[1]!==id?one('SELECT m.id FROM chat_legacy_keys k JOIN chat_messages m ON m.id=k.message_id WHERE k.conversation_id=? AND k.client_key=? AND m.sender_id=?',route[1],b.clientKey,auth.user.id):null)||one('SELECT id FROM chat_messages WHERE conversation_id=? AND sender_id=? AND client_key=?',id,auth.user.id,b.clientKey);if(existing)return send({id:existing.id});
+    if(typeof b.clientKey!=='string'||! /^[\w-]{16,80}$/.test(b.clientKey))fail(400,'Identificador de envío no válido.');
+    const existing=(route[1]!==id?one('SELECT m.* FROM chat_legacy_keys k JOIN chat_messages m ON m.id=k.message_id WHERE k.conversation_id=? AND k.client_key=? AND m.sender_id=?',route[1],b.clientKey,auth.user.id):null)||one('SELECT * FROM chat_messages WHERE conversation_id=? AND sender_id=? AND client_key=?',id,auth.user.id,b.clientKey);if(existing)return send({id:existing.id,files:ctx.visible.includes(existing.course_id||v.course_id)&&(!existing.deleted_at||canModerateMessage(ctx,existing))?media.publicFiles(existing.id):[]});
+    if(b.body!==undefined&&typeof b.body!=='string'||typeof b.body==='string'&&b.body.trim().length>5000)fail(400,'El mensaje admite hasta 5000 caracteres.');
+    const content=(b.body||'').trim(),plan=media.prepare(b.files);if(!content&&!plan.added.length)fail(400,'Escribe un mensaje o adjunta un archivo.');
+    const origin=b.context==null?null:context.resolve(b.context,auth,c);
+    if(origin&&!supervises(auth,c)&&!context.teachers(auth,c).some(p=>p.id===ctx.other))fail(403,'Envía esta pregunta a un docente del curso.');
     if(b.replyId!=null&&(!Number.isSafeInteger(b.replyId)||!(()=>{const f=messageFilter(ctx);return one(`SELECT 1 FROM chat_messages m WHERE ${f.sql} AND m.id=?`,...f.params,b.replyId);})()))fail(400,'El mensaje citado no pertenece a esta conversación.');
     if(one('SELECT count(*) n FROM chat_messages WHERE sender_id=? AND created_at>?',auth.user.id,new Date(Date.now()-60000).toISOString()).n>=40)fail(429,'Has enviado muchos mensajes. Espera un minuto.');
-    db.exec('BEGIN IMMEDIATE');let message;try{associate(v,c);message=Number(run('INSERT INTO chat_messages(conversation_id,sender_id,body,created_at,reply_id,client_key,course_id) VALUES(?,?,?,?,?,?,?)',id,auth.user.id,content,now(),b.replyId||null,b.clientKey,c.id).lastInsertRowid);run('UPDATE chat_members SET archived=0 WHERE conversation_id=?',id);run('DELETE FROM chat_typing WHERE conversation_id=? AND user_id=?',id,auth.user.id);db.exec('COMMIT');}catch(error){db.exec('ROLLBACK');throw error;}
-    audit(auth.user,'chat.message.send',String(message),{courseId:c.id,object:{id,title:'Conversación personal',type:'chat'}});return send({id:message},201);
+    db.exec('BEGIN IMMEDIATE');let message;try{associate(v,c);message=Number(run('INSERT INTO chat_messages(conversation_id,sender_id,body,created_at,reply_id,client_key,course_id,context_json) VALUES(?,?,?,?,?,?,?,?)',id,auth.user.id,content,now(),b.replyId||null,b.clientKey,c.id,origin?JSON.stringify(origin):null).lastInsertRowid);media.save(message,plan,{userId:auth.user.id,courseId:c.id});run('UPDATE chat_members SET archived=0 WHERE conversation_id=?',id);run('DELETE FROM chat_typing WHERE conversation_id=? AND user_id=?',id,auth.user.id);db.exec('COMMIT');}catch(error){if(db.isTransaction)db.exec('ROLLBACK');media.rollback(plan);throw error;}
+    audit(auth.user,'chat.message.send',String(message),{courseId:c.id,object:{id,title:'Conversación personal',type:'chat'}});return send({id:message,files:media.publicFiles(message),context:origin},201);
    }
    if(tail==='read'&&method==='POST'){
     const b=await body(),ctx=conversation(route[1],auth,scope);if(!ctx.own)fail(403,'La supervisión no modifica las confirmaciones de lectura.');

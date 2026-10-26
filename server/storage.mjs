@@ -37,6 +37,7 @@ export function createStorage({db,dataDir,uploadsDir,accessModel:a,fail,json,rea
   for(const r of all('SELECT r.*,m.course_id FROM resources r JOIN modules m ON m.id=r.module_id WHERE r.file_key IS NOT NULL'))add(r.file_key,r.file_size,r.file_name,'material',r.course_id,null,'#curso/'+r.course_id);
   for(const r of all('SELECT * FROM quick_resources WHERE file_key IS NOT NULL'))add(r.file_key,r.file_size,r.file_name,'material',r.course_id,null,'#curso/'+r.course_id);
   for(const r of all('SELECT f.*,a.course_id FROM activity_files f JOIN activities a ON a.id=f.activity_id'))add(r.file_key,r.size,r.name,'activity',r.course_id,null,'#actividad/'+r.activity_id);
+  if(has('chat_files'))for(const r of all('SELECT f.*,m.course_id,m.sender_id FROM chat_files f JOIN chat_messages m ON m.id=f.message_id'))add(r.file_key,r.size,r.name,'chat',r.course_id,r.sender_id,'#mensajes');
   for(const r of all('SELECT s.*,a.course_id FROM submissions s JOIN activities a ON a.id=s.activity_id')){const p=JSON.parse(r.payload);for(const f of p.files??(p.file?[p.file]:[]))add(f.key,f.size,f.name,'submission',r.course_id,r.student_id,'#actividad/'+r.activity_id);}
   if(has('activity_versions'))for(const r of all('SELECT v.files,a.course_id,v.activity_id FROM activity_versions v JOIN activities a ON a.id=v.activity_id'))for(const f of JSON.parse(r.files))add(f.key,f.size,f.name,'history',r.course_id,null,'#actividad/'+r.activity_id);
   if(has('library_items'))for(const r of all('SELECT * FROM library_items')){const walk=v=>{if(Array.isArray(v))v.forEach(walk);else if(v&&typeof v==='object'){if(v.file_key)add(v.file_key,v.file_size??v.size,v.file_name??v.name,'library',null,r.owner_id,'#biblioteca');for(const x of Object.values(v))if(x&&typeof x==='object')walk(x);}};walk(JSON.parse(r.payload));}
@@ -50,7 +51,7 @@ export function createStorage({db,dataDir,uploadsDir,accessModel:a,fail,json,rea
  function assertUpload({userId,courseId=null,added=[],removed=[],kind='material'}){
   const extra=sum(added);if(!extra)return;const cfg=settings();assertDisk(extra);
   const {files}=inventory(),released=new Set(removed),freed=files.filter(f=>released.has(f.key)&&f.refs===1),owner=courseId?one('SELECT owner_id FROM storage_course_limits WHERE course_id=?',courseId)?.owner_id:null;
-  const userIds=new Set((courseId&&kind!=='submission'?[owner||userId]:[userId,owner]).filter(Boolean));
+  const userIds=new Set((courseId&&!['submission','chat'].includes(kind)?[owner||userId]:[userId,owner]).filter(Boolean));
   for(const id of userIds)checkLimit(sum(files.filter(f=>f.userIds.has(id))),extra-sum(freed.filter(f=>f.userIds.has(id))),userLimit(id,cfg),id===userId?'Cupo de tu cuenta':'Cupo total del docente responsable');
   if(courseId)checkLimit(sum(files.filter(f=>f.courseIds.has(courseId))),extra-sum(freed.filter(f=>f.courseIds.has(courseId))),courseLimit(courseId,cfg),'Cupo del curso o grupo');
   checkLimit(sum(files),extra-sum(freed),cfg.platformBytes,'Cupo total de archivos de la plataforma');

@@ -16,7 +16,19 @@ Puedes enviar texto de hasta 5.000 caracteres, enlaces y emojis, citar respuesta
 
 «En línea» corresponde a la otra persona, no a quien mira la conversación. Se envían señales desde una pestaña visible y enfocada cada 15 segundos. Perder el foco, ocultar o cerrar la pestaña y perder conexión solicita retirar su señal. Si esa solicitud no llega, caduca a los 45 segundos. Cada pestaña y sesión tiene su propia señal; cerrar una no desconecta las demás. Conservar una sesión iniciada no basta para aparecer en línea. Se respeta el estado oculto del personal docente. Estos indicadores describen actividad del navegador, no atención ni asistencia.
 
-El historial se almacena en SQLite en el disco persistente del servidor, no en GitHub. Los borradores sin enviar se conservan en la sesión de ese navegador y no son mensajes entregados. Si existían textos distintos en conversaciones antiguas de la misma pareja, se conservan como borradores recuperados para elegir cuál continuar. Enviar uno no descarta los otros. La mensajería usa actualizaciones periódicas: aproximadamente cada 6 segundos con chats abiertos y 20 segundos para la bandeja. No hay notificaciones por correo ni push cuando el usuario cierra el aula. Esta versión envía texto y enlaces; no adjunta archivos ni realiza llamadas.
+El historial se almacena en SQLite en el disco persistente del servidor, no en GitHub. Los borradores sin enviar se conservan en la sesión de ese navegador y no son mensajes entregados. Si existían textos distintos en conversaciones antiguas de la misma pareja, se conservan como borradores recuperados para elegir cuál continuar. Enviar uno no descarta los otros. La mensajería usa actualizaciones periódicas: aproximadamente cada 6 segundos con chats abiertos y 20 segundos para la bandeja.
+
+Puedes adjuntar imágenes, grabar una nota de voz o enviar archivos. El micrófono se solicita al pulsar el botón de grabación; antes de enviar puedes revisar o descartar la grabación. Los archivos se guardan de forma privada y se vuelven a comprobar los permisos al descargarlos. Se permiten hasta cinco adjuntos por mensaje, de hasta 10 MB cada uno y 20 MB en conjunto, sujetos al cupo de almacenamiento. Los archivos ejecutables o el contenido HTML se descargan como archivos, sin ejecutarse dentro del chat.
+
+Las burbujas del borde derecho permiten mantener varias conversaciones y cambiar entre personas. En pantallas pequeñas se muestra una ventana a la vez. Los mensajes nuevos pueden producir un tono breve después de la primera interacción con el aula. Se puede apagar en **Notificaciones → Sonidos de mensajes y avisos**; las conversaciones silenciadas no lo reproducen.
+
+## Preguntar desde un material o una actividad
+
+En la vista del estudiante aparece **Preguntar al docente** mientras consulta un curso, material o actividad. El panel muestra los docentes asignados y el contexto que se adjuntará. Elegir una persona abre su conversación personal con una referencia al curso, capítulo y material o actividad; el estudiante escribe la pregunta y la envía desde allí. Ese contexto no crea otro chat, aunque las mismas personas compartan varios grupos.
+
+La referencia se resuelve y valida en el servidor. El docente recibe el nombre original del contenido y un enlace para abrirlo; los cambios posteriores de título no alteran la referencia guardada en el mensaje. Las preferencias personales del docente, la configuración del grupo y la vigencia de la matrícula siguen aplicándose.
+
+Los avisos académicos y las notificaciones del navegador se describen en [Novedades de los cursos](NOTIFICACIONES.md). Las conversaciones no realizan llamadas de voz ni videollamadas.
 
 ## Supervisión y eliminación
 
