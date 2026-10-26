@@ -442,7 +442,9 @@ export async function createApp(options = {}) {
   if(accessModel){
     if(!one("SELECT name FROM sqlite_master WHERE type='table' AND name='profiles'"))createBackup(dataDir,{label:'before-community-panorama-v1'});
     setupCommunity(db);setupPanorama(db);
-    if(!one("SELECT name FROM sqlite_master WHERE type='table' AND name='chat_messages'"))createBackup(dataDir,{label:'before-chat-v1'});
+    const hasChat=one("SELECT name FROM sqlite_master WHERE type='table' AND name='chat_messages'");
+    if(!hasChat)createBackup(dataDir,{label:'before-chat-v1'});
+    else if(!one("SELECT name FROM sqlite_master WHERE type='table' AND name='chat_identity_migrations'")||!one('SELECT 1 FROM chat_identity_migrations WHERE id=1'))createBackup(dataDir,{label:'before-chat-person-v2'});
     setupChat(db);
   }
   const chat=accessModel?createChat({db,accessModel,fail,json,readJson,readSession,isEnrolled,audit}):null;

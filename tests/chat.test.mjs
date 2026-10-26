@@ -99,8 +99,11 @@ test('chat: moderation, reports, hidden teacher typing and revoked membership',a
  await teacher.c('/chat/courses/'+g.id+'/users/'+s.u.id,{blocked:true},'PUT');await s.c(path+'/messages',{body:'Bloqueado',clientKey:'blocked-message-01'},'POST',403);assert.equal((await s.c(path)).messages.length,1);
  await teacher.c('/chat/courses/'+g.id+'/users/'+s.u.id,{blocked:false},'PUT');
  const staff=await s.c('/chat/conversations',{groupId:g.id,userId:teacher.u.id},'POST',201),staffPath='/chat/conversations/'+staff.id;
+ await teacher.c('/community/heartbeat',{tabId:'chat-typing-teacher-tab',groupId:g.id,eventSeq:1});
  await teacher.c('/community/profile',{bio:'',hidden:true},'PUT');await teacher.c(staffPath+'/typing',{typing:true});assert.equal((await s.c(staffPath)).typing.length,0);
  await teacher.c('/community/profile',{bio:'',hidden:false},'PUT');assert.equal((await s.c(staffPath)).typing[0].id,teacher.u.id);
+ await teacher.c('/community/heartbeat',{tabId:'chat-typing-teacher-tab',leave:true,eventSeq:2});assert.equal((await s.c(staffPath)).typing.length,0,'leaving the active tab removes stale typing immediately');
+ await teacher.c('/community/heartbeat',{tabId:'chat-typing-teacher-tab',groupId:g.id,eventSeq:3});
  db.prepare("UPDATE chat_typing SET expires_at='2000-01-01T00:00:00Z'").run();assert.equal((await s.c(staffPath)).typing.length,0);
  const enrollment=db.prepare('SELECT id FROM enrollments WHERE student_id=? AND course_id=?').get(s.u.id,g.id);await master('/admin/enrollments/'+enrollment.id,{status:'revoked'},'PATCH');await s.c(path,undefined,'GET',403);assert.ok((await teacher.c(path)).messages.length);
 });

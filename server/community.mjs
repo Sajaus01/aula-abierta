@@ -1,6 +1,7 @@
 import {createHash} from 'node:crypto';
+import {PRESENCE_TTL,setupPresence,activePresenceRows,recordPresence} from './presence.mjs';
 
-export const PRESENCE_TTL = 90_000;
+export {PRESENCE_TTL} from './presence.mjs';
 export function setupCommunity(db) {
  db.exec(`CREATE TABLE IF NOT EXISTS profiles (
   user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
@@ -14,6 +15,7 @@ export function setupCommunity(db) {
  );
  CREATE INDEX IF NOT EXISTS presence_seen ON presence(seen_at);
  CREATE INDEX IF NOT EXISTS presence_course ON presence(course_id,seen_at);`);
+ setupPresence(db);
 }
 
 // Small raster avatars only. The browser resizes/re-encodes photographs before upload.
@@ -49,7 +51,7 @@ export function createCommunity({db,accessModel:a,fail,json,readJson,readSession
   if(groupId&&!group)fail(403,'No tienes acceso a la comunidad de ese grupo.');
   if(groupId)requireCourse(groupId,auth);
   if(!groupId&&!a.staff(auth))fail(400,'Selecciona un grupo para ver a tus compañeros.');
-  const live=all('SELECT s.user_id,p.course_id FROM presence p JOIN sessions s ON s.token_hash=p.session_hash WHERE p.seen_at>? AND s.expires_at>?',cutoff(),now());
+  const live=activePresenceRows(db,{at:clock()});
   const ids=group?[group.id]:groups.map(g=>g.id),scoped=group||!a.global(auth);
   let people=all(`SELECT u.id,u.name,p.hidden,p.bio,p.photo_version,(SELECT json_group_array(role) FROM user_roles WHERE user_id=u.id) roles FROM users u LEFT JOIN profiles p ON p.user_id=u.id WHERE u.active=1 AND u.account_status='active' AND u.must_change_password=0 ${scoped?`AND EXISTS(SELECT 1 FROM courses c WHERE c.id IN (${ids.map(()=>'?').join(',')||'NULL'}) AND ${membership})`:''} ORDER BY u.name COLLATE NOCASE`,...(scoped?[...ids,now(),now()]:[]));
   const term=(q.get('search')||'').trim().toLocaleLowerCase('es').slice(0,160),role=q.get('role'),status=q.get('status');
@@ -66,14 +68,15 @@ export function createCommunity({db,accessModel:a,fail,json,readJson,readSession
   if(auth.preview)fail(403,'La vista previa no participa en la comunidad.');
   const send=data=>{json(res,data);return true;};
   if(path==='/api/community/heartbeat'&&method==='POST'){
-   const b=await readJson(req,2048);auth=readSession(req);if(!auth)fail(401,'La sesión terminó.');
+   const b=await readJson(req,2048);auth=readSession(req);if(!auth||auth.preview||auth.user.must_change_password)fail(401,'La sesión terminó.');
    if(typeof b.tabId!=='string'||!/^[a-zA-Z0-9-]{16,80}$/.test(b.tabId))fail(400,'Pestaña no válida.');
-   if(b.leave===true){run('DELETE FROM presence WHERE session_hash=? AND tab_id=?',auth.tokenHash,b.tabId);return send({ok:true});}
+   if(b.eventSeq!==undefined&&(!Number.isSafeInteger(b.eventSeq)||b.eventSeq<1))fail(400,'Actualización de presencia no válida.');
+   if(b.leave===true){const result=recordPresence(db,{sessionHash:auth.tokenHash,tabId:b.tabId,leave:true,eventSeq:b.eventSeq,at:clock()});return send({ok:true,...result});}
    let group=null;if(b.groupId){group=a.group(b.groupId);requireCourse(group.id,auth);}
-   run('DELETE FROM presence WHERE seen_at<=?',cutoff());
-   if(!one('SELECT 1 FROM presence WHERE session_hash=? AND tab_id=?',auth.tokenHash,b.tabId)&&one('SELECT count(*) n FROM presence WHERE session_hash=?',auth.tokenHash).n>=20)fail(429,'Demasiadas pestañas activas.');
-   run('INSERT INTO presence VALUES(?,?,?,?) ON CONFLICT(session_hash,tab_id) DO UPDATE SET course_id=excluded.course_id,seen_at=excluded.seen_at',auth.tokenHash,b.tabId,group?.id||null,now());
-   return send({ok:true,hidden:profile(auth.user,true).hidden,updatedAt:now()});
+   run('UPDATE presence SET active=0 WHERE active=1 AND seen_at<=?',cutoff());
+   if(!one('SELECT 1 FROM presence WHERE session_hash=? AND tab_id=? AND active=1',auth.tokenHash,b.tabId)&&one('SELECT count(*) n FROM presence WHERE session_hash=? AND active=1',auth.tokenHash).n>=20)fail(429,'Demasiadas pestañas activas.');
+   const result=recordPresence(db,{sessionHash:auth.tokenHash,tabId:b.tabId,courseId:group?.id||null,eventSeq:b.eventSeq,at:clock()});
+   return send({ok:true,...result,hidden:profile(auth.user,true).hidden,updatedAt:now(),ttlSeconds:PRESENCE_TTL/1000});
   }
   if(path==='/api/community/presence'&&method==='GET')return send(roster(auth,new URL(req.url,'http://localhost').searchParams));
   if(path==='/api/community/profile'){
