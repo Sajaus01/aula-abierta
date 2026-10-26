@@ -48,15 +48,16 @@ function validateWorkbookImage(image){
 }
 export function mapQuestions(rows,mapping){
  if(!Array.isArray(rows)||rows.length>50)throw Error('Importa de 1 a 50 preguntas.');
- return rows.map(row=>{const get=k=>String(row.cells?.[mapping[k]]??'').trim(),errors=[],type=get('type').toLowerCase(),prompt=[get('prompt'),get('instructions')].filter(Boolean).join('\n'),options=['option1','option2','option3','option4'].map(get).filter(Boolean),correct=get('correct').split(/[,;]/).filter(Boolean).map(v=>Number(v.trim())-1),points=Number(get('points')),imageUrl=get('image'),feedback=get('feedback');
+ const typeAliases={'unica':'single','opcion unica':'single','seleccion unica':'single','seleccion multiple':'multiple','abierta':'text','respuesta abierta':'text','texto largo':'text','corta':'short','respuesta corta':'short','numero':'number','numerica':'number','respuesta numerica':'number','archivo':'instruction','archivos':'instruction','enunciado':'instruction','simulacion':'instruction'};
+ return rows.map(row=>{const get=k=>String(row.cells?.[mapping[k]]??'').trim(),errors=[],requestedType=get('type').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''),type=typeAliases[requestedType]||requestedType,selection=['single','multiple'].includes(type),prompt=[get('prompt'),get('instructions')].filter(Boolean).join('\n'),options=['option1','option2','option3','option4'].map(get).filter(Boolean),correct=get('correct').split(/[,;]/).filter(Boolean).map(v=>Number(v.trim())-1),points=Number(get('points')),imageUrl=get('image'),feedback=get('feedback');
   if(!prompt||prompt.length>3000)errors.push('Enunciado obligatorio, máximo 3000 caracteres.');
-  if(!['single','multiple','text'].includes(type))errors.push('Tipo: single, multiple o text.');
+  if(!['single','multiple','text','short','number','instruction'].includes(type))errors.push('Tipo: single, multiple, text, short, number o instruction.');
   if(!Number.isFinite(points)||points<0.1||points>1000)errors.push('Puntos entre 0,1 y 1000.');
-  if(type!=='text'&&(options.length<2||options.some(v=>v.length>1000)||!correct.length||correct.some(v=>!Number.isInteger(v)||v<0||v>=options.length)||new Set(correct).size!==correct.length||type==='single'&&correct.length!==1))errors.push('Revisa las opciones y los números de respuestas correctas.');
+  if(selection&&(options.length<2||options.some(v=>v.length>1000)||!correct.length||correct.some(v=>!Number.isInteger(v)||v<0||v>=options.length)||new Set(correct).size!==correct.length||type==='single'&&correct.length!==1))errors.push('Revisa las opciones y los números de respuestas correctas.');
   if(imageUrl&&!/^https:\/\/[^\s]+$/.test(imageUrl))errors.push('La imagen debe usar HTTPS.');if(feedback.length>3000)errors.push('Retroalimentación demasiado larga.');
   const imageAlt=get('imageAlt'),linkUrl=get('link');if(imageAlt.length>500)errors.push('Descripción de imagen: máximo 500 caracteres.');if(linkUrl){try{const u=new URL(linkUrl);if(!['http:','https:'].includes(u.protocol)||u.username||u.password)throw Error();}catch{errors.push('El enlace de apoyo debe ser HTTP o HTTPS sin credenciales.');}}
   const embeddedImages=(row.images||[]).map(validateWorkbookImage);if(embeddedImages.length>5)throw Error('Hasta 5 imágenes por pregunta.');
-  return {row:row.row,errors,question:{id:randomUUID(),type,prompt,options:type==='text'?[]:options,correct:type==='text'?[]:correct,points,imageUrl,imageAlt,linkUrl,feedback,embeddedImages}};
+  return {row:row.row,errors,question:{id:randomUUID(),type,prompt,options:selection?options:[],correct:selection?correct:[],points,imageUrl,imageAlt,linkUrl,feedback,embeddedImages}};
  });
 }
 export function createQuestionImport({accessModel:a,fail,json,readJson,readSession}){return {handler:async(req,res,path,method,auth)=>{

@@ -10,3 +10,19 @@ test('real XLSX template is readable; mapping preserves questions and reports ro
  await assert.rejects(readQuestionsWorkbook(Buffer.from('not a workbook')));
  await assert.rejects(readQuestionsWorkbook(Buffer.alloc(11*1024*1024)),/10 MB/);
 });
+
+test('importar respuestas manuales y ejercicios no exige opciones ni claves de selección',()=>{
+ const mapping={prompt:0,type:1,option1:2,option2:3,correct:4,points:5};
+ const rows=mapQuestions([
+  {row:2,cells:['Explica el equilibrio','respuesta abierta','','','','3']},
+  {row:3,cells:['Símbolo de la fuerza normal','corta','','','','1']},
+  {row:4,cells:['Valor de la fuerza normal','numérica','','','','2']},
+  {row:5,cells:['Construye la simulación y adjunta el archivo','simulación','','','','4']},
+  {row:6,cells:['Ejercicio importado de una plantilla anterior','instruction','dato sobrante','','dato sobrante','2']}
+ ],mapping);
+ assert.deepEqual(rows.map(r=>r.question.type),['text','short','number','instruction','instruction']);
+ assert.ok(rows.every(r=>r.errors.length===0));
+ assert.ok(rows.every(r=>r.question.options.length===0&&r.question.correct.length===0));
+ const invalid=mapQuestions([{row:7,cells:['Pregunta','single','Una','','','2']},{row:8,cells:['Pregunta','tipo desconocido','','','','2']}],mapping);
+ assert.match(invalid[0].errors.join(' '),/opciones/);assert.match(invalid[1].errors.join(' '),/Tipo:/);
+});

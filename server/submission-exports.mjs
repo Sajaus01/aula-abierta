@@ -53,7 +53,7 @@ export function createSubmissionExports({db,uploadsDir,requireAdmin,requireCours
     for(const [index,q] of (version.questions||[]).entries()) {
      const answer=payload.answers?.[q.id];
      const readable=Array.isArray(answer)?answer.map(i=>`${i+1}. ${q.options?.[i]??'Opción no disponible'}`).join('\n'):String(answer??'');
-     summary.push(`\nPregunta ${index+1}: ${q.prompt||''}\n${readable||'Sin respuesta'}`);
+     summary.push(`\nPregunta ${index+1}: ${q.prompt||''}\n${q.type==='instruction'?'Ejercicio para resolver en los archivos adjuntos.':readable||'Sin respuesta'}`);
     }
     addText(`${folder}/Respuesta.txt`,summary.filter(Boolean).join('\n')+'\n');
     for(const file of submissionFiles(payload))addFile(`${folder}/Archivos`,file);

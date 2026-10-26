@@ -59,6 +59,9 @@ test('modern HTTP flow: administrator creates teacher; scoped groups preserve en
  assert.equal((await teacher('/labs/'+lab.id+'/results')).length,1);
  await student('/courses/'+g.id);
  const analytics=await teacher('/analytics/'+g.id);assert.equal(analytics.students.length,1);assert.equal(analytics.students[0].pending,0);assert.ok(analytics.students[0].lastGroup);
+ const manualQuiz=await teacher(`/academics/courses/${g.id}/activities`,{title:'Revisión manual',kind:'quiz',status:'published',questions:[{id:'long',type:'text',prompt:'Explica',points:1},{id:'short',type:'short',prompt:'Nombre',points:1},{id:'number',type:'number',prompt:'Magnitud',points:1},{id:'files',type:'instruction',prompt:'Simula y adjunta los resultados',points:1},{id:'choice',type:'single',prompt:'Selecciona',options:['A','B'],correct:[0],points:1}]},'POST',201);
+ const questionStats=(await teacher('/analytics/'+g.id)).activities.find(a=>a.id===manualQuiz.id).questions;
+ assert.deepEqual(questionStats.map(q=>[q.id,q.correct]),[['long',null],['short',null],['number',null],['files',null],['choice',0]]);
  await other('/analytics/'+g.id,undefined,'GET',403);
  const entry=await teacher('/library',{kind:'resource',sourceId:lab.id,title:'Reusable lab',shared:true},'POST',201);
  const entries=await teacher('/library');assert.ok(entries.some(x=>x.id===entry.id));

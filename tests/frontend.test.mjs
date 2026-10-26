@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { escapeHtml, safeUrl, videoEmbed, parseStudentsCsv } from '../public/lib.js';
+import { createLibraryUI } from '../public/library.js';
 
 test('importar CSV conserva cédulas de texto, comillas, comas y correos', () => {
   const rows = parseStudentsCsv('\uFEFFcédula,nombre,correo\r\n00001234,"Pérez, Ana",ana@example.test\r\n1234,"Luis ""Pepe"" López",\r\n');
@@ -63,4 +64,15 @@ test('el texto de ejercicios se escapa para impedir que se convierta en HTML eje
   assert.equal(escapeHtml(null), '');
   assert.equal(escapeHtml(undefined), '');
   assert.equal(escapeHtml(42), '42');
+});
+
+test('la biblioteca distingue preguntas manuales y ejercicios con archivos sin inventar opciones', async () => {
+  let html='';
+  const questions=[{type:'single',prompt:'Selecciona',options:['A','B'],points:1},{type:'text',prompt:'Explica',points:2},{type:'short',prompt:'Nombre',points:1},{type:'number',prompt:'Magnitud',points:1},{type:'instruction',prompt:'Simulación <segura>',points:3}];
+  const library=createLibraryUI({api:async()=>({title:'Cuestionario',preview:{title:'Cuestionario',questions}}),getState:()=>({}),openModal:(_title,body)=>{html=body;},btn:()=>''});
+  await library.action('library-preview','quiz');
+  assert.equal((html.match(/<ul>/g)||[]).length,1);
+  for(const label of ['Respuesta abierta','Respuesta corta','Respuesta numérica','Ejercicio con entrega de archivos'])assert.ok(html.includes(label));
+  assert.match(html,/archivos que el estudiante adjunta al final/);
+  assert.match(html,/Simulación &lt;segura&gt;/);
 });

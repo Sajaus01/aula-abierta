@@ -63,6 +63,16 @@ test('ZIP de actividad conserva enunciados históricos y reporta archivos ausent
  const readme=await zip.file('LEEME.txt').async('string');assert.match(readme,/Archivos no disponibles \(3\)/);const allText=(await Promise.all(Object.values(zip.files).filter(v=>!v.dir).map(v=>v.async('string')))).join('\n');assert.ok(!allText.includes('privado fuera de uploads'));
 });
 
+test('ZIP de ejercicios distingue instrucciones con archivo de respuestas abiertas y numéricas',async t=>{
+ const f=await fixture(t);
+ const questions=[{id:'q1',type:'short',prompt:'Nombra la magnitud'},{id:'q2',type:'number',prompt:'Peso del bloque'},{id:'q3',type:'instruction',prompt:'Construye el modelo y entrega la simulación'}];
+ f.db.prepare('UPDATE activities SET config=? WHERE id=?').run(JSON.stringify({title:'Simulación',questions}),'quiz-1');
+ f.insert('s-new','quiz-1','student-a',1,{answers:{q1:'Fuerza',q2:'117,72'}});
+ const response=await f.fetch('/api/academics/activities/quiz-1/download');assert.equal(response.status,200);
+ const zip=await JSZip.loadAsync(await response.arrayBuffer()),answer=Object.values(zip.files).find(v=>v.name.endsWith('/Respuesta.txt'));
+ const text=await answer.async('string');assert.match(text,/Fuerza/);assert.match(text,/117,72/);assert.match(text,/Ejercicio para resolver en los archivos adjuntos\./);assert.doesNotMatch(text,/Sin respuesta/);
+});
+
 test('descargas privadas exigen permiso de calificación, rechazan estudiantes y vista previa; HEAD no inicia exportación',async t=>{
  const f=await fixture(t);
  for(const headers of [{'x-role':'student'},{'x-user':'viewer'},{'x-preview':'1'}])assert.equal((await f.fetch(groupPath,{headers})).status,403);

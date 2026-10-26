@@ -29,6 +29,29 @@ test('comparar respuestas respeta conjuntos, ceros y preguntas manuales o histó
  assert.equal(answerAssessment({type:'single'},[0]).label,'Revisión manual');
  assert.equal(answerAssessment({type:'single',correct:[0]},[0]).label,'Correcta');
  assert.equal(answerAssessment({type:'single',correct:[0]},[1]).label,'Por revisar');
+ for(const type of ['text','short','number'])assert.deepEqual(answerAssessment({type,correct:[]},'0'),{label:'Revisión manual',tone:'amber'});
+ assert.deepEqual(answerAssessment({type:'instruction'},undefined),{label:'Resolver en archivos',tone:'gray'});
+ assert.deepEqual(answerAssessment({type:'instruction'},'dato heredado'),{label:'Resolver en archivos',tone:'gray'});
+});
+
+test('la revisión muestra respuestas manuales y excluye ejercicios con archivos del contador de respuestas',t=>{
+ const root={innerHTML:''},elements=new Map([['[data-review-root]',root],['[data-review=prev]',{}],['[data-review=next]',{}],['.review-response-pane',{focus(){}}]]);
+ const modal={open:true,dataset:{},classList:{add(){}},querySelector:selector=>elements.get(selector),addEventListener(){}};
+ const review=createActivityReview({modal,openModal(){},icon:()=>'',questionMedia:()=>'',api(){},toast(){},render(){}});
+ t.after(()=>review.dispose());
+ const questions=[{id:'file',type:'instruction',prompt:'Simula y entrega el archivo',points:2},{id:'long',type:'text',prompt:'Explica',points:1},{id:'short',type:'short',prompt:'Nombre',points:1},{id:'num',type:'number',prompt:'Magnitud',points:1},{id:'single',type:'single',prompt:'Elige una',options:['A','B'],correct:[0],points:1},{id:'multiple',type:'multiple',prompt:'Elige varias',options:['A','B','C'],correct:[0,2],points:1}];
+ const activity={id:'activity',kind:'quiz',maxPoints:7,status:'published',title:'Cuestionario',weight:0,questions};
+ const submission={id:'submission',name:'Prueba',state:'submitted',points:null,studentId:'student',attempt:1,answers:{long:'<Explicación>',short:'0',num:'0',multiple:[2,0]}};
+ review.open({activity,submissions:[submission],id:submission.id});
+ assert.match(root.innerHTML,/4 \/ 5 respuestas/);
+ assert.match(root.innerHTML,/Resolver en archivos/);
+ assert.match(root.innerHTML,/Este ejercicio se resuelve en los archivos adjuntos/);
+ assert.match(root.innerHTML,/&lt;Explicación&gt;/);
+ assert.equal((root.innerHTML.match(/class="academic-text">0<\/p>/g)||[]).length,2);
+ assert.equal((root.innerHTML.match(/class="review-options"/g)||[]).length,2);
+ review.open({activity:{...activity,questions:[questions[0]]},submissions:[submission],id:submission.id});
+ assert.doesNotMatch(root.innerHTML,/\d+ \/ \d+ respuestas/);
+ assert.match(root.innerHTML,/Resolver en archivos/);
 });
 
 test('un evento tardío de cierre no desactiva una revisión recién abierta',()=>{
