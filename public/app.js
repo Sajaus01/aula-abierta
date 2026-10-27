@@ -6,6 +6,7 @@ import {createCourseHelpUI} from './course-help.js';
 import {createCommunityUI} from './community.js';
 import {createPanoramaUI} from './panorama.js';
 import {createAnalyticsUI} from './analytics.js';
+import {createEngagementTracker} from './engagement.js';
 import {createLibraryUI} from './library.js';
 import {createPlatformUI} from './platform.js';
 import { createQuickResourcesUI } from './quick-resources.js';
@@ -187,7 +188,7 @@ async function render() {
   if(admin()&&current==='ajustes')document.querySelector('.settings-grid')?.insertAdjacentHTML('beforeend',`<section class="panel"><h2>Trasladar un aula existente</h2><p class="small-paragraph">Importa una copia de migración en una plataforma sin cursos ni estudiantes. Conserva la cuenta de administrador de destino. El archivo contiene datos privados: no lo subas a GitHub.</p><div class="form-actions">${btn('Importar traslado','import-migration','secondary','upload')}</div></section>`);
   storageUI.bind();
   platformUI.enhance(current);
-  analyticsUI.bind();panoramaUI.bind();communityUI.enhance();chatUI.enhance();notificationsUI.enhance();courseHelpUI.enhance();
+  analyticsUI.bind();panoramaUI.bind();communityUI.enhance();chatUI.enhance();notificationsUI.enhance();courseHelpUI.enhance();engagementTracker.enhance();
   if(state.user?.roles&&!state.preview)libraryUI.enhance(current);
   if(state.preview)document.querySelector('main')?.insertAdjacentHTML('afterbegin',`<div class="notice warning">Vista previa del estudiante · No se guardan entregas, notas ni avances. ${btn('Salir de vista previa','platform-exit-preview','secondary small')}</div>`);
   academicsUI.bind();
@@ -458,6 +459,7 @@ const courseHelpUI=createCourseHelpUI({api,getState:()=>state,onAsk:(teacherId,c
 const communityUI=createCommunityUI({api,getState:()=>state,heading,toast});
 const panoramaUI=createPanoramaUI({api,heading,getState:()=>state});
 const analyticsUI=createAnalyticsUI({api,heading,getState:()=>state});
+const engagementTracker=createEngagementTracker({api,getState:()=>state});
 const platformUI=createPlatformUI({api,getState:()=>state,openModal,modal,render,refresh,toast,btn,heading,courseCard});
 const storageUI=createStorageUI({api,getState:()=>state,heading,btn,icon,openModal,render,toast,modal});
 const academicsUI=createAcademicUI({openResourceViewer,api,getState:()=>state,openModal,toast,render,modal,btn,icon,heading,empty});
