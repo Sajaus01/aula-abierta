@@ -53,3 +53,24 @@ test('overview summaries distinguish saved drafts, corrections and file exercise
  const html=studentActivityRows([{id:'draft',title:'Avance',responseState:'draft',activityFormat:'text'},{id:'returned',title:'Simulación',responseState:'returned',activityFormat:'exercises'}]);
  assert.match(html,/Continuar/);assert.match(html,/Corregir/);assert.match(html,/Ejercicios con archivos/);assert.match(html,/Respuesta escrita/);
 });
+
+test('student results use the effective grading scale while original question points remain authentic',()=>{
+ const a={...base,kind:'quiz',maxPoints:5,maxAttempts:1,questions:[{id:'q',type:'text',prompt:'Pregunta actual',points:5}]};
+ const original={kind:'quiz',maxPoints:100,questions:[{id:'q',type:'text',prompt:'Pregunta original',points:100}]};
+ const submission={id:'response',state:'graded',attempt:1,revision:2,published:true,points:4,gradingMaxPoints:5,previousActivity:original,scaleAdjustment:{from:100,to:5},answers:{q:'Respuesta conservada'}};
+ const html=studentActivityWorkspace({activity:a,course:{title:'Curso'},mine:[submission]},{questionMedia:()=>'',questionPreview:q=>q.prompt});
+ assert.match(html,/<strong>4<small> \/ 5<\/small><\/strong>/);assert.match(html,/Escala ajustada de 100 a 5 puntos/);assert.match(html,/Pregunta original/);assert.match(html,/100 puntos/);assert.equal(original.maxPoints,100);assert.equal(original.questions[0].points,100);
+ assert.doesNotMatch(html,/<strong>4<small> \/ 100/);
+});
+
+test('zero grades and unchanged historical attempts retain their own denominators',()=>{
+ const a={...base,maxPoints:5,maxAttempts:1},zero={id:'zero',state:'graded',attempt:1,revision:2,published:true,points:0,gradingMaxPoints:5,previousActivity:{kind:'task',maxPoints:80},scaleAdjustment:{from:80,to:5}};
+ let html=studentActivityWorkspace({activity:a,course:{},mine:[zero]},{questionMedia:()=>'',questionPreview:()=>''});assert.match(html,/<strong>0<small> \/ 5<\/small>/);assert.match(html,/Escala ajustada de 80 a 5/);
+ const older={...zero,id:'older',points:64,gradingMaxPoints:80,scaleAdjustment:null};
+ html=studentActivityWorkspace({activity:a,course:{},mine:[older]},{questionMedia:()=>'',questionPreview:()=>''});assert.match(html,/<strong>64<small> \/ 80<\/small>/);assert.doesNotMatch(html,/Escala ajustada/);
+});
+
+test('grading metadata never reveals private points or invents a grade for an ungraded submission',()=>{
+ const a={...base,maxPoints:5,maxAttempts:1},submission={id:'private',state:'submitted',attempt:1,revision:2,published:false,points:null,gradingMaxPoints:5,previousActivity:{kind:'task',maxPoints:100},scaleAdjustment:{from:100,to:5}};
+ const html=studentActivityWorkspace({activity:a,course:{},mine:[submission]},{questionMedia:()=>'',questionPreview:()=>''});assert.match(html,/Tu docente está revisando la entrega/);assert.doesNotMatch(html,/class="activity-result"/);assert.match(html,/Escala ajustada de 100 a 5/);
+});

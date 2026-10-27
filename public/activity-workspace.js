@@ -5,11 +5,13 @@ import {quizQuestion,quizSharedAttachments} from './quiz-player.js';
 import {procedurePolicy,supportAccept,supportFormatsLabel} from './procedure-support.js';
 import {studentDeadline,activityDueAt,deadlineDate,individualDeadlineLabel} from './activity-deadline.js';
 import {closedWithoutSubmission,closedActivityLabel,automaticZeroHTML,closedActivityResultHTML,closureHistoryHTML} from './activity-state.js';
+import {submissionMaxPoints,submissionScaleAdjustment} from './grading-scale.js';
 
 const number=v=>Number(v||0).toLocaleString('es-CO',{maximumFractionDigits:2});
 const date=v=>v?new Date(v).toLocaleString('es-CO',{dateStyle:'medium',timeStyle:'short'}):'Sin fecha límite';
 const asset=v=>/^\/(?!\/)/.test(String(v||''))?v:safeUrl(v);
 const fileName=v=>String(v||'Archivo').replace(/^[0-9a-f-]{36}-/i,'');
+const scaleNote=(submission,activity)=>{const change=submissionScaleAdjustment(submission,activity);return change?`<p class="field-hint grading-scale-note">Escala ajustada de ${number(change.from)} a ${number(change.to)} puntos. El enunciado mantiene su escala original.</p>`:'';};
 export const activityResponseSettings=value=>({text:true,link:true,files:true,requireText:false,requireLink:false,requireFiles:false,...value});
 
 // Queue draft writes so navigation waits for the latest answers and file selection.
@@ -58,7 +60,7 @@ function instructions(a){
  return `<section class="panel activity-instructions"><h2>Qué debes hacer</h2>${a.description?`<p class="academic-text">${linkedText(a.description)}</p>`:`<p class="academic-text">${a.kind==='quiz'?'Resuelve los puntos de esta actividad.':'Prepara tu respuesta y envíala desde «Tu entrega».'}</p>`}${a.instructionUrl?`<a class="btn secondary small" href="${e(safeUrl(a.instructionUrl))}" target="_blank" rel="noopener noreferrer">${icon('link')}Abrir material del docente</a>`:''}${materials.length?`<div class="activity-teacher-files"><h3>Material de apoyo</h3>${fileList(materials)}</div>`:''}</section>`;
 }
 function taskFields(a,draft){const s=activityResponseSettings(a.responseSettings);return `<section class="panel activity-task-answer"><h2>Tu respuesta</h2>${s.text?`<label>Respuesta escrita${s.requireText?' · obligatoria':''}<textarea name="response" rows="7" maxlength="20000" placeholder="Escribe aquí tu respuesta…">${e(draft?.text||'')}</textarea></label>`:''}${s.link?`<label>Enlace de tu trabajo${s.requireLink?' · obligatorio':''}<input type="url" name="url" placeholder="https://…" value="${e(draft?.url||'')}"><span class="field-hint">Comprueba que el docente pueda abrirlo.</span></label>`:''}${!s.text&&!s.link?'<p class="field-hint">Esta actividad se responde con archivos. Puedes adjuntarlos en «Tu entrega».</p>':''}</section>`;}
-function outcome(s,a){if(!s)return '';return `<div class="activity-receipt"><span class="activity-receipt-icon">${icon('check')}</span><strong>Entrega enviada</strong><p>${e(date(s.submittedAt))}</p>${s.published&&s.points!==null?`<div class="activity-result"><strong>${number(s.points)}<small> / ${number(s.previousActivity?.maxPoints||a.maxPoints)}</small></strong><span>Calificación</span></div>`:'<p class="field-hint">Tu docente está revisando la entrega.</p>'}${s.feedback?`<p class="academic-text">${e(s.feedback)}</p>`:''}</div>`;}
+function outcome(s,a){if(!s)return '';const maximum=submissionMaxPoints(s,a);return `<div class="activity-receipt"><span class="activity-receipt-icon">${icon('check')}</span><strong>Entrega enviada</strong><p>${e(date(s.submittedAt))}</p>${s.published&&s.points!==null&&s.points!==undefined?`<div class="activity-result"><strong>${number(s.points)}<small> / ${maximum===null?'—':number(maximum)}</small></strong><span>Calificación</span></div>`:'<p class="field-hint">Tu docente está revisando la entrega.</p>'}${scaleNote(s,a)}${s.feedback?`<p class="academic-text">${e(s.feedback)}</p>`:''}</div>`;}
 export function studentActivityWorkspace(data,{questionMedia,questionPreview,previousSubmission,preview=false}={}){
  const a=data.activity,c=studentResponseContext(a,data.mine),s=c.draft,hasSubmitted=Boolean(c.latest),newAttempt=hasSubmitted&&!s&&c.editable;
  const display=s||c.latest,editVisible=c.editable&&!newAttempt,p=studentUploadPolicy(a);

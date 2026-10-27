@@ -156,3 +156,22 @@ test('advanced evidence applies student and activity filters before the two-hund
  const historical=await f.people.teacher.call('/analytics/'+f.group.id+'?student='+studentId+'&from=2020-01-01&to=2020-01-02');
  assert.deepEqual(historical.changes,[]);assert.deepEqual(historical.labs,[]);
 });
+
+test('activity averages preserve the percentage after rescaling and use the effective private grade',async t=>{
+ const f=await fixture(t),activity=await f.master('/academics/courses/'+f.group.id+'/activities',{title:'Rescaled activity',kind:'task',status:'published',moduleId:f.module.id,weight:0,maxPoints:100,maxAttempts:1},'POST',201);
+ const sent=await f.submit(activity);await f.master('/academics/submissions/'+sent.id+'/grade',{version:sent.version,points:60,published:true},'PATCH');
+ const average=async()=>(await f.report('&activity='+activity.id)).activities.find(row=>row.id===activity.id).average;
+ assert.equal(await average(),3,'60 out of 100 is 3 on the course scale of 5');
+ const payload=JSON.parse(f.db.prepare('SELECT payload FROM submissions WHERE id=?').get(sent.id).payload);
+ payload.previousActivity=activity;payload.gradingMaxPoints=5;
+ f.db.prepare("UPDATE activities SET config=json_set(config,'$.maxPoints',5) WHERE id=?").run(activity.id);
+ const write=(points)=>f.db.prepare('UPDATE submissions SET points=?,payload=? WHERE id=?').run(points,JSON.stringify(payload),sent.id);
+ write(3);assert.equal(await average(),3,'the current grading scale takes priority over the preserved instruction snapshot');
+ write(0);assert.equal(await average(),0,'a zero remains a grade in the average');
+ payload.teacherGradeDraft={points:4,feedback:'Private revision'};write(3);
+ assert.equal(await average(),4,'the saved private grade takes priority over the published grade');
+ payload.teacherGradeDraft.points=0;write(3);assert.equal(await average(),0);
+ payload.teacherGradeDraft.points=null;write(3);assert.equal(await average(),null,'removing the private grade does not reuse the published score');
+ delete payload.teacherGradeDraft;delete payload.gradingMaxPoints;write(60);
+ assert.equal(await average(),3,'unconverted submissions retain the maximum from their snapshot');
+});

@@ -1,5 +1,6 @@
 import {supportRules} from '../public/procedure-support.js';
 import {responseSettings} from './activity-forms.mjs';
+import {submissionMaxPoints} from '../public/grading-scale.js';
 export function setupAcademicPolicy(db){db.exec(`
 CREATE TABLE IF NOT EXISTS activity_versions(activity_id TEXT NOT NULL REFERENCES activities(id) ON DELETE CASCADE,revision INTEGER NOT NULL,config TEXT NOT NULL,files TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(activity_id,revision));
 CREATE TABLE IF NOT EXISTS grade_audit(id INTEGER PRIMARY KEY AUTOINCREMENT,submission_id TEXT NOT NULL,actor_id TEXT NOT NULL,before_value TEXT NOT NULL,after_value TEXT NOT NULL,reason TEXT NOT NULL,created_at TEXT NOT NULL);
@@ -8,6 +9,16 @@ CREATE TABLE IF NOT EXISTS attempt_starts(activity_id TEXT NOT NULL REFERENCES a
 CREATE TABLE IF NOT EXISTS learning_events(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id TEXT NOT NULL,course_id TEXT,object_id TEXT,action TEXT NOT NULL,details TEXT NOT NULL DEFAULT '{}',created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS events_group_date ON learning_events(course_id,created_at);`);}
 export function evaluatedSignature(a){return JSON.stringify({kind:a.kind,maxPoints:a.maxPoints,procedureSupport:supportRules(a.procedureSupport),...(a.kind==='task'?{responseSettings:responseSettings(a.responseSettings)}:{}),questions:a.questions.map(q=>({id:q.id,type:q.type,options:q.options,correct:q.correct,points:q.points}))});}
+export function scaleOnlyChange(before,after,attachmentsChanged=false,{hasScaleMismatch=false}={}){
+ if(attachmentsChanged||before.maxPoints===after.maxPoints&&!hasScaleMismatch)return false;
+ if(before.kind==='quiz'){
+  const ratio=after.maxPoints/before.maxPoints;
+  if(!Number.isFinite(ratio)||ratio<=0||(before.questions||[]).length!==(after.questions||[]).length)return false;
+  if(before.questions.some((question,index)=>{const expected=question.points*ratio,actual=after.questions[index]?.points;return !Number.isFinite(expected)||!Number.isFinite(actual)||Math.abs(actual-expected)>1e-10*Math.max(1,Math.abs(expected));}))return false;
+ }
+ const content=a=>JSON.stringify({kind:a.kind,title:a.title||'',description:a.description||'',instructionUrl:a.instructionUrl||'',procedureSupport:{...supportRules(a.procedureSupport),instructions:a.procedureSupport?.instructions||''},responseSettings:a.kind==='task'?responseSettings(a.responseSettings):null,questions:(a.questions||[]).map(q=>({id:q.id,type:q.type,prompt:q.prompt||'',options:q.options||[],correct:q.correct||[],media:q.media||[],imageUrl:q.imageUrl||'',imageAlt:q.imageAlt||'',linkUrl:q.linkUrl||'',feedback:q.feedback||''}))});
+ return content(before)===content(after);
+}
 export function revisionDecision(before,after,body,count,attachmentsChanged,fail){
  const structural=evaluatedSignature(before)!==evaluatedSignature(after);
  const textChanged=['title','description','questions','instructionUrl','procedureSupport'].some(k=>JSON.stringify(before[k])!==JSON.stringify(after[k]))||attachmentsChanged;
@@ -27,7 +38,7 @@ export function validatePeriods(input,fail){
 }
 export function gradeCalculation(activities,userId,cfg,forAdmin,{rows,closed,override,closure=()=>null}){
  const round=n=>Math.round((n+Number.EPSILON)*100)/100;
- const cells=activities.map(a=>{const history=rows(a.id,userId),latest=history[0],s=latest?.state==='draft'&&latest.returned_at?{...latest,state:'returned'}:history.find(r=>r.state!=='draft'),old=s?JSON.parse(s.payload).previousActivity:null;const maxPoints=old?.maxPoints||a.maxPoints;const visible=s&&s.state!=='returned'&&s.points!==null&&(forAdmin||s.published);const exempt=override(a.id,userId),record=closure(a,userId),automaticZero=!exempt&&!s&&Boolean(record?.closed);const zero=automaticZero||!s&&cfg.missingAsZero&&closed(a);return {activityId:a.id,title:a.title,periodId:a.periodId||'',weight:a.weight,maxPoints,submissionId:s?.id||null,points:automaticZero?0:visible?s.points:null,published:automaticZero||Boolean(s?.published),state:exempt?'exempt':s?.state==='returned'?'returned':zero?'missing':!s?'pending':visible?'graded':'submitted',late:Boolean(s?.late),ready:!!exempt||!!zero||!!(s?.state!=='returned'&&s?.published&&s.points!==null),...(record?{closure:record}:{})};});
+ const cells=activities.map(a=>{const history=rows(a.id,userId),latest=history[0],s=latest?.state==='draft'&&latest.returned_at?{...latest,state:'returned'}:history.find(r=>r.state!=='draft'),old=s?JSON.parse(s.payload):null;const maxPoints=submissionMaxPoints(old,a);const visible=s&&s.state!=='returned'&&s.points!==null&&(forAdmin||s.published);const exempt=override(a.id,userId),record=closure(a,userId),automaticZero=!exempt&&!s&&Boolean(record?.closed);const zero=automaticZero||!s&&cfg.missingAsZero&&closed(a);return {activityId:a.id,title:a.title,periodId:a.periodId||'',weight:a.weight,maxPoints,submissionId:s?.id||null,points:automaticZero?0:visible?s.points:null,published:automaticZero||Boolean(s?.published),state:exempt?'exempt':s?.state==='returned'?'returned':zero?'missing':!s?'pending':visible?'graded':'submitted',late:Boolean(s?.late),ready:!!exempt||!!zero||!!(s?.state!=='returned'&&s?.published&&s.points!==null),...(record?{closure:record}:{})};});
  function calculate(list){
   const nonExempt=list.filter(c=>c.state!=='exempt'),exemptWeight=list.filter(c=>c.state==='exempt').reduce((n,c)=>n+c.weight,0);
   // Unassigned and ungraded percentages remain in the budget. Only an explicit

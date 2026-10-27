@@ -2,6 +2,7 @@ import {questionHeading,linkedText,textPreviews,linkPreview} from './activity-me
 import {supportEditor,readSupportEditor,refreshSupportEditor,supportPreview,supportRules} from './procedure-support.js';
 import {escapeHtml as e,safeUrl} from './lib.js';
 import {icon} from './ui.js';
+import {questionPointsTotal} from './grading-scale.js';
 
 const labels={draft:'Borrador',published:'Publicada',archived:'Archivada'};
 const fmt=n=>Number(n||0).toLocaleString('es-CO',{maximumFractionDigits:2});
@@ -11,6 +12,30 @@ const section=(id,title,description,body)=>`<section class="editor-section form-
 const choiceType=type=>['single','multiple'].includes(type);
 const responseDefaults={text:true,link:true,files:true,requireText:false,requireLink:false,requireFiles:false};
 const responsePolicy=value=>({...responseDefaults,...value});
+
+export function redistributeQuestionPoints(values,target) {
+ if(!values.length)throw Error('Añade al menos una pregunta antes de ajustar los puntos máximos.');
+ if(!Number.isFinite(target)||target<=0)throw Error('Los puntos máximos deben ser un número positivo.');
+ if(values.some(value=>!Number.isFinite(value)||value<0.1||value>1000))throw Error('Revisa primero la puntuación de cada pregunta: debe estar entre 0,1 y 1000.');
+ const total=questionPointsTotal(values),ratio=target/total;
+ const points=values.map(value=>value*ratio);
+ if(points.some(value=>value<0.1-1e-12))throw Error('Ese total dejaría alguna pregunta con menos de 0,1 puntos. Aumenta el total o ajusta las preguntas.');
+ if(points.some(value=>value>1000+1e-12))throw Error('Ese total dejaría alguna pregunta con más de 1000 puntos. Reduce el total o ajusta las preguntas.');
+ const adjusted=points.map(value=>Math.min(1000,Math.max(0.1,value))),expected=Number(target.toPrecision(15));
+ const prefix=adjusted.slice(0,-1).reduce((sum,value)=>sum+value,0);
+ adjusted[adjusted.length-1]=Math.min(1000,Math.max(0.1,expected-prefix));
+ return adjusted;
+}
+
+export function activityImpactHTML(r,{periodTitle=()=> 'Sin corte',changeKind='editorial'}={}){
+ const changed=(r.impact||[]).filter(x=>x.before!==x.after),policy=['keep','optional','repeat'].includes(r.policy)?r.policy:'keep';
+ const hasScale=Number.isFinite(r.oldMaxPoints)&&r.oldMaxPoints>0&&Number.isFinite(r.newMaxPoints)&&r.newMaxPoints>0,scaleChanged=hasScale&&r.oldMaxPoints!==r.newMaxPoints;
+ const conversions=Number.isInteger(r.scaleConversionCount)&&r.scaleConversionCount>0?r.scaleConversionCount:0;
+ const policyText=policy==='repeat'?'Las respuestas anteriores pasarán al historial. Sus notas dejarán de contar hasta una nueva entrega.':policy==='optional'?'Se ofrecerán nuevos intentos; la nota vigente se conserva hasta otro envío.':'Se conservan los intentos y las notas vigentes.';
+ const preserved=r.scaleOnly&&policy!=='repeat'?'<p>Solo cambia la escala: se conservan las respuestas y los borradores en curso. Las notas mantienen el mismo porcentaje.</p>':r.changed&&changeKind==='evaluated'?'<p>Los borradores en curso pasarán al historial al cambiar lo evaluado.</p>':'';
+ const scaleText=scaleChanged&&policy!=='repeat'?`<p>Las notas se convierten proporcionalmente: ${fmt(r.oldMaxPoints*0.8)}/${fmt(r.oldMaxPoints)} → ${fmt(r.newMaxPoints*0.8)}/${fmt(r.newMaxPoints)} (80 %).</p>`:'';
+ return `<header class="editor-section-heading"><h3 tabindex="-1">Revisa antes de guardar</h3><p>Estos cambios todavía no se han aplicado.</p></header><div class="editor-callout"><strong>${fmt(r.affectedResponses)} respuestas o borradores vigentes</strong><p>${policyText}</p>${preserved}${scaleText}</div><dl class="editor-impact-summary">${scaleChanged||conversions?`<dt>Puntos máximos</dt><dd>${hasScale?fmt(r.oldMaxPoints)+' → '+fmt(r.newMaxPoints):'Escala vigente'}</dd><dt>Respuestas con escala ajustada</dt><dd>${conversions}</dd>`:''}<dt>Porcentaje</dt><dd>${fmt(r.oldWeight)} % → ${fmt(r.newWeight)} %</dd><dt>Corte</dt><dd>${e(periodTitle(r.oldPeriod))} → ${e(periodTitle(r.newPeriod))}</dd><dt>Notas acumuladas que cambian</dt><dd>${changed.length}</dd></dl>${changed.length?`<div class="table-wrap"><table><thead><tr><th>Estudiante</th><th>Antes</th><th>Después</th></tr></thead><tbody>${changed.slice(0,20).map(x=>`<tr><td>${e(x.name)}</td><td>${x.before===null?'Sin nota':fmt(x.before)}</td><td>${x.after===null?'Sin nota':fmt(x.after)}</td></tr>`).join('')}</tbody></table></div>${changed.length>20?`<p>Se muestran 20 de ${changed.length} cambios.</p>`:''}`:''}${policy==='repeat'?'<p class="field-hint">Si los plazos anteriores vencieron, el sistema retirará esos límites para permitir repetir.</p>':''}<div class="flex wrap">${button('Volver a revisar','data-impact-cancel','back')}${button('Confirmar y guardar','data-impact-confirm','check','')}</div>`;
+}
 const questionTypes=[['text','Respuesta abierta larga'],['short','Respuesta corta'],['number','Respuesta numérica'],['single','Una opción correcta'],['multiple','Varias opciones correctas'],['instruction','Ejercicio · entregar archivos al final']];
 const typeOptions=selected=>questionTypes.map(([value,label])=>`<option value="${value}" ${selected===value?'selected':''}>${label}</option>`).join('');
 const previewAnswer=type=>type==='instruction'?'<p class="field-hint">Se resuelve en archivos y se adjunta al final.</p>':`<div class="editor-preview-answer">${type==='number'?'Respuesta numérica':type==='short'?'Respuesta corta · máximo 500 caracteres':'Espacio para la respuesta desarrollada'}</div>`;
@@ -35,7 +60,7 @@ export function renderQuestion(q={},n=1){
  if(q.type==='truefalse')q={...q,type:'single',options:['Verdadero','Falso'],correct:[]};
  const options=q.options?.length?q.options:['',''],correct=q.correct||[],choices=choiceType(q.type);
  const hint={text:'El estudiante escribirá una respuesta desarrollada. La calificarás manualmente.',short:'Respuesta de hasta 500 caracteres. La calificarás manualmente.',number:'El estudiante escribirá un valor numérico. La calificarás manualmente.',instruction:'Solo se muestra el enunciado. El estudiante entregará sus archivos al final.'}[q.type]||'';
- return `<fieldset class="academic-question-editor" data-question="${e(q.id)}"><legend data-question-number>Pregunta ${n}</legend><div class="editor-question-toolbar">${button('Subir','data-action="academic-question-up"','up','ghost small')}${button('Bajar','data-action="academic-question-down"','down','ghost small')}${button('Duplicar','data-action="academic-question-copy"','copy','ghost small')}${button('Quitar','data-action="academic-remove-question"','trash','danger small')}</div><label>Enunciado<textarea name="qPrompt" rows="3" maxlength="3000" required placeholder="¿Qué debe resolver el estudiante?">${e(q.prompt)}</textarea></label><div class="form-grid"><label>Tipo de respuesta<select name="qType">${typeOptions(q.type)}</select></label><label>Puntuación<input name="qPoints" type="number" min="0.1" max="1000" step="0.1" required value="${q.points}"></label></div><div data-options ${choices?'':'hidden'}><p class="field-hint" data-option-hint>Marca la respuesta correcta a la izquierda de cada opción.</p><div data-option-list>${options.map((v,i)=>optionRow(v,correct.includes(i),q.type,q.id,i)).join('')}</div>${button('Añadir opción','data-add-option','plus')}<textarea name="qOptions" hidden>${choices?e(options.join('\n')):''}</textarea><input type="hidden" name="qCorrect" value="${choices?correct.map(i=>i+1).join(','):''}"></div><p class="field-hint" data-manual-hint ${choices?'hidden':''}>${hint}</p><div data-question-extras></div></fieldset>`;
+ return `<fieldset class="academic-question-editor" data-question="${e(q.id)}"><legend data-question-number>Pregunta ${n}</legend><div class="editor-question-toolbar">${button('Subir','data-action="academic-question-up"','up','ghost small')}${button('Bajar','data-action="academic-question-down"','down','ghost small')}${button('Duplicar','data-action="academic-question-copy"','copy','ghost small')}${button('Quitar','data-action="academic-remove-question"','trash','danger small')}</div><label>Enunciado<textarea name="qPrompt" rows="3" maxlength="3000" required placeholder="¿Qué debe resolver el estudiante?">${e(q.prompt)}</textarea></label><div class="form-grid"><label>Tipo de respuesta<select name="qType">${typeOptions(q.type)}</select></label><label>Puntuación<input name="qPoints" type="number" min="0.1" max="1000" step="any" required value="${q.points}"></label></div><div data-options ${choices?'':'hidden'}><p class="field-hint" data-option-hint>Marca la respuesta correcta a la izquierda de cada opción.</p><div data-option-list>${options.map((v,i)=>optionRow(v,correct.includes(i),q.type,q.id,i)).join('')}</div>${button('Añadir opción','data-add-option','plus')}<textarea name="qOptions" hidden>${choices?e(options.join('\n')):''}</textarea><input type="hidden" name="qCorrect" value="${choices?correct.map(i=>i+1).join(','):''}"></div><p class="field-hint" data-manual-hint ${choices?'hidden':''}>${hint}</p><div data-question-extras></div></fieldset>`;
 }
 
 export function activityForm(a,c,{modern=false,fileCards,savedFiles,acceptedFiles,questionEditor}){
@@ -51,7 +76,7 @@ export function activityForm(a,c,{modern=false,fileCards,savedFiles,acceptedFile
  </div><details class="editor-preview-disclosure" data-editor-preview-details><summary>${icon('eye')}Vista previa del contenido</summary><section class="editor-section form-stack" data-editor-section="preview"></section></details><section class="editor-section form-stack editor-impact" data-editor-section="impact" hidden></section>
  </div><aside class="editor-settings" aria-label="Configuración de la actividad"><p class="editor-course">${icon('book')}<span>${e(c.title)}</span></p>
  ${section('format','Configuración','',`<label>Tipo de actividad<select name="kind"><option value="task" ${a.kind==='task'?'selected':''}>Tarea</option><option value="quiz" ${a.kind==='quiz'?'selected':''}>Cuestionario o lista de ejercicios</option></select></label><p class="field-hint" data-kind-description></p><label>Capítulo<select name="moduleId"><option value="">Actividad general del curso</option>${c.modules.map(m=>`<option value="${e(m.id)}" ${a.moduleId===m.id?'selected':''}>${e(m.title)}${m.published===false?' · Borrador':''}</option>`).join('')}</select></label>`)}
- ${section('grading','Calificación','',`<div data-period-slot></div><div class="form-grid"><label>Porcentaje<input name="weight" type="number" min="0" max="100" step="0.01" value="${a.weight}" required></label><label>Puntos máximos<input name="maxPoints" type="number" min="1" max="10000" step="0.1" value="${a.maxPoints}" required ${a.kind==='quiz'?'disabled':''}></label></div><p class="field-hint" data-points-description></p><p class="field-hint" data-weight-summary role="status"></p>`)}
+ ${section('grading','Calificación','',`<div data-period-slot></div><div class="form-grid"><label>Porcentaje<input name="weight" type="number" min="0" max="100" step="0.01" value="${a.weight}" required></label><label>Puntos máximos<input name="maxPoints" type="number" min="${a.kind==='quiz'?questionPointsTotal(a.questions.map(()=>0.1)):1}" max="${a.kind==='quiz'?a.questions.length*1000:10000}" step="any" value="${a.maxPoints}" required></label></div><p class="field-hint" data-points-description></p><p class="form-error" data-points-error role="alert" hidden></p><p class="field-hint" data-weight-summary role="status"></p>`)}
  ${section('dates','Fechas','',`<label>Fecha de entrega<input name="dueAt" type="datetime-local" value="${dateInput(a.dueAt)}"></label><div class="form-grid"><label>Apertura<input name="opensAt" type="datetime-local" value="${dateInput(a.opensAt)}"></label><label>Cierre definitivo<input name="closesAt" type="datetime-local" value="${dateInput(a.closesAt)}"></label></div><label class="check-label"><input name="allowLate" type="checkbox" ${a.allowLate?'checked':''}>Aceptar entregas tardías</label><p class="field-hint" data-date-summary></p><p class="field-hint">Zona horaria: ${e(Intl.DateTimeFormat().resolvedOptions().timeZone)}.</p>`)}
  ${section('attempts','Entrega','',`<label>Máximo de intentos<input name="maxAttempts" type="number" min="1" max="20" step="1" required value="${a.maxAttempts}"></label><div data-timer-slot></div><p class="field-hint">El borrador no consume un intento.</p>`)}
  ${section('publication','Publicación','',`<label>Visibilidad<select name="status">${[['draft','Borrador · solo docentes'],['published','Publicada · visible en el curso'],['archived','Archivada · oculta']].map(([v,t])=>`<option value="${v}" ${a.status===v?'selected':''}>${t}</option>`).join('')}</select></label><p class="field-hint" data-status-description></p>`)}
@@ -60,7 +85,7 @@ export function activityForm(a,c,{modern=false,fileCards,savedFiles,acceptedFile
 
 export function bindActivityEditor(form,a,c,evaluation){
  const modal=form.closest('dialog');
- let lastEdit='details',removed=null,reviewing=false,taskPoints=a.kind==='task'?a.maxPoints:100,lastKind=a.kind,supportBeforeInstruction;
+ let lastEdit='details',removed=null,reviewing=false,taskPoints=a.kind==='task'?a.maxPoints:100,lastKind=a.kind,supportBeforeInstruction,pendingTotal=null;
  form.noValidate=true;modal.classList.add('activity-editor-modal','activity-composer');
  const footer=form.querySelector(':scope > .form-actions'),save=footer.querySelector('[type=submit]');
  footer.insertAdjacentHTML('afterbegin',button('Vista previa','data-editor-preview','eye'));
@@ -102,21 +127,27 @@ export function bindActivityEditor(form,a,c,evaluation){
   refreshSupportEditor(form);form.querySelector('[data-task-response-settings]').hidden=quiz;
   form.querySelector('#question-builder').hidden=!quiz;
   if(lastKind==='task'&&quiz)taskPoints=field('maxPoints').value;
-  if(lastKind==='quiz'&&!quiz)field('maxPoints').value=taskPoints;
-  lastKind=field('kind').value;field('maxPoints').disabled=quiz;
+  if(lastKind==='quiz'&&!quiz){field('maxPoints').value=taskPoints;pendingTotal=null;}
+  lastKind=field('kind').value;field('maxPoints').disabled=false;
+  field('maxPoints').min=String(quiz?questionPointsTotal(questions.map(()=>0.1)):1);field('maxPoints').max=String(quiz?questions.length*1000:10000);
   form.querySelector('[data-kind-description]').textContent=quiz?'Preguntas y ejercicios numerados en una misma página.':'Una entrega con los medios que elijas.';
   form.querySelector('[data-delivery-description]').textContent=quiz?'Las respuestas abiertas y los ejercicios con archivos se califican manualmente. Las preguntas de selección pueden corregirse automáticamente.':'Los archivos admiten cualquier formato, incluidos CAD, simuladores y ZIP: hasta 5 archivos, 10 MB por archivo y 20 MB en total.';
   questions.forEach((q,i)=>{syncQuestion(q);q.querySelector('[data-question-number]').textContent=`Pregunta ${i+1}`;q.querySelector('[data-action="academic-question-up"]').disabled=i===0;q.querySelector('[data-action="academic-question-down"]').disabled=i===questions.length-1;q.querySelector('[data-action="academic-question-copy"]').disabled=questions.length>=50;});
-  const points=questions.reduce((n,q)=>n+Number(q.querySelector('[name=qPoints]').value||0),0);
-  if(quiz)field('maxPoints').value=Number(points.toFixed(2));
+  const pointError=form.querySelector('[data-points-error]');
+  if(quiz&&pendingTotal!==null){
+   try{const adjusted=redistributeQuestionPoints(questions.map(q=>Number(q.querySelector('[name=qPoints]').value)),Number(pendingTotal));questions.forEach((q,index)=>q.querySelector('[name=qPoints]').value=String(adjusted[index]));pendingTotal=null;field('maxPoints').setCustomValidity('');pointError.hidden=true;pointError.textContent='';}
+   catch(error){field('maxPoints').setCustomValidity(error.message);pointError.textContent=error.message;pointError.hidden=false;}
+  }else{field('maxPoints').setCustomValidity('');pointError.hidden=true;pointError.textContent='';}
+  const points=questionPointsTotal(questions.map(q=>Number(q.querySelector('[name=qPoints]').value||0)));
+  if(quiz&&pendingTotal===null)field('maxPoints').value=String(points);
   if(a.id&&field('changeKind')&&a.activeResponseCount){
-   const structure={kind:field('kind').value,responseSettings:readResponseSettings(form),procedureSupport:readSupportEditor(form),maxPoints:quiz?Number(points.toFixed(2)):Number(field('maxPoints').value),questions:questions.map(q=>({id:q.dataset.question,type:q.querySelector('[name=qType]').value,points:Number(q.querySelector('[name=qPoints]').value),options:q.querySelector('[name=qOptions]').value.split('\n').map(s=>s.trim()),correct:q.querySelector('[name=qCorrect]').value.split(',').filter(Boolean).map(v=>Number(v)-1)}))};
+   const structure={kind:field('kind').value,responseSettings:readResponseSettings(form),procedureSupport:readSupportEditor(form),maxPoints:quiz?points:Number(field('maxPoints').value),questions:questions.map(q=>({id:q.dataset.question,type:q.querySelector('[name=qType]').value,points:Number(q.querySelector('[name=qPoints]').value),options:q.querySelector('[name=qOptions]').value.split('\n').map(s=>s.trim()),correct:q.querySelector('[name=qCorrect]').value.split(',').filter(Boolean).map(v=>Number(v)-1)}))};
    if(evaluationStructure(a)!==evaluationStructure(structure)&&field('changeKind').value==='editorial'){field('changeKind').value='evaluated';field('changeKind').dispatchEvent(new Event('change'));}
   }
   form.querySelector('[data-question-total]').textContent=`${questions.length} / 50 · ${fmt(points)} puntos`;
   form.querySelector('[data-question-empty]').hidden=questions.length>0;
   form.querySelector('[data-action="academic-add-question"]').disabled=questions.length>=50;
-  form.querySelector('[data-points-description]').textContent=quiz?`Se suman automáticamente: ${fmt(points)} puntos en ${questions.length} preguntas.`:'Ejemplo: 80 puntos de 100 equivalen al 80 % de la nota de esta actividad.';
+  form.querySelector('[data-points-description]').textContent=quiz?`Total: ${fmt(points)} puntos en ${questions.length} preguntas. Al cambiar los puntos máximos, se ajusta proporcionalmente la puntuación visible de cada pregunta.`:`Ejemplo: ${fmt(Number(field('maxPoints').value)*0.8)} puntos de ${fmt(field('maxPoints').value)} equivalen al 80 % de esta actividad.`;
   const summary=weights(),period=field('periodId')?.selectedOptions[0]?.textContent||'Nota del curso';
   form.querySelector('[data-weight-summary]').textContent=`${period}. Otras actividades publicadas: ${fmt(summary.used)} %. Disponible: ${fmt(summary.remaining)} %. ${field('status').value==='published'?`Con esta actividad: ${fmt(summary.total)} % de 100 %.`:'El borrador o archivo no consume porcentaje publicado.'}${summary.exceeded?' Reduce el porcentaje antes de publicar.':''}`;
   form.querySelector('[data-weight-summary]').classList.toggle('warning',summary.exceeded);
@@ -170,7 +201,7 @@ export function bindActivityEditor(form,a,c,evaluation){
   form.dispatchEvent(new CustomEvent('activity-question-added',{detail:{field:added,question}}));form.dispatchEvent(new Event('activity-editor-change'));added.querySelector('[name=qPrompt]').focus();return added;
  }
  function applyTemplate(value){field('kind').value=value==='task'?'task':'quiz';field('kind').dispatchEvent(new Event('change',{bubbles:true}));if(value!=='task'){const type={open:'text',mixed:'single',files:'instruction'}[value],questions=[...form.querySelectorAll('[data-question]')];form.querySelector('[data-question-add-type]').value=type;if(!questions.length)addQuestion(type);else{if(questions.length===1&&!questions[0].querySelector('[name=qPrompt]').value.trim())questions[0].querySelector('[name=qType]').value=type;refresh();}}modal.dataset.dirty='true';field('title').focus();}
- const onEdit=()=>{form.querySelector(':scope > .form-error').textContent='';refresh();if(form.querySelector('[data-editor-preview-details]').open)preview(false);};
+ const onEdit=event=>{if(event?.target?.name==='maxPoints'&&field('kind').value==='quiz')pendingTotal=field('maxPoints').value;else if(event?.target?.name==='qPoints')pendingTotal=null;form.querySelector(':scope > .form-error').textContent='';refresh();if(form.querySelector('[data-editor-preview-details]').open)preview(false);};
  form.addEventListener('input',onEdit);form.addEventListener('change',onEdit);
  form.addEventListener('activity-editor-change',()=>{modal.dataset.dirty='true';refresh();if(form.querySelector('[data-editor-preview-details]').open)preview(false);});
  form.querySelector('[data-editor-preview-details]').addEventListener('toggle',ev=>{if(ev.currentTarget.open)preview(false);});
@@ -187,9 +218,8 @@ export function bindActivityEditor(form,a,c,evaluation){
   reviewing=true;previewButton.disabled=true;
   form.querySelector('.editor-content-fields').inert=true;form.querySelector('.editor-settings').inert=true;
   save.innerHTML=icon('eye')+'Revisión pendiente';save.removeAttribute('aria-busy');
-  const changed=(r.impact||[]).filter(x=>x.before!==x.after),target=form.querySelector('[data-editor-section="impact"]');
-  const period=id=>evaluation?.settings?.periods?.find(p=>p.id===id)?.title||'Sin corte';
-  target.innerHTML=`<header class="editor-section-heading"><h3 tabindex="-1">Revisa antes de guardar</h3><p>Estos cambios todavía no se han aplicado.</p></header><div class="editor-callout"><strong>${r.affectedResponses} respuestas o borradores vigentes</strong><p>${{keep:'Se conservan los intentos y sus notas anteriores.',optional:'Se ofrecerán nuevos intentos; la nota actual se conserva hasta un nuevo envío.',repeat:'Las respuestas anteriores pasarán al historial. Sus notas dejarán de contar hasta una nueva entrega.'}[r.policy]}</p>${r.changed&&field('changeKind')?.value==='evaluated'?'<p>Los borradores en curso pasarán al historial al cambiar lo evaluado.</p>':''}</div><dl class="editor-impact-summary"><dt>Porcentaje</dt><dd>${fmt(r.oldWeight)} % → ${fmt(r.newWeight)} %</dd><dt>Corte</dt><dd>${e(period(r.oldPeriod))} → ${e(period(r.newPeriod))}</dd><dt>Notas acumuladas que cambian</dt><dd>${changed.length}</dd></dl>${changed.length?`<div class="table-wrap"><table><thead><tr><th>Estudiante</th><th>Antes</th><th>Después</th></tr></thead><tbody>${changed.slice(0,20).map(x=>`<tr><td>${e(x.name)}</td><td>${x.before===null?'Sin nota':fmt(x.before)}</td><td>${x.after===null?'Sin nota':fmt(x.after)}</td></tr>`).join('')}</tbody></table></div>${changed.length>20?`<p>Se muestran 20 de ${changed.length} cambios.</p>`:''}`:''}${r.policy==='repeat'?'<p class="field-hint">Si los plazos anteriores vencieron, el sistema retirará esos límites para permitir repetir.</p>':''}<div class="flex wrap">${button('Volver a revisar','data-impact-cancel','back')}${button('Confirmar y guardar','data-impact-confirm','check','')}</div>`;
+  const target=form.querySelector('[data-editor-section="impact"]');
+  target.innerHTML=activityImpactHTML(r,{periodTitle:id=>evaluation?.settings?.periods?.find(p=>p.id===id)?.title||'Sin corte',changeKind:field('changeKind')?.value});
   go('impact');
   return new Promise(resolve=>{let settled=false;const done=value=>{if(settled)return;settled=true;modal.removeEventListener('close',closed);reviewing=false;form.querySelector('.editor-content-fields').inert=false;form.querySelector('.editor-settings').inert=false;target.hidden=true;previewButton.disabled=false;if(value){save.innerHTML=icon('clock')+'Guardando…';save.setAttribute('aria-busy','true');}if(modal.open)go(lastEdit);resolve(value);};const closed=()=>done(false);modal.addEventListener('close',closed,{once:true});target.querySelector('[data-impact-cancel]').onclick=()=>done(false);target.querySelector('[data-impact-confirm]').onclick=()=>done(true);});
  }

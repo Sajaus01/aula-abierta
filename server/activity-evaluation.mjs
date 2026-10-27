@@ -1,3 +1,4 @@
+import {submissionMaxPoints} from '../public/grading-scale.js';
 const emptyCounts=()=>({submitted:0,evaluated:0,pending:0,unreleased:0,returned:0});
 const payload=value=>{try{const parsed=typeof value==='string'?JSON.parse(value):value;return parsed&&typeof parsed==='object'&&!Array.isArray(parsed)?parsed:null;}catch{return null;}};
 const stateFor=counts=>counts.pending?'pending':counts.returned?'correction':counts.submitted?'evaluated':'empty';
@@ -14,7 +15,7 @@ export function summarizeActivityEvaluation(activity,records) {
   chosen.add(record.student_id);
   if(record.state==='returned'||record.state==='draft'&&record.returned_at){counts.returned++;continue;}
   counts.submitted++;
-  const data=payload(record.payload),draft=data?.teacherGradeDraft||null,points=draft?draft.points:record.points,maximum=data?.previousActivity?.maxPoints||activity.maxPoints;
+  const data=payload(record.payload),draft=data?.teacherGradeDraft||null,points=draft?draft.points:record.points,maximum=submissionMaxPoints(data,activity);
   const valid=Boolean(data&&Number.isFinite(points)&&points>=0&&Number.isFinite(maximum)&&maximum>0&&points<=maximum&&!data.procedureReviewPending);
   if(!valid){counts.pending++;continue;}
   counts.evaluated++;if(draft||!record.published)counts.unreleased++;
@@ -49,7 +50,7 @@ export function createActivityEvaluation({db,accessModel}) {
   // Only grading fields are read from the payload; answers, text and files never
   // enter the aggregate and no personal identifiers appear in its public DTO.
   const records=all(`SELECT s.id,s.activity_id,s.student_id,s.attempt,s.state,s.points,s.published,s.returned_at,s.updated_at,
-   CASE WHEN json_valid(s.payload) THEN json_object('teacherGradeDraft',json_extract(s.payload,'$.teacherGradeDraft'),'previousActivity',json_object('maxPoints',json_extract(s.payload,'$.previousActivity.maxPoints')),'procedureReviewPending',json_extract(s.payload,'$.procedureReviewPending')) ELSE NULL END payload
+   CASE WHEN json_valid(s.payload) THEN json_object('gradingMaxPoints',json_extract(s.payload,'$.gradingMaxPoints'),'teacherGradeDraft',json_extract(s.payload,'$.teacherGradeDraft'),'previousActivity',json_object('maxPoints',json_extract(s.payload,'$.previousActivity.maxPoints')),'procedureReviewPending',json_extract(s.payload,'$.procedureReviewPending')) ELSE NULL END payload
    FROM submissions s JOIN activities a ON a.id=s.activity_id JOIN users u ON u.id=s.student_id
    WHERE a.course_id IN(${marks}) AND s.superseded=0 AND u.active=1
    AND EXISTS(SELECT 1 FROM enrollments e WHERE e.course_id=a.course_id AND e.student_id=s.student_id AND e.status='active' AND (e.starts_at IS NULL OR e.starts_at<=?) AND (e.expires_at IS NULL OR e.expires_at>?))

@@ -1,4 +1,5 @@
 import {summarizeCourseLearning,materialStatus,activityFinalized} from '../public/learning.js';
+import {submissionMaxPoints} from '../public/grading-scale.js';
 
 const DAY=86400000,TIMEZONE='America/Bogota';
 const round=value=>Math.round((value+Number.EPSILON)*100)/100;
@@ -106,7 +107,7 @@ export function createCourseInsights({db,accessModel:a,academics,engagement=null
    const records=histories.filter(submission=>submission.activity_id===activity.id&&selectedIds.has(submission.student_id));
    const byStudent=new Map();for(const submission of records)if(!byStudent.has(submission.student_id))byStudent.set(submission.student_id,submission);
    const latest=[...byStudent.values()].filter(submission=>['submitted','graded'].includes(submission.state)&&inRange(submission.submitted_at,filters)).map(submission=>{const draft=parsed(submission.payload).teacherGradeDraft;return draft?{...submission,points:draft.points,published:0}:submission;}),graded=latest.filter(submission=>submission.points!==null);
-   return {id:activity.id,title:activity.title,kind:activity.kind,status:activity.status,submitted:latest.length,average:graded.length?round(graded.reduce((sum,submission)=>sum+submission.points/(parsed(submission.payload).previousActivity?.maxPoints||activity.maxPoints)*cfg.scaleMax,0)/graded.length):null,questions:activity.questions.map(question=>{const comparable=latest.filter(submission=>submission.revision===activity.revision),answered=comparable.filter(submission=>Object.hasOwn(parsed(submission.payload).answers||{},question.id));return {id:question.id,prompt:question.prompt,answered:answered.length,correct:['single','multiple'].includes(question.type)?answered.filter(submission=>JSON.stringify(parsed(submission.payload).answers[question.id])===JSON.stringify(question.correct)).length:null};})};
+    return {id:activity.id,title:activity.title,kind:activity.kind,status:activity.status,submitted:latest.length,average:graded.length?round(graded.reduce((sum,submission)=>sum+submission.points/submissionMaxPoints(parsed(submission.payload),activity)*cfg.scaleMax,0)/graded.length):null,questions:activity.questions.map(question=>{const comparable=latest.filter(submission=>submission.revision===activity.revision),answered=comparable.filter(submission=>Object.hasOwn(parsed(submission.payload).answers||{},question.id));return {id:question.id,prompt:question.prompt,answered:answered.length,correct:['single','multiple'].includes(question.type)?answered.filter(submission=>JSON.stringify(parsed(submission.payload).answers[question.id])===JSON.stringify(question.correct)).length:null};})};
   });
   const changeParams=[course.id,filters.startAt,filters.endAt],changeScope=[];
   if(filters.studentId){changeScope.push('s.student_id=?');changeParams.push(filters.studentId);}

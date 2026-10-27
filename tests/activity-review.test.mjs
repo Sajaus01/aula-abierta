@@ -79,23 +79,23 @@ test('la cola muestra una sola respuesta vigente por estudiante y un borrador po
  assert.match(reviewStatus(records[6]),/sin devolver/);
 });
 
-function reviewHarness(t,request,{submission={}}={}){
+function reviewHarness(t,request,{submission={},activity={}}={}){
  const previousFormData=globalThis.FormData;
  globalThis.FormData=class{constructor(form){this.values={...form.values};}get(name){return this.values[name]??null;}has(name){return Boolean(this.values[name]);}};
  t.after(()=>{globalThis.FormData=previousFormData;});
  const handlers=new Map(),status={textContent:'',classList:{toggle(){}}},error={textContent:''};
  const input={checkValidity:()=>true},form={values:{points:'12',feedback:'Revisar unidades.'},querySelector:()=>input};
  const root={innerHTML:'',inert:false},elements=new Map([['[data-review-root]',root],['[data-review=prev]',{}],['[data-review=next]',{}],['[data-review=release-all]',{}],['[data-queue-count]',{}],['.review-queue-list',{}],['.review-response-pane',{focus(){}}],['#review-grade-form',form],['[data-save-status]',status],['#review-grade-form .review-error',error]]);
- let closed=0,renders=0;
+ let closed=0,renders=0;const messages=[];
  const modal={open:false,dataset:{},classList:{add(){}},querySelector:selector=>elements.get(selector),setAttribute(){},removeAttribute(){},close(){closed++;this.open=false;},addEventListener(event,fn,options){const list=handlers.get(event)||[];list.push({fn,options});handlers.set(event,list);}};
- const review=createActivityReview({modal,openModal:()=>{modal.open=true;},icon:()=>'',questionMedia:()=>'',api:request,toast(){},render(){renders++;}});
+ const review=createActivityReview({modal,openModal:()=>{modal.open=true;},icon:()=>'',questionMedia:()=>'',api:request,toast:message=>messages.push(message),render(){renders++;}});
  t.after(()=>review.dispose());
- review.open({activity:{id:'activity',kind:'task',maxPoints:100,status:'published',title:'Actividad',weight:0},submissions:[{id:'submission',name:'Prueba',state:'submitted',points:null,studentId:'student',attempt:1,version:1,...submission}],id:'submission'});
+ review.open({activity:{id:'activity',kind:'task',maxPoints:100,status:'published',title:'Actividad',weight:0,...activity},submissions:[{id:'submission',name:'Prueba',state:'submitted',points:null,studentId:'student',attempt:1,version:1,...submission}],id:'submission'});
  const change=()=>handlers.get('input')[0].fn({target:{id:'',closest:selector=>selector==='#review-grade-form'?form:null,matches:()=>true}});
  const close=()=>handlers.get('click').find(h=>h.options.capture).fn({target:{closest:selector=>selector==='[data-action="close-modal"]'?{}:null},preventDefault(){},stopImmediatePropagation(){}});
  const action=name=>handlers.get('click').find(h=>!h.options.capture).fn({target:{closest:selector=>selector==='[data-review]'?{dataset:{review:name}}:null}});
  const closedEvent=()=>handlers.get('close').forEach(({fn,options})=>{if(!options.signal.aborted)fn();});
- return {form,change,close,action,status,error,root,closedEvent,closed:()=>closed,renders:()=>renders};
+ return {form,input,change,close,action,status,error,root,messages,closedEvent,beforeLeave:()=>review.beforeLeave(),closed:()=>closed,renders:()=>renders};
 }
 
 test('devolver a todos sin editar una nota actualiza la página al cerrar la revisión',async t=>{
@@ -120,6 +120,12 @@ test('una devolución en lote rechazada no marca la página como modificada',asy
  assert.equal(calls,1);assert.match(harness.error.textContent,/Actualiza/);
  harness.close();await new Promise(resolve=>setImmediate(resolve));harness.closedEvent();
  assert.equal(harness.renders(),0);
+});
+
+test('el mensaje de devolución masiva no atribuye pendientes a las entregas omitidas',async t=>{
+ const harness=reviewHarness(t,async(path,options)=>options?.method==='POST'?{releasedCount:0,skippedCount:1}:{activity:{id:'activity',kind:'task',maxPoints:100,status:'published',title:'Actividad',weight:0},submissions:[{id:'submission',name:'Prueba',state:'graded',points:12,published:true,studentId:'student',attempt:1,version:2}]},{submission:{state:'graded',points:12,published:false}});
+ await harness.action('release-all');
+ assert.deepEqual(harness.messages,['No hay notas nuevas listas para devolver. Las demás entregas conservaron su estado.']);assert.doesNotMatch(harness.messages[0],/siguen pendientes|0 notas devueltas/);
 });
 
 test('si la devolución se guardó pero falla su recarga, cerrar vuelve a consultar la página',async t=>{
@@ -167,4 +173,29 @@ test('un conflicto se recupera mediante descarte explícito y usa la versión ac
  assert.match(harness.root.innerHTML,/Revisión guardada por otra persona/);
  harness.form.values.feedback='Nueva revisión tras actualizar.';harness.change();harness.close();await new Promise(resolve=>setImmediate(resolve));
  assert.deepEqual(versions,[1,4]);assert.equal(harness.closed(),1);
+});
+
+test('la revisión usa el máximo efectivo de la nota sin reescribir el enunciado original',t=>{
+ const original={id:'activity',title:'Enunciado original',kind:'quiz',description:'Instrucciones originales',maxPoints:100,questions:[{id:'q',type:'text',prompt:'Pregunta original',points:100}]};
+ const harness=reviewHarness(t,async()=>{}, {activity:{maxPoints:5,kind:'quiz',questions:[{id:'new',type:'text',prompt:'Pregunta actual',points:5}]},submission:{state:'graded',points:4,published:true,publishedPoints:4,automaticPoints:4,gradingMaxPoints:5,previousActivity:original,scaleAdjustment:{from:100,to:5},answers:{q:'Respuesta original'}}});
+ assert.match(harness.root.innerHTML,/name="points"[^>]+max="5"[^>]+step="any"[^>]+value="4"/);assert.match(harness.root.innerHTML,/El estudiante ve 4 \/ 5/);
+ assert.match(harness.root.innerHTML,/Escala ajustada de 100 a 5 puntos/);assert.match(harness.root.innerHTML,/Pregunta original/);assert.match(harness.root.innerHTML,/100 puntos/);assert.doesNotMatch(harness.root.innerHTML,/Pregunta actual/);
+ assert.equal(original.maxPoints,100);assert.equal(original.questions[0].points,100);
+});
+
+test('guardar un comentario conserva una nota convertida con más de dos decimales',async t=>{
+ const writes=[],harness=reviewHarness(t,async(path,options)=>{writes.push(options.body);return {points:options.body.points,feedback:options.body.feedback,version:2,gradingMaxPoints:5};},{activity:{maxPoints:5},submission:{points:1.6665,gradingMaxPoints:5,previousActivity:{kind:'task',maxPoints:100},scaleAdjustment:{from:100,to:5}}});
+ assert.match(harness.root.innerHTML,/step="any" value="1.6665"/);
+ harness.form.values.points='1.6665';harness.form.values.feedback='Comentario sin cambiar la nota.';harness.change();assert.equal(await harness.beforeLeave(),true);
+ assert.equal(writes.length,1);assert.equal(writes[0].points,1.6665);assert.equal(writes[0].feedback,'Comentario sin cambiar la nota.');assert.equal(writes[0].published,false);
+});
+
+test('un valor fuera de la escala efectiva se conserva en pantalla y no se guarda',async t=>{
+ let writes=0;const harness=reviewHarness(t,async()=>{writes++;},{activity:{maxPoints:5},submission:{points:4,gradingMaxPoints:5,previousActivity:{kind:'task',maxPoints:100}}});
+ harness.form.values.points='6';harness.input.checkValidity=()=>false;harness.change();assert.equal(await harness.beforeLeave(),false);assert.match(harness.status.textContent,/entre 0 y 5\./);assert.equal(writes,0);assert.equal(harness.form.values.points,'6');
+});
+
+test('el historial no invalidado por la conversión conserva su propia escala de 100 puntos',t=>{
+ const harness=reviewHarness(t,async()=>{}, {activity:{maxPoints:5},submission:{state:'graded',points:80,published:true,superseded:true,gradingMaxPoints:100,previousActivity:{kind:'task',maxPoints:100,description:'Versión histórica'}}});
+ assert.match(harness.root.innerHTML,/<span>100 puntos · 0 %<\/span>/);assert.match(harness.root.innerHTML,/Versión histórica/);assert.doesNotMatch(harness.root.innerHTML,/Escala ajustada|name="points"/);
 });

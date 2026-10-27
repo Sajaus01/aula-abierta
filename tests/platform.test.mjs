@@ -36,17 +36,20 @@ test('modern HTTP flow: administrator creates teacher; scoped groups preserve en
  await master('/platform/users',{document:'99900004',name:'Other',roles:['teacher']},'POST',201);
  await other('/auth/login',{document:'99900004',password:'99900004'});await other('/auth/first-password',{newPassword:'Other-Synthetic-2026!',confirmPassword:'Other-Synthetic-2026!'});
  await other('/academics/activities/'+quiz.id,undefined,'GET',403);
- // Versions retain the denominator used when a historical grade was earned.
+ // Current grades follow the new scale while snapshots and audit entries retain their original values.
  let updated=await teacher('/academics/activities/'+quiz.id,{version:quiz.version,title:'Quiz corrected',changeKind:'editorial'},'PATCH');
  assert.equal((await student('/academics/activities/'+quiz.id)).mine.length,1);
  updated=await teacher('/academics/activities/'+quiz.id,{version:updated.version,changeKind:'evaluated',revisionPolicy:'optional',questions:[{id:'q1',type:'single',prompt:'Two plus two?',options:['4','5'],correct:[0],points:2}]},'PATCH');
  assert.equal((await teacher(`/academics/courses/${g.id}/gradebook`)).students[0].provisional,5);
+ const converted=(await student('/academics/activities/'+quiz.id)).mine[0];assert.equal(converted.points,2);assert.equal(converted.gradingMaxPoints,2);assert.equal(converted.previousActivity.maxPoints,1);
  const newer=await student(`/academics/activities/${quiz.id}/submit`,{requestId:'request-two',action:'submit',activityRevision:updated.revision,answers:{q1:[1]}},'POST',201);
  await teacher(`/academics/submissions/${newer.id}/grade`,{points:0,feedback:'Review',published:true,version:newer.version,reason:'Revisión de segundo intento'},'PATCH');
  const studentId=(await teacher('/admin/students'))[0].id;
  await teacher('/grade-policy/'+g.id,{activityId:quiz.id,studentId,exempt:true,reason:'Adaptación individual'});
  assert.equal((await teacher(`/academics/courses/${g.id}/gradebook`)).students[0].cells[0].state,'exempt');
- assert.equal((await teacher('/grade-policy/'+g.id)).history.length,2);
+ const history=(await teacher('/grade-policy/'+g.id)).history;assert.equal(history.length,3);
+ const scaleHistory=history.find(entry=>entry.reason==='Conversión proporcional de escala de 1 a 2');assert.ok(scaleHistory);assert.equal(JSON.parse(scaleHistory.before_value).gradingMaxPoints,1);assert.equal(JSON.parse(scaleHistory.after_value).points,2);
+ assert.equal(JSON.parse(history.find(entry=>entry.reason==='Revisión docente').after_value).points,1,'the original grading audit remains intact');
  await other('/grade-policy/'+g.id,undefined,'GET',403);
  await teacher('/grade-policy/'+g.id,{activityId:quiz.id,studentId,exempt:false,reason:'Retomar evaluación'});
  const periods=[{id:'p1',title:'Corte único',weight:100}];
