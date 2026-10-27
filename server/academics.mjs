@@ -8,6 +8,7 @@ import {createSubmissionExports} from './submission-exports.mjs';
 import {responseSettings,validateResponseSettings,validateTaskResponse,isFiniteNumericAnswer} from './activity-forms.mjs';
 import {courseChapterOrder,sortCourseActivities} from './course-model.mjs';
 import {setupActivityDeadlines,createActivityDeadlines,resolveActivityDeadline} from './activity-deadlines.mjs';
+import {setupAutomaticClosures,createAutomaticClosures} from './automatic-closures.mjs';
 
 export function setupAcademics(db) {
  db.exec(`CREATE TABLE IF NOT EXISTS grading_settings(course_id TEXT PRIMARY KEY REFERENCES courses(id) ON DELETE CASCADE, config TEXT NOT NULL);
@@ -19,6 +20,7 @@ export function setupAcademics(db) {
  for(const [table,column] of [['activities','revision'],['submissions','revision'],['submissions','superseded']])if(!db.prepare(`PRAGMA table_info(${table})`).all().some(c=>c.name===column))db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} INTEGER NOT NULL DEFAULT ${column==='superseded'?0:1}`);
  for(const column of ['returned_at','return_due_at'])if(!db.prepare('PRAGMA table_info(submissions)').all().some(c=>c.name===column))db.exec(`ALTER TABLE submissions ADD COLUMN ${column} TEXT`);
  setupActivityDeadlines(db);
+ setupAutomaticClosures(db);
 }
 const defaults={scaleMax:5,passMark:3,missingAsZero:false,finalPublished:false};
 const parse=row=>row?JSON.parse(row.config):null;
@@ -48,22 +50,27 @@ export function createAcademics(ctx) {
  function subView(s,auth) {const p=JSON.parse(s.payload),attachments=submissionFiles(p),first=attachments[0];const visible=admin(auth)||Boolean(s.published),feedbackVisible=visible||Boolean(s.returned_at);const prior=accessModel?one('SELECT config,files FROM activity_versions WHERE activity_id=? AND revision=?',s.activity_id,s.revision):null;const versionConfig=prior?JSON.parse(prior.config):getActivity(s.activity_id),draft=admin(auth)?p.teacherGradeDraft:null;return {procedureSupport:p.procedureSupport||null,procedureNote:p.procedureNote||'',procedureReviewPending:!!p.procedureReviewPending,automaticPoints:admin(auth)?p.automaticPoints??null:undefined,questionFeedback:visible?versionConfig.questions.map(q=>({id:q.id,feedback:q.feedback||''})):[],instructionFiles:prior?files.publicFiles(JSON.parse(prior.files),`/api/academics/submissions/${s.id}/instructions`):[],id:s.id,activityId:s.activity_id,revision:s.revision,superseded:Boolean(s.superseded),previousActivity:admin(auth)&&prior?JSON.parse(prior.config):p.previousActivity||null,studentId:s.student_id,requestId:s.request_key,attempt:s.attempt,state:s.state==='graded'&&!visible?'submitted':s.state,text:p.text||'',url:p.url||'',answers:p.answers||{},files:files.publicFiles(attachments,`/api/academics/submissions/${s.id}/files`),fileName:first?.name||null,fileSize:first?.size||0,fileUrl:first?`/api/academics/submissions/${s.id}/file`:null,submittedAt:s.submitted_at,returnedAt:s.returned_at||null,returnDueAt:s.return_due_at||null,late:Boolean(s.late),points:visible?s.points:null,feedback:feedbackVisible?s.feedback:'',published:Boolean(s.published),version:s.version,updatedAt:s.updated_at,...(admin(auth)?{gradeDraft:!!draft,publishedPoints:s.published?s.points:null,publishedFeedback:s.published?s.feedback:'',...(draft?{points:draft.points,feedback:draft.feedback,state:['draft','returned'].includes(s.state)?s.state:draft.points===null||p.procedureReviewPending?'submitted':'graded'}:{})}:{})};}
  function rows(id,userId) {return all('SELECT * FROM submissions WHERE activity_id=? AND student_id=? AND superseded=0 ORDER BY attempt DESC,updated_at DESC',id,userId);}
  function studentDeadline(activity,userId,submission=undefined,at=now()) {const a=typeof activity==='string'?getActivity(activity):activity;return resolveActivityDeadline(a,extensions.get(a.id,userId),submission===undefined?rows(a.id,userId)[0]:submission,at);}
- function deadlineFields(activity,userId,submission=undefined) {const deadline=studentDeadline(activity,userId,submission);return {extension:deadline.extension,effectiveDueAt:deadline.dueAt,effectiveClosesAt:deadline.closesAt,deadline};}
- function studentActivitySummary(a,userId) {
-  const latest=rows(a.id,userId)[0],channels=a.responseSettings;
-  const responseState=latest?.state==='returned'||latest?.state==='draft'&&latest.returned_at?'returned':latest?.state==='draft'?'draft':latest?'submitted':'pending';
+ const automaticClosures=createAutomaticClosures({db,accessModel,studentDeadline,audit});
+ function reconcileClosures(options={}) {return automaticClosures.reconcile(options);}
+ function studentClosure(activity,userId,options={}) {const a=typeof activity==='string'||!activity.revision?getActivity(typeof activity==='string'?activity:activity.id):activity;return automaticClosures.get(a,userId,options);}
+ function deadlineFields(activity,userId,submission=undefined) {const deadline=studentDeadline(activity,userId,submission);return {extension:deadline.extension,effectiveDueAt:deadline.dueAt,effectiveClosesAt:deadline.closesAt,deadline,closure:studentClosure(activity,userId)};}
+ function studentActivitySummary(a,userId,preview=false) {
+  const latest=preview?null:rows(a.id,userId)[0],channels=a.responseSettings;
+  const fields=preview?{}:deadlineFields(a,userId,latest),closed=Boolean(fields.closure?.closed),delivered=['submitted','graded'].includes(latest?.state);
+  const responseState=closed?'missing':latest?.state==='returned'||latest?.state==='draft'&&latest.returned_at?'returned':latest?.state==='draft'?'draft':latest?'submitted':'pending';
   const activityFormat=a.kind==='quiz'?(a.questions.length&&a.questions.every(q=>q.type==='instruction')?'exercises':'quiz'):channels.files&&!channels.text&&!channels.link?'files':channels.text&&!channels.files&&!channels.link?'text':'task';
-  return {id:a.id,title:a.title,dueAt:a.dueAt,opensAt:a.opensAt,closesAt:a.closesAt,kind:a.kind,...deadlineFields(a,userId,latest),responseState,activityFormat,state:['submitted','graded'].includes(latest?.state)?'Entregada':'Pendiente'};
+  return {id:a.id,title:a.title,dueAt:a.dueAt,opensAt:a.opensAt,closesAt:a.closesAt,kind:a.kind,...fields,responseState,activityFormat,finalized:closed||delivered,state:closed?'Finalizada':delivered?'Entregada':'Pendiente'};
  }
  const gradeDraft=s=>JSON.parse(s.payload).teacherGradeDraft||null;
  const effectiveGrade=s=>{const draft=gradeDraft(s);return draft?{...s,points:draft.points,feedback:draft.feedback,published:0}:s;};
  function gradeRow(activities,userId,cfg,forAdmin) {
+  for(const courseId of new Set(activities.map(activity=>activity.courseId).filter(Boolean)))reconcileClosures({courseId,studentId:userId});
   const gradeRows=(id,uid)=>rows(id,uid).map(s=>forAdmin?effectiveGrade(s):s);
-  if(accessModel)return gradeCalculation(activities,userId,cfg,forAdmin,{rows:gradeRows,closed:a=>studentDeadline(a,userId).closed,override:(activityId,studentId)=>Boolean(one("SELECT exempt FROM grade_overrides WHERE activity_id=? AND student_id=?",activityId,studentId)?.exempt)});
+  if(accessModel)return gradeCalculation(activities,userId,cfg,forAdmin,{rows:gradeRows,closed:a=>studentDeadline(a,userId).closed,closure:a=>studentClosure(a,userId,{reconcile:false}),override:(activityId,studentId)=>Boolean(one("SELECT exempt FROM grade_overrides WHERE activity_id=? AND student_id=?",activityId,studentId)?.exempt)});
   let earned=0,gradedWeight=0,ready=true;
-  const cells=activities.map(a=>{const history=gradeRows(a.id,userId),latest=history[0],s=latest?.state==='draft'&&latest.returned_at?{...latest,state:'returned'}:history.find(r=>r.state!=='draft');const visible=s&&s.state!=='returned'&&s.points!==null&&(forAdmin||s.published);const zero=!s&&cfg.missingAsZero&&studentDeadline(a,userId,latest).closed;const released=s&&s.state!=='returned'&&s.points!==null&&s.published;
+  const cells=activities.map(a=>{const history=gradeRows(a.id,userId),latest=history[0],s=latest?.state==='draft'&&latest.returned_at?{...latest,state:'returned'}:history.find(r=>r.state!=='draft');const closure=studentClosure(a,userId,{reconcile:false}),automaticZero=!s&&Boolean(closure?.closed);const visible=s&&s.state!=='returned'&&s.points!==null&&(forAdmin||s.published);const zero=automaticZero||!s&&cfg.missingAsZero&&studentDeadline(a,userId,latest).closed;const released=s&&s.state!=='returned'&&s.points!==null&&s.published;
    if(a.weight>0){if(visible||zero){earned+=(zero?0:s.points/a.maxPoints)*a.weight;gradedWeight+=a.weight;}if(!released&&!zero)ready=false;}
-   return {activityId:a.id,title:a.title,weight:a.weight,maxPoints:a.maxPoints,submissionId:s?.id||null,points:visible?s.points:null,published:Boolean(s?.published),state:s?.state==='returned'?'returned':zero?'missing':!s?'pending':visible?'graded':'submitted',late:Boolean(s?.late)};});
+   return {activityId:a.id,title:a.title,weight:a.weight,maxPoints:a.maxPoints,submissionId:s?.id||null,points:automaticZero?0:visible?s.points:null,published:automaticZero||Boolean(s?.published),state:s?.state==='returned'?'returned':zero?'missing':!s?'pending':visible?'graded':'submitted',late:Boolean(s?.late),...(closure?{closure}:{})};});
   const weightTotal=rounded(activities.reduce((n,a)=>n+a.weight,0));const complete=ready&&Math.abs(weightTotal-100)<0.001;
   return {cells,weightTotal,gradedWeight:rounded(gradedWeight),provisional:gradedWeight?rounded(earned/gradedWeight*cfg.scaleMax):null,accumulated:rounded(earned/100*cfg.scaleMax),ready:complete,final:cfg.finalPublished&&complete?rounded(earned/100*cfg.scaleMax):null};
  }
@@ -90,7 +97,7 @@ export function createAcademics(ctx) {
   return c;
  }
  function checkWeights(courseId,c,id=null) {if(accessModel&&c.periodId&&!(settings(courseId).periods||[]).some(p=>p.id===c.periodId))fail(400,'Selecciona un corte existente.');const total=list(courseId).filter(a=>a.id!==id&&a.status==='published'&&(!accessModel||(a.periodId||'')===(c.periodId||''))).reduce((n,a)=>n+a.weight,0)+(c.status==='published'?c.weight:0);if(total>100.00001)fail(400,'Los porcentajes de actividades publicadas no pueden superar el 100 %.');}
- function checkWindow(a,userId,submission,at=now()){const deadline=studentDeadline(a,userId,submission,at);if(a.opensAt&&at<a.opensAt)fail(403,'La actividad todavía no está abierta.');if(deadline.closed)fail(403,deadline.source==='correction'?'El plazo de la corrección terminó. Pide a tu docente que lo amplíe.':'El plazo de la actividad terminó.');return deadline;}
+ function checkWindow(a,userId,submission,at=now(),{draftBackup=false}={}){const deadline=studentDeadline(a,userId,submission,at);if(a.opensAt&&at<a.opensAt)fail(403,'La actividad todavía no está abierta.');const backupOnly=Boolean(draftBackup&&deadline.closed&&studentClosure(a,userId,{reconcile:false})?.closed);if(deadline.closed&&!backupOnly)fail(403,deadline.source==='correction'?'El plazo de la corrección terminó. Pide a tu docente que lo amplíe.':'El plazo de la actividad terminó.');return {...deadline,backupOnly};}
  function checkAttemptTime(a,userId,at=now()){if(accessModel&&a.timeLimitMinutes>0){const start=one('SELECT started_at FROM attempt_starts WHERE activity_id=? AND student_id=? AND revision=?',a.id,userId,a.revision);if(!start)fail(409,'Abre la actividad para iniciar el tiempo del intento.');if(Date.parse(at)>=Date.parse(start.started_at)+a.timeLimitMinutes*60000)fail(403,'El tiempo de este intento terminó. Solicita una nueva oportunidad al docente.');}}
  function validateAnswers(a,input,final){if(!input||typeof input!=='object'||Array.isArray(input))fail(400,'Respuestas no válidas.');const out={};for(const q of a.questions){const v=input[q.id];if(q.type==='instruction')continue;if(['text','short','number'].includes(q.type)){const value=q.type==='number'&&typeof v==='number'?String(v):v;out[q.id]=text(value??'','Respuesta',q.type==='short'?500:q.type==='number'?200:10000,final);if(q.type==='number'&&final&&!isFiniteNumericAnswer(out[q.id]))fail(400,'Escribe una respuesta numérica finita; usa punto o coma para los decimales.');}else{const values=v??[];if(!Array.isArray(values)||values.some(n=>!Number.isInteger(n)||n<0||n>=q.options.length)||new Set(values).size!==values.length||(q.type==='single'&&values.length>1)||(final&&!values.length))fail(400,'Revisa las respuestas de selección.');out[q.id]=[...values].sort((x,y)=>x-y);}}return out;}
  function autoScore(a,answers){if(a.questions.some(q=>!['single','multiple'].includes(q.type)))return null;return rounded(a.questions.reduce((n,q)=>n+(JSON.stringify(q.correct)===JSON.stringify(answers[q.id])?q.points:0),0));}
@@ -143,7 +150,11 @@ export function createAcademics(ctx) {
  }
  function extensionStudentView(activity,student) {
   const latest=rows(activity.id,student.id)[0],extension=extensions.get(activity.id,student.id),deadline=studentDeadline(activity,student.id,latest);
-  return {id:student.id,name:student.name,document:student.document,submissionState:latest?.returned_at&&['returned','draft'].includes(latest.state)?'returned':latest?.state||'pending',extension,extensionVersion:extension?.version||0,deadline,effectiveDueAt:deadline.dueAt,effectiveClosesAt:deadline.closesAt};
+  return {id:student.id,name:student.name,document:student.document,submissionState:latest?.returned_at&&['returned','draft'].includes(latest.state)?'returned':latest?.state||'pending',extension,extensionVersion:extension?.version||0,deadline,effectiveDueAt:deadline.dueAt,effectiveClosesAt:deadline.closesAt,closure:studentClosure(activity,student.id)};
+ }
+ function activityClosures(activity) {
+  reconcileClosures({activityId:activity.id});
+  return all('SELECT c.student_id,u.name,u.document FROM activity_auto_closures c JOIN users u ON u.id=c.student_id WHERE c.activity_id=? AND c.revision=? AND c.active=1 ORDER BY u.name,u.id',activity.id,activity.revision).map(student=>({studentId:student.student_id,name:student.name,document:student.document,closure:studentClosure(activity,student.student_id,{reconcile:false})}));
  }
  async function handler(req,res,path,method,auth){
   if(!path.startsWith('/api/academics/'))return false;
@@ -153,12 +164,12 @@ export function createAcademics(ctx) {
   if(path==='/api/academics/courses'&&method==='GET'){
    if(admin(auth))return send(all('SELECT id,title FROM courses ORDER BY title').filter(c=>!accessModel||accessModel.p.can(auth.user.id,c.id,'view')).map(c=>({...c,pending:one("SELECT COUNT(*) n FROM submissions s JOIN activities a ON a.id=s.activity_id WHERE a.course_id=? AND s.superseded=0 AND (s.state='submitted' OR (s.state='graded' AND s.published=0) OR json_type(s.payload,'$.teacherGradeDraft')='object')",c.id).n})));
    requireStudent(auth);if(auth.assurance!=='password')fail(403,'Ingresa con contraseña para ver tus actividades y notas.','PASSWORD_REQUIRED');
-   const courses=all('SELECT id,title,published FROM courses WHERE published=1').filter(c=>isEnrolled(auth.user.id,c.id));
-   return send(courses.map(c=>({id:c.id,title:c.title,activities:list(c.id).filter(released).map(a=>studentActivitySummary(a,auth.user.id))})));
+   const courses=all('SELECT id,title,published FROM courses WHERE published=1').filter(c=>auth.preview?c.id===auth.preview:isEnrolled(auth.user.id,c.id));
+   return send(courses.map(c=>({id:c.id,title:c.title,activities:list(c.id).filter(released).map(a=>studentActivitySummary(a,auth.user.id,Boolean(auth.preview)))})));
   }
   match=/^\/api\/academics\/courses\/([^/]+)(?:\/(activities|settings|gradebook|release))?$/.exec(path);
   if(match){const [,id,section]=match;const c=access(id,auth);
-   if(!section&&method==='GET'){const acts=list(id).filter(a=>admin(auth)||released(a));const cfg=settings(id);const grade=!admin(auth)?gradeRow(list(id).filter(a=>a.status==='published'),auth.user.id,cfg,false):null;if(grade)grade.cells=grade.cells.filter(cell=>acts.some(a=>a.id===cell.activityId));return send({course:{id:c.id,title:c.title},settings:cfg,activities:acts.map(a=>({...view(a,auth),mine:!admin(auth)?rows(a.id,auth.user.id).map(s=>subView(s,auth)):undefined})),grade});}
+   if(!section&&method==='GET'){const acts=list(id).filter(a=>admin(auth)||released(a));const cfg=settings(id);const grade=!admin(auth)&&!auth.preview?gradeRow(list(id).filter(a=>a.status==='published'),auth.user.id,cfg,false):null;if(grade)grade.cells=grade.cells.filter(cell=>acts.some(a=>a.id===cell.activityId));return send({course:{id:c.id,title:c.title},settings:cfg,activities:acts.map(a=>({...view(a,auth),mine:!admin(auth)?auth.preview?[]:rows(a.id,auth.user.id).map(s=>subView(s,auth)):undefined})),grade});}
    requireAdmin(auth);
    if(section==='release'&&method==='POST'){await readJson(req);auth=readSession(req);requireAdmin(auth);access(id,auth);const result=releaseMany(list(id).filter(a=>a.status==='published'),auth);return send(result);}
    if(section==='activities'&&method==='POST'){const b=await readJson(req,29*1024*1024);auth=readSession(req);requireAdmin(auth);access(id,auth);const a=config(b);checkWeights(id,a);let moduleId=b.moduleId||null;if(moduleId&&!one('SELECT id FROM modules WHERE id=? AND course_id=?',moduleId,id))fail(400,'Capítulo no válido.');const aid=randomUUID(),plan=files.prepare([],b.attachments,b.retainAttachmentIds,{teacher:true});storage?.assertUpload({userId:auth.user.id,courseId:id,added:plan.added});saveActivityFiles(plan,aid,()=>{run('INSERT INTO activities(id,course_id,module_id,config,created_at) VALUES (?,?,?,?,?)',aid,id,moduleId,JSON.stringify(a),now());invalidate(id);audit(auth.user,'activity.create',aid);});return send(view(getActivity(aid),auth),201);}
@@ -177,11 +188,12 @@ export function createAcademics(ctx) {
    if(studentId&&['PUT','DELETE'].includes(method)){
     const body=await readJson(req);auth=readSession(req);activity=extensionActivity(id,auth);const student=extensionStudent(activity,studentId),at=now();let extension,timerReset=false;
     db.exec('BEGIN IMMEDIATE');try{
+     reconcileClosures({activityId:id,studentId,at});
      extension=method==='PUT'?extensions.grant(activity,studentId,body.dueAt,body.version,auth.user.id,at):extensions.revoke(id,studentId,body.version,auth.user.id,at);
      if(method==='PUT'&&accessModel&&activity.timeLimitMinutes>0){const latest=rows(id,studentId)[0],start=one('SELECT started_at FROM attempt_starts WHERE activity_id=? AND student_id=? AND revision=?',id,studentId,activity.revision);if(start&&(!latest||['draft','returned'].includes(latest.state))&&Date.parse(at)>=Date.parse(start.started_at)+activity.timeLimitMinutes*60000){run('DELETE FROM attempt_starts WHERE activity_id=? AND student_id=? AND revision=?',id,studentId,activity.revision);timerReset=true;}}
-     audit(auth.user,method==='PUT'?'activity.extension.grant':'activity.extension.revoke',id,{studentId,dueAt:extension.dueAt,version:extension.version,timerReset});db.exec('COMMIT');
+     reconcileClosures({activityId:id,studentId,at});audit(auth.user,method==='PUT'?'activity.extension.grant':'activity.extension.revoke',id,{studentId,dueAt:extension.dueAt,version:extension.version,timerReset});db.exec('COMMIT');
     }catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}
-    const result=extensionStudentView(activity,student);return send({studentId,extension,extensionVersion:extension.version,deadline:result.deadline,effectiveDueAt:result.effectiveDueAt,effectiveClosesAt:result.effectiveClosesAt,timerReset,serverNow:now()});
+    const result=extensionStudentView(activity,student);return send({studentId,extension,extensionVersion:extension.version,deadline:result.deadline,effectiveDueAt:result.effectiveDueAt,effectiveClosesAt:result.effectiveClosesAt,closure:result.closure,submissionState:result.submissionState,timerReset,serverNow:now()});
    }
    fail(404,'Función de plazos individuales no encontrada.');
   }
@@ -196,7 +208,7 @@ export function createAcademics(ctx) {
     let deadline=null;
     if(accessModel&&!admin(auth)&&!auth.preview&&a.timeLimitMinutes>0&&(!a.opensAt||a.opensAt<=now())&&!studentDeadline(a,auth.user.id).closed){run('INSERT OR IGNORE INTO attempt_starts VALUES(?,?,?,?)',id,auth.user.id,a.revision,now());const start=one('SELECT started_at FROM attempt_starts WHERE activity_id=? AND student_id=? AND revision=?',id,auth.user.id,a.revision);deadline=new Date(Date.parse(start.started_at)+a.timeLimitMinutes*60000).toISOString();}
     const data={deadline,activity:view(a,auth),course:one('SELECT id,title FROM courses WHERE id=?',a.courseId)};
-    if(!admin(auth)){data.mine=rows(id,auth.user.id).map(s=>subView(s,auth));data.previous=all('SELECT * FROM submissions WHERE activity_id=? AND student_id=? AND superseded=1 ORDER BY revision DESC,attempt DESC',id,auth.user.id).map(s=>subView(s,auth));}
+    if(!admin(auth)){data.mine=auth.preview?[]:rows(id,auth.user.id).map(s=>subView(s,auth));data.previous=auth.preview?[]:all('SELECT * FROM submissions WHERE activity_id=? AND student_id=? AND superseded=1 ORDER BY revision DESC,attempt DESC',id,auth.user.id).map(s=>subView(s,auth));}
     return send(data);
    }
    if(!section&&method==='DELETE'){
@@ -228,12 +240,13 @@ export function createAcademics(ctx) {
     });return send({...view(getActivity(id),auth),resubmissionRequired:reset,reopened});
    }
    if(section==='release'&&method==='POST'){requireAdmin(auth);const b=await readJson(req);auth=readSession(req);requireAdmin(auth);a=checkActivity(id,auth);if(a.status!=='published')fail(409,'Publica la actividad antes de devolver las notas.');return send(releaseMany([a],auth,b.submissions));}
-   if(section==='submissions'&&method==='GET'){requireAdmin(auth);return send({activity:view(a,auth),submissions:all("SELECT s.*,u.name,u.document FROM submissions s JOIN users u ON u.id=s.student_id WHERE activity_id=? ORDER BY s.superseded,s.revision DESC,s.attempt DESC,s.updated_at DESC",id).map(s=>({...subView(s,auth),name:s.name,document:s.document}))});}
+   if(section==='submissions'&&method==='GET'){requireAdmin(auth);return send({activity:view(a,auth),submissions:all("SELECT s.*,u.name,u.document FROM submissions s JOIN users u ON u.id=s.student_id WHERE activity_id=? ORDER BY s.superseded,s.revision DESC,s.attempt DESC,s.updated_at DESC",id).map(s=>({...subView(s,auth),name:s.name,document:s.document})),closures:activityClosures(a)});}
    if(section==='submit'&&method==='POST'){
     requireStudent(auth);const b=await readJson(req,29*1024*1024);auth=readSession(req);requireStudent(auth);a=checkActivity(id,auth);const key=text(b.requestId,'Identificador de entrega',80,true);if(!/^[\w-]{8,80}$/.test(key))fail(400,'Identificador de entrega no válido.');if(!['draft','submit'].includes(b.action))fail(400,'Acción no válida.');
     if((b.activityRevision??1)!==a.revision)fail(409,'La actividad fue actualizada. Recarga para responder la nueva versión.');
-    const previous=one('SELECT * FROM submissions WHERE activity_id=? AND student_id=? AND request_key=?',id,auth.user.id,key);if(previous?.superseded)fail(409,'Esta entrega pertenece a una versión anterior. Recarga la actividad.');if(previous&&!['draft','returned'].includes(previous.state))return send(subView(previous,auth));const pendingReturn=one("SELECT request_key FROM submissions WHERE activity_id=? AND student_id=? AND superseded=0 AND returned_at IS NOT NULL AND state IN ('returned','draft')",id,auth.user.id);if(pendingReturn&&pendingReturn.request_key!==key)fail(409,'Continúa la entrega devuelta; no crees otro intento.');checkWindow(a,auth.user.id,previous);
-    checkAttemptTime(a,auth.user.id);
+    reconcileClosures({activityId:id,studentId:auth.user.id});
+    const previous=one('SELECT * FROM submissions WHERE activity_id=? AND student_id=? AND request_key=?',id,auth.user.id,key);if(previous?.superseded)fail(409,'Esta entrega pertenece a una versión anterior. Recarga la actividad.');if(previous&&!['draft','returned'].includes(previous.state))return send(subView(previous,auth));const pendingReturn=one("SELECT request_key FROM submissions WHERE activity_id=? AND student_id=? AND superseded=0 AND returned_at IS NOT NULL AND state IN ('returned','draft')",id,auth.user.id);if(pendingReturn&&pendingReturn.request_key!==key)fail(409,'Continúa la entrega devuelta; no crees otro intento.');const initialWindow=checkWindow(a,auth.user.id,previous,now(),{draftBackup:b.action==='draft'});
+    if(!initialWindow.backupOnly)checkAttemptTime(a,auth.user.id);
     if(previous&&b.version!==previous.version)fail(409,'Tu borrador cambió en otra pestaña. Recarga antes de guardar.');
     const history=rows(id,auth.user.id);if(!previous?.returned_at&&history.filter(s=>!['draft','returned'].includes(s.state)&&(!accessModel||a.repeatPolicy!=='optional'||s.revision===a.revision)).length>=a.maxAttempts)fail(403,'Alcanzaste el máximo de entregas o intentos.');if(!previous&&history.some(s=>s.state==='draft'))fail(409,'Ya tienes un borrador. Recarga y continúa ese borrador.');
     const payload={text:text(b.text??'','Respuesta',20000),url:text(b.url??'','Enlace',2048),answers:a.kind==='quiz'?validateAnswers(a,b.answers===undefined?{}:b.answers,b.action==='submit'):{}};
@@ -261,13 +274,13 @@ export function createAcademics(ctx) {
      auth=readSession(req);requireStudent(auth);a=checkActivity(id,auth);const at=now(),currentPrevious=previous?one('SELECT * FROM submissions WHERE id=?',previous.id):null;
      if((b.activityRevision??1)!==a.revision||currentPrevious?.superseded)fail(409,'La actividad fue actualizada. Recarga para responder la nueva versión.');
      if(previous&&(!currentPrevious||currentPrevious.version!==b.version))fail(409,'Tu borrador cambió en otra pestaña. Recarga antes de guardar.');
-     const deadline=checkWindow(a,auth.user.id,currentPrevious,at);checkAttemptTime(a,auth.user.id,at);
+     reconcileClosures({activityId:id,studentId:auth.user.id,at});const deadline=checkWindow(a,auth.user.id,currentPrevious,at,{draftBackup:b.action==='draft'});if(!deadline.backupOnly)checkAttemptTime(a,auth.user.id,at);
      const late=Number(final&&deadline.source!=='correction'&&deadline.dueAt&&at>deadline.dueAt)||0;
      if(previous)run('UPDATE submissions SET payload=?,state=?,submitted_at=?,late=?,points=?,published=0,feedback=CASE WHEN ? THEN \'\' ELSE feedback END,returned_at=CASE WHEN ? THEN NULL ELSE returned_at END,return_due_at=CASE WHEN ? THEN NULL ELSE return_due_at END,revision=?,version=version+1,updated_at=? WHERE id=?',JSON.stringify(payload),final?(points===null||payload.procedureReviewPending?'submitted':'graded'):'draft',final?at:previous.submitted_at,late,points,Number(final),Number(final),Number(final),a.revision,now(),sid);
      else run('INSERT INTO submissions(id,activity_id,student_id,request_key,attempt,state,payload,submitted_at,late,points,updated_at,revision) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',sid,id,auth.user.id,key,attempt,final?(points===null||payload.procedureReviewPending?'submitted':'graded'):'draft',JSON.stringify(payload),final?at:null,late,points,at,a.revision);
-     if(final){if(accessModel)run('DELETE FROM attempt_starts WHERE activity_id=? AND student_id=? AND revision=?',id,auth.user.id,a.revision);invalidate(a.courseId);audit(auth.user,'submission.submit',sid);}else if(accessModel&&!previous)audit(auth.user,'submission.start',sid);db.exec('COMMIT');
+     if(final){if(accessModel)run('DELETE FROM attempt_starts WHERE activity_id=? AND student_id=? AND revision=?',id,auth.user.id,a.revision);reconcileClosures({activityId:id,studentId:auth.user.id,at});invalidate(a.courseId);audit(auth.user,'submission.submit',sid);}else if(accessModel&&!previous)audit(auth.user,'submission.start',sid);db.exec('COMMIT');
     }catch(e){if(db.isTransaction)db.exec('ROLLBACK');plan.added.forEach(files.remove);throw e;}
-    plan.removed.forEach(files.remove);return send(subView(one('SELECT * FROM submissions WHERE id=?',sid),auth),201);
+    plan.removed.forEach(files.remove);return send({...subView(one('SELECT * FROM submissions WHERE id=?',sid),auth),closure:studentClosure(a,auth.user.id,{reconcile:false})},201);
    }
   }
   match=/^\/api\/academics\/submissions\/([^/]+)\/(grade|release|return|file|files|instructions)(?:\/([^/]+))?$/.exec(path);
@@ -298,5 +311,5 @@ export function createAcademics(ctx) {
   }
   fail(404,'Función académica no encontrada.');
  }
- return {handler,settings,list,gradeRow,invalidate,studentDeadline,courseFiles:files.courseFiles};
+ return {handler,settings,list,gradeRow,invalidate,studentDeadline,studentClosure,reconcileClosures,courseFiles:files.courseFiles};
 }

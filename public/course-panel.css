@@ -98,4 +98,6 @@
 .course-study-status:has(.course-chapter-status-explanation){flex-wrap:wrap;column-gap:16px;row-gap:5px}
 .course-chapter-status-explanation[open]{flex-basis:100%;text-align:left}
 .course-chapter-status-explanation p{position:static;width:auto;max-width:100%;margin:7px 0 0;box-shadow:none}
+.course-item-state.missing{color:#963e38}.course-item-icon.missing{background:#fff3ef;border-color:#efd6d0;color:#b16e61}
+.course-progress-detail .course-closure-count{font-size:9px;line-height:1.4;color:#966056}
 @media(max-width:580px){.course-study .course-chapter[data-chapter-state]>summary.module-head{min-height:62px;padding:9px 10px;gap:7px}.course-chapter[data-chapter-state] .module-title{gap:7px;flex:1}.course-chapter-heading{gap:3px}.course-chapter-status{font-size:10px;gap:4px}.course-chapter-status-count{font-size:9px}.course-chapter[data-chapter-state] .course-chapter-tail{gap:5px}.course-chapter[data-chapter-state] .course-chapter-meter{width:20px}.course-chapter-status-note{padding:8px 10px;font-size:10px}}

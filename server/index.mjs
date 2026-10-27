@@ -225,16 +225,18 @@ export async function createApp(options = {}) {
   function courseActivitySummaries(course,auth,modules,teacher=false) {
     const activities=query('SELECT id,module_id,config FROM activities WHERE course_id=? ORDER BY created_at,id',course.id);
     const personal=!teacher&&!auth?.preview&&auth?.assurance==='password'&&isEnrolled(auth.user.id,course.id);
+    if(personal)academics.reconcileClosures({courseId:course.id,studentId:auth.user.id});
     const grading=personal?academics.settings(course.id):null;
     const grades=new Map(personal?academics.gradeRow(academics.list(course.id).filter(activity=>activity.status==='published'),auth.user.id,grading,false).cells.map(cell=>[cell.activityId,cell]):[]);
     return sortCourseActivities(activities,modules,courseChapterOrder(course)).flatMap(row=>{
       const a=JSON.parse(row.config);
       if(!teacher&&(a.status!=='published'||row.module_id&&!modules.some(module=>module.id===row.module_id)))return [];
       const latest=personal?one('SELECT id,state,returned_at,return_due_at FROM submissions WHERE activity_id=? AND student_id=? AND superseded=0 ORDER BY attempt DESC,updated_at DESC LIMIT 1',row.id,auth.user.id):null;
-      const submitted=Boolean(latest&&!['draft','returned'].includes(latest.state));
-      const responseState=latest?.state==='draft'&&latest.returned_at?'returned':latest?.state||null;
+      const closure=personal?academics.studentClosure(row.id,auth.user.id,{reconcile:false}):null;
+      const submitted=Boolean(latest&&['submitted','graded'].includes(latest.state));
+      const responseState=closure?.closed?'missing':latest?.state==='draft'&&latest.returned_at?'returned':latest?.state||null;
       const deadline=personal?academics.studentDeadline({...a,id:row.id},auth.user.id,latest):null;
-      return [{id:row.id,moduleId:row.module_id,title:a.title,kind:a.kind,status:a.status,weight:a.weight,dueAt:a.dueAt,opensAt:a.opensAt,closesAt:a.closesAt,allowLate:a.allowLate,submitted,responseState,returnedAt:latest?.returned_at||null,returnDueAt:latest?.return_due_at||null,...(personal?{outcome:activityOutcome(latest,grades.get(row.id),grading)}:{}),...(deadline?{deadline,extension:deadline.extension,effectiveDueAt:deadline.dueAt,effectiveClosesAt:deadline.closesAt}:{})}];
+      return [{id:row.id,moduleId:row.module_id,title:a.title,kind:a.kind,status:a.status,weight:a.weight,dueAt:a.dueAt,opensAt:a.opensAt,closesAt:a.closesAt,allowLate:a.allowLate,submitted,responseState,returnedAt:latest?.returned_at||null,returnDueAt:latest?.return_due_at||null,...(personal?{closure,outcome:activityOutcome(latest,grades.get(row.id),grading)}:{}),...(deadline?{deadline,extension:deadline.extension,effectiveDueAt:deadline.dueAt,effectiveClosesAt:deadline.closesAt}:{})}];
     });
   }
   function courseView(course, auth, details = false) {
@@ -250,8 +252,8 @@ export async function createApp(options = {}) {
     if (details) result.modules = modules.map(module => ({ id:module.id, courseId:module.course_id, title:module.title, position:module.position, published:Boolean(module.published), resources:resources.filter(r => r.module_id === module.id).map(resourceView) }));
     if (details) {
       const teacher = auth?.user.role === 'admin' && auth.assurance === 'password';
-      // Course listings expose metadata and the owner's public outcome label,
-      // never questions, answer keys or private/numeric grading data.
+      // Course listings expose metadata, the owner's outcome label and explicit
+      // automatic closures, never questions, answer keys or private grades.
       result.activities = !result.locked && (teacher || result.enrolled) ? courseActivitySummaries(course,auth,modules,teacher) : [];
     }
     if (details) result.quickResources = result.locked ? [] : quickResources.list(course.id, auth);
@@ -478,6 +480,10 @@ export async function createApp(options = {}) {
   const questionImport=accessModel?createQuestionImport({accessModel,fail,json,readJson,readSession}):null;
   const notifications=accessModel?createNotifications({db,accessModel,fail,json,readJson,readSession,isEnrolled,audit,appOrigin,pushSend:options.notificationPushSend,notifyUsers:realtime.notifyUsers,finalGradeAvailable:(courseId,studentId)=>academics.gradeRow(academics.list(courseId).filter(activity=>activity.status==='published'),studentId,academics.settings(courseId),false).final!==null}):null;
   const flushNotifications=()=>{void notifications?.flush().catch(()=>console.error('No se pudo procesar la cola de avisos.'));};
+  const reconcileActivityClosures=()=>{
+    try{academics.reconcileClosures();flushNotifications();}
+    catch{console.error('No se pudieron actualizar los cierres de actividades.');}
+  };
   const handler = async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
@@ -959,10 +965,14 @@ export async function createApp(options = {}) {
   server.requestTimeout = 60000;
   server.headersTimeout = 15000;
   server.keepAliveTimeout = 5000;
-  let notificationTimer;
-  server.once('listening',()=>{if(notifications){flushNotifications();notificationTimer=setInterval(flushNotifications,15000);notificationTimer.unref();}});
+  let notificationTimer,activityClosureTimer;
+  server.once('listening',()=>{
+    reconcileActivityClosures();
+    activityClosureTimer=setInterval(reconcileActivityClosures,options.activityClosureIntervalMs||15000);activityClosureTimer.unref();
+    if(notifications){flushNotifications();notificationTimer=setInterval(flushNotifications,15000);notificationTimer.unref();}
+  });
   const closeServer=server.close.bind(server);server.close=(...args)=>{realtime?.stop();chat?.stop();return closeServer(...args);};
-  server.on('close', () => {clearInterval(notificationTimer);notifications?.stop();db.close();});
+  server.on('close', () => {clearInterval(notificationTimer);clearInterval(activityClosureTimer);notifications?.stop();db.close();});
   return { server, db, dataDir, notifications, realtime };
 }
 

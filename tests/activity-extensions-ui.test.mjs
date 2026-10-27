@@ -46,9 +46,9 @@ test('opening the manager only reads the roster, including students who have nev
  assert.deepEqual(calls,[{path:'/academics/activities/task/extensions',request:undefined}]);
 });
 
-test('save and revoke use optimistic versions and never change global dates, other students or submission state',async()=>{
+test('save and revoke use optimistic versions and preserve global dates, other students and the server submission state',async()=>{
  const original=report(),calls=[];
- const manager=createActivityExtensionManager({api:async(path,request)=>{calls.push({path,request});return {studentId:'student',extension:{active:request.method==='PUT',dueAt:null,version:calls.length,revokedAt:request.method==='DELETE'?now:null},extensionVersion:calls.length,submissionState:'graded',serverNow:now};}});
+ const manager=createActivityExtensionManager({api:async(path,request)=>{calls.push({path,request});return {studentId:'student',extension:{active:request.method==='PUT',dueAt:null,version:calls.length,revokedAt:request.method==='DELETE'?now:null},extensionVersion:calls.length,submissionState:'pending',serverNow:now};}});
  const saved=await manager.save(original,'student',null);
  assert.deepEqual(calls[0],{path:'/academics/activities/task/extensions/student',request:{method:'PUT',body:{version:0,dueAt:null}}});
  assert.equal(saved.students[0].submissionState,'pending');assert.equal(saved.students[1],original.students[1]);assert.equal(saved.activity,original.activity);assert.equal(original.students[0].extension,null);

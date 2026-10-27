@@ -27,6 +27,14 @@ export function activityCompleted(activity) {
   return activity?.submitted===true||activity?.state==='Entregada'||activity?.state==='submitted'||activity?.state==='graded';
 }
 
+const activityExempt=activity=>activity?.outcome?.state==='exempt'||activity?.exempt===true||activity?.state==='exempt';
+// Finalization only chooses what to continue next. It is neither a delivery nor
+// a satisfactory learning result, and an old "missing" label is not evidence of
+// a durable automatic closure.
+export function activityFinalized(activity) {
+  return activityCompleted(activity)||activityExempt(activity)||activity?.closure?.closed===true;
+}
+
 // The input must come from the authorized course DTO. Scheduled publications
 // already visible in that DTO remain requirements, even before they can be sent.
 export function summarizeCourseLearning(resources=[],activities=[],progress=[],{now=Date.now()}={}) {
@@ -35,8 +43,10 @@ export function summarizeCourseLearning(resources=[],activities=[],progress=[],{
   const materials=summarizeLearning(visibleResources,progress),at=typeof now==='number'?now:Date.parse(now);
   const scheduled=item=>Boolean(item.opensAt&&Number.isFinite(Date.parse(item.opensAt))&&Date.parse(item.opensAt)>at);
   const pending=visibleActivities.filter(item=>!activityCompleted(item));
+  const openPending=visibleActivities.filter(item=>!activityFinalized(item));
   const actionable=pending.filter(item=>!scheduled(item));
   const future=pending.filter(scheduled);
+  const continueActivity=openPending.find(item=>!scheduled(item))||openPending[0]||null;
   const tasks=visibleActivities.filter(item=>item.kind!=='quiz'),quizzes=visibleActivities.filter(item=>item.kind==='quiz');
   const activitySummary={
     total:visibleActivities.length,completed:visibleActivities.length-pending.length,pending:pending.length,
@@ -44,11 +54,17 @@ export function summarizeCourseLearning(resources=[],activities=[],progress=[],{
     quizzesTotal:quizzes.length,quizzesCompleted:quizzes.filter(activityCompleted).length,
     returned:pending.filter(item=>item.responseState==='returned').length,
     inProgress:pending.filter(item=>item.responseState==='draft').length,
-    scheduled:future.length,next:actionable[0]||future[0]||null
+    scheduled:future.length,next:actionable[0]||future[0]||null,
+    finalized:visibleActivities.length-openPending.length,openPending:openPending.length,
+    closedMissing:visibleActivities.filter(item=>item.closure?.closed===true&&!activityCompleted(item)&&!activityExempt(item)).length,
+    exempt:visibleActivities.filter(activityExempt).length,continueNext:continueActivity
   };
+  activitySummary.missing=activitySummary.closedMissing;
   const total=materials.total+activitySummary.total,completed=materials.completed+activitySummary.completed;
   const next=materials.next?{type:'resource',item:materials.next}:activitySummary.next?{type:'activity',item:activitySummary.next,scheduled:scheduled(activitySummary.next)}:null;
+  const continueNext=materials.next?{type:'resource',item:materials.next}:continueActivity?{type:'activity',item:continueActivity,scheduled:scheduled(continueActivity)}:null;
   return {total,completed,pending:total-completed,percent:completionPercent(completed,total),materials,activities:activitySummary,next,
+    finalized:materials.completed+activitySummary.finalized,openPending:materials.pending+activitySummary.openPending,continueNext,
     materialsTotal:materials.total,materialsCompleted:materials.completed,
     activitiesTotal:activitySummary.total,activitiesCompleted:activitySummary.completed,
     tasksTotal:activitySummary.tasksTotal,tasksCompleted:activitySummary.tasksCompleted,

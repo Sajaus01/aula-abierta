@@ -137,6 +137,19 @@ export function setupNotifications(db){
  UPDATE notification_events SET cancelled=1 WHERE object_type='extension' AND object_id=NEW.id; END;
  CREATE TRIGGER IF NOT EXISTS notification_extension_parent_hide AFTER UPDATE ON modules WHEN NEW.published=0 BEGIN
  UPDATE notification_events SET cancelled=1 WHERE object_type='extension' AND object_id IN(SELECT id FROM activities WHERE module_id=NEW.id); END;`);
+ if(db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='activity_auto_closure_history'").get()){
+  const cancelClosures=`UPDATE notification_events SET cancelled=1 WHERE object_type='closure' AND object_id IN
+   (SELECT CAST(id AS TEXT) FROM activity_auto_closure_history WHERE activity_id=NEW.activity_id AND student_id=NEW.student_id);`;
+  db.exec(`CREATE TRIGGER IF NOT EXISTS notification_auto_closure AFTER INSERT ON activity_auto_closure_history
+   WHEN NEW.state='closed' BEGIN
+   ${cancelClosures}
+   INSERT INTO notification_events(course_id,kind,object_type,object_id,student_id,title,body,created_at,source_version)
+   SELECT a.course_id,'missing','closure',CAST(NEW.id AS TEXT),NEW.student_id,'Actividad vencida sin entrega',
+   'Terminó el plazo de «'||COALESCE(json_extract(a.config,'$.title'),'la actividad')||'». Se registró 0 automático por falta de entrega. Puedes continuar con el curso.',NEW.created_at,NEW.version
+   FROM activities a JOIN courses c ON c.id=a.course_id WHERE a.id=NEW.activity_id AND c.entity_kind='group'; END;
+   CREATE TRIGGER IF NOT EXISTS notification_auto_reopen AFTER INSERT ON activity_auto_closure_history
+   WHEN NEW.state='reopened' BEGIN ${cancelClosures} END;`);
+ }
 }
 
 export function validPushSubscription(value){
@@ -182,6 +195,11 @@ export function createNotifications(ctx){
     const latest=one('SELECT state,returned_at FROM submissions WHERE activity_id=? AND student_id=? AND superseded=0 ORDER BY attempt DESC,updated_at DESC LIMIT 1',event.object_id,event.student_id);
     return !(latest?.returned_at&&['draft','returned'].includes(latest.state)&&latest.returned_at>row.updated_at);
    }
+   case 'closure':{const row=one(`SELECT h.state,h.version,h.revision,c.active,c.version current_version,a.revision current_revision,a.config,a.module_id
+    FROM activity_auto_closure_history h JOIN activity_auto_closures c ON c.activity_id=h.activity_id AND c.student_id=h.student_id AND c.revision=h.revision
+    JOIN activities a ON a.id=h.activity_id WHERE h.id=? AND h.student_id=? AND a.course_id=?`,event.object_id,event.student_id,event.course_id);
+    return Boolean(row&&row.state==='closed'&&row.active&&row.version===event.source_version&&row.version===row.current_version&&row.revision===row.current_revision&&activityVisible(row,time));
+   }
    case 'quick':return Boolean(one('SELECT id FROM quick_resources WHERE id=? AND course_id=? AND visible=1',event.object_id,event.course_id));
    case 'announcement':return Boolean(one('SELECT id FROM notification_announcements WHERE id=? AND course_id=?',event.object_id,event.course_id));
    case 'final':return Boolean(parse(one('SELECT config FROM grading_settings WHERE course_id=?',event.course_id)?.config).finalPublished)&&(!recipientId||!ctx.finalGradeAvailable||ctx.finalGradeAvailable(event.course_id,recipientId));
@@ -191,6 +209,7 @@ export function createNotifications(ctx){
  }
  function href(event){const course=encodeURIComponent(event.course_id),id=encodeURIComponent(event.object_id);
   if(event.object_type==='activity'||event.object_type==='extension')return '#actividad/'+id;
+  if(event.object_type==='closure'){const row=one('SELECT activity_id FROM activity_auto_closure_history WHERE id=?',event.object_id);return row?'#actividad/'+encodeURIComponent(row.activity_id):'#curso/'+course;}
   if(event.object_type==='submission'){const s=one('SELECT activity_id FROM submissions WHERE id=?',event.object_id);return s?'#actividad/'+encodeURIComponent(s.activity_id):'#curso/'+course;}
   if(event.object_type==='resource')return '#curso/'+course+'?resource='+id;
   if(event.object_type==='module')return '#curso/'+course+'?module='+id;

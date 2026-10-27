@@ -14,7 +14,7 @@ import {createPlatformUI} from './platform.js';
 import { createQuickResourcesUI } from './quick-resources.js';
 import { createAcademicUI } from './academics.js';
 import { escapeHtml as e, safeUrl, videoEmbed, parseStudentsCsv } from './lib.js';
-import { materialStatus, summarizeLearning, quickGuide } from './learning.js';
+import { materialStatus, summarizeLearning, activityFinalized, quickGuide } from './learning.js';
 import { enrollmentPreview, enrollmentResultLabel } from './enrollment-import.js';
 
 import {icon,button as btn,navigationItems,courseEntryActions,manageableGroups,enhanceUI,observeUI,toggleNavigation} from './ui.js';
@@ -121,13 +121,13 @@ function progressBar(percent,label) {return `<div class="progress-track" role="p
 function contactTeacher() {return state.settings.contactEmail?`<a class="text-button" href="mailto:${e(state.settings.contactEmail)}">${icon('mail')} Contactar a mi docente</a>`:'Si necesitas ayuda con un curso, comunícate con tu docente.';}
 function studentCourseCard(c) {
  const learning=state.learning.courses.find(x=>x.courseId===c.id),overall=learning?.overall,total=overall?.total??learning?.total??c.resourceCount??0,done=overall?.completed??learning?.completed??0,percent=overall?.percent??(total?done===total?100:Math.min(99,Math.round(done/total*100)):0),materials=overall?.materialsTotal??learning?.total??c.resourceCount??0,activities=overall?.activitiesTotal??0;
- return `<article class="course-card learning-course-card"><div class="course-cover">${safeUrl(c.coverUrl)?`<img src="${e(safeUrl(c.coverUrl))}" alt="" loading="lazy">`:icon('book')}</div><div class="course-body"><span class="badge ${c.locked?'gray':'green'}">${c.locked?'Acceso requerido':c.enrolled?'Matriculado':'Curso abierto'}</span><h3><a href="#curso/${e(c.id)}">${e(c.title)}</a></h3>${c.entityKind?`<p class="field-hint">${c.entityKind==='template'?'Curso plantilla':`Grupo ${e(c.groupCode)} · ${e(c.cohort)}`}</p>`:''}<p>${e(c.description||'Tus materiales y actividades en un solo lugar.')}</p><div class="course-meta"><span>${icon('folder')}${c.moduleCount??c.modules?.length??0} capítulos</span><span>${icon('file')}${materials} materiales${activities?' · '+activities+' actividades':''}</span></div>${!c.locked&&total?`<div class="learning-card-progress"><div class="flex between"><strong>${percent}% de avance</strong><small>${done} de ${total} elementos</small></div>${progressBar(percent,`Avance en ${c.title}`)}<small>${Math.max(0,total-done)} pendientes${overall?' · Materiales y actividades':''}</small></div>`:!c.locked?'<p class="field-hint">Tu docente está preparando el contenido.</p>':''}<div class="course-actions">${courseEntryActions(c,learning)}</div></div></article>`;
+ return `<article class="course-card learning-course-card"><div class="course-cover">${safeUrl(c.coverUrl)?`<img src="${e(safeUrl(c.coverUrl))}" alt="" loading="lazy">`:icon('book')}</div><div class="course-body"><span class="badge ${c.locked?'gray':'green'}">${c.locked?'Acceso requerido':c.enrolled?'Matriculado':'Curso abierto'}</span><h3><a href="#curso/${e(c.id)}">${e(c.title)}</a></h3>${c.entityKind?`<p class="field-hint">${c.entityKind==='template'?'Curso plantilla':`Grupo ${e(c.groupCode)} · ${e(c.cohort)}`}</p>`:''}<p>${e(c.description||'Tus materiales y actividades en un solo lugar.')}</p><div class="course-meta"><span>${icon('folder')}${c.moduleCount??c.modules?.length??0} capítulos</span><span>${icon('file')}${materials} materiales${activities?' · '+activities+' actividades':''}</span></div>${!c.locked&&total?`<div class="learning-card-progress"><div class="flex between"><strong>${percent}% de avance</strong><small>${done} de ${total} elementos</small></div>${progressBar(percent,`Avance en ${c.title}`)}<small>${overall?.openPending??Math.max(0,total-done)} por realizar${overall?.activities.closedMissing?' · '+overall.activities.closedMissing+(overall.activities.closedMissing===1?' cerrada por vencimiento':' cerradas por vencimiento'):overall?' · Materiales y actividades':''}</small></div>`:!c.locked?'<p class="field-hint">Tu docente está preparando el contenido.</p>':''}<div class="course-actions">${courseEntryActions(c,learning)}</div></div></article>`;
 }
 
 function learningPage() {
  const courses=state.courses.filter(c=>c.enrolled||c.accessMode==='public'),list=courses.filter(c=>`${c.title} ${c.description}`.toLowerCase().includes(state.query.toLowerCase()));
  const summaries=state.learning.courses,totals=summaries.reduce((a,c)=>({completed:a.completed+c.completed,unopened:a.unopened+Math.max(0,c.total-c.opened)}),{completed:0,unopened:0});
- const recent=state.learning.recent||[],agenda=(state.academicOverview||[]).flatMap(c=>(c.activities||[]).filter(a=>a.state==='Pendiente').map(a=>({...a,courseTitle:c.title}))).sort((a,b)=>(activityDueAt(a)||'z').localeCompare(activityDueAt(b)||'z'));
+ const recent=state.learning.recent||[],agenda=(state.academicOverview||[]).flatMap(c=>(c.activities||[]).filter(a=>a.state==='Pendiente'&&!activityFinalized(a)).map(a=>({...a,courseTitle:c.title}))).sort((a,b)=>(activityDueAt(a)||'z').localeCompare(activityDueAt(b)||'z'));
  return heading(`Hola, ${e(state.user.name.split(' ')[0])}`,'Entra a tus cursos y continúa aprendiendo.',`<a class="btn secondary" href="#tareas">${icon('calendar')}Mis actividades</a>`)+
  `<div class="stats learning-stats compact-stats">${[[courses.length,'Mis cursos','book'],[totals.completed,'Materiales completados','check'],[totals.unopened,'Materiales sin abrir','file'],[state.assurance==='password'?agenda.length:'—','Actividades pendientes','edit']].map(([n,label,glyph])=>`<article class="stat"><span class="stat-icon">${icon(glyph)}</span><div><strong>${n}</strong><span class="stat-top">${label}</span></div></article>`).join('')}</div>`+
  `<div class="learning-dashboard-layout"><section class="learning-courses"><div class="section-head learning-course-heading"><h2>Mis cursos <span class="badge gray">${list.length}</span></h2>${searchBox('Buscar entre mis cursos…')}</div>`+
@@ -188,7 +188,14 @@ async function render() {
   else if(current==='catalogo') content=catalog();
   else if(!state.user){location.hash='login';return;}
   else if(current==='tareas'||/^(actividades|actividad|calificaciones)\//.test(current)) content=await academicsUI.pageHTML(current);
-  else if(current==='mis-cursos'){if(student()&&state.assurance==='password'&&!state.preview)state.academicOverview=await api('/academics/courses');content=admin()?coursesPage(true):learningPage();}
+  else if(current==='mis-cursos'){
+   if(student()&&!state.preview){
+    const [learning,overview]=await Promise.all([api('/learning'),state.assurance==='password'?api('/academics/courses'):Promise.resolve([])]);
+    if(version!==renderVersion||scope!==navigationScope(state)||current!==route())return;
+    state.learning=learning;state.academicOverview=overview;
+   }
+   content=admin()?coursesPage(true):learningPage();
+  }
   else if(current==='cuenta') content=heading('Mi cuenta','Tu información de acceso.')+`<section class="panel" style="max-width:650px"><h2>${e(state.user.name)}</h2><p class="small-paragraph" style="margin:15px 0">Usuario: ${e(state.user.document)}<br>Acceso actual: ${state.assurance==='password'?'Con contraseña':'Solo cédula'}</p>${state.user.roles?`<p class="small-paragraph">Funciones: ${state.user.roles.map(r=>({master:'Máster',admin:'Administrativo',teacher:'Docente',student:'Estudiante'}[r]||r)).join(' · ')}</p>`:''}${hasDualRole()?`<p class="small-paragraph">Puedes cambiar entre Docencia y Aprendizaje desde la barra lateral. Tus matrículas y grupos asignados se conservan por separado.</p>`:''}${state.assurance==='password'?btn('Cambiar contraseña','change-password','secondary','lock'):btn('Ingresar con contraseña','password-login','secondary','lock')}</section>`;
   else if(!admin()){location.hash='mis-cursos';return;}
   else content=({inicio:dashboard,cursos:()=>coursesPage(),estudiantes:studentsPage,matriculas:enrollmentsPage,biblioteca:libraryPage,ajustes:settingsPage}[current]||dashboard)();

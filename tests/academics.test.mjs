@@ -107,7 +107,7 @@ test('preguntas abiertas requieren revisión manual; múltiples requieren coinci
  const b=await f.activity({kind:'quiz',questions});ok(await f.submit(b,{text:'',answers:{q1:[0],q2:[0]}}),201);assert.equal(ok(await f.admin.call(`/academics/activities/${b.id}/submissions`)).submissions[0].points,1);
 });
 test('plazos se aplican también a API, borradores y preguntas antes de apertura',async t=>{
- const f=await fixture(t);const a=await f.activity({dueAt:past()});ok(await f.submit(a),403);ok(await f.submit(a,{action:'draft'}),403);
+ const f=await fixture(t);const a=await f.activity({dueAt:past()});ok(await f.submit(a),403);const backup=ok(await f.submit(a,{action:'draft'}),201);assert.equal(backup.state,'draft');assert.equal(backup.closure.closed,true);assert.equal(backup.closure.points,0);assert.equal(backup.submittedAt,null,'conservar un borrador no autoriza enviarlo');
  const late=await f.activity({dueAt:past(),allowLate:true,closesAt:future()});assert.equal(ok(await f.submit(late),201).late,true);
  const closed=await f.activity({dueAt:past(),closesAt:past(),allowLate:true});ok(await f.submit(closed),403);
  const scheduled=await f.activity({kind:'quiz',questions,opensAt:future()});assert.deepEqual(ok(await f.student.call(`/academics/activities/${scheduled.id}`)).activity.questions,[]);ok(await f.submit(scheduled,{text:'',answers:{q1:[0],q2:[0,2]}}),403);
@@ -147,7 +147,7 @@ test('el contenido del curso ubica actividades por capítulo sin filtrar respues
  const a=await f.activity({title:'Tarea del capítulo',moduleId:'chapter-one'}),quiz=await f.activity({kind:'quiz',questions,moduleId:'chapter-two'}),draft=await f.activity({status:'draft',moduleId:'chapter-one'}),archived=await f.activity({status:'archived'}),general=await f.activity();
  const detail=()=>f.student.call(`/courses/${f.course.id}`);
  let c=ok(await detail());assert.equal(c.activities.length,3);assert.equal(c.activities.find(x=>x.id===a.id).moduleId,'chapter-one');assert.equal(c.activities.find(x=>x.id===general.id).moduleId,null);
- assert.deepEqual(Object.keys(c.activities.find(x=>x.id===quiz.id)).sort(),['id','moduleId','title','kind','status','weight','dueAt','opensAt','closesAt','allowLate','submitted','responseState','returnedAt','returnDueAt','deadline','extension','effectiveDueAt','effectiveClosesAt','outcome'].sort());
+ assert.deepEqual(Object.keys(c.activities.find(x=>x.id===quiz.id)).sort(),['id','moduleId','title','kind','status','weight','dueAt','opensAt','closesAt','allowLate','submitted','responseState','returnedAt','returnDueAt','deadline','extension','effectiveDueAt','effectiveClosesAt','outcome','closure'].sort());
  assert.deepEqual(c.activities.find(x=>x.id===quiz.id).outcome,{state:'pending',satisfactory:false});
  assert.equal(c.activities.find(x=>x.id===quiz.id).extension,null);
  assert.equal(c.activities.find(x=>x.id===quiz.id).deadline.source,'activity');

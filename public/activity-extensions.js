@@ -1,5 +1,6 @@
 import {escapeHtml as e} from './lib.js';
 import {icon} from './ui.js';
+import {closedWithoutSubmission,closedActivityLabel,automaticZeroHTML} from './activity-state.js';
 
 const labels={pending:'Sin entregar',draft:'Borrador guardado',returned:'Corrección pendiente',submitted:'Entregada · por calificar',graded:'Calificada'};
 const normal=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('es');
@@ -45,7 +46,7 @@ export function createActivityExtensionManager({api}){
  async function write(report,studentId,dueAt,remove=false){
   const student=selectedStudent(report,studentId);if(!student)throw Error('Selecciona un estudiante con matrícula vigente en este grupo.');
   const result=await api(endpoint(report.activity.id)+'/'+encodeURIComponent(studentId),{method:remove?'DELETE':'PUT',body:{version:student.extensionVersion??student.extension?.version??0,...(remove?{}:{dueAt})}});
-  return {...report,serverNow:result.serverNow||report.serverNow,students:report.students.map(item=>item.id===studentId?{...item,...result,id:item.id,submissionState:item.submissionState}:item)};
+  return {...report,serverNow:result.serverNow||report.serverNow,students:report.students.map(item=>item.id===studentId?{...item,...result,id:item.id,submissionState:result.submissionState??item.submissionState}:item)};
  }
  return {load,save:(report,id,dueAt)=>write(report,id,dueAt),revoke:(report,id)=>write(report,id,null,true)};
 }
@@ -54,7 +55,7 @@ function currentState(report,student,now){
  if(!student)return '<p class="extension-placeholder">Selecciona a quién quieres habilitar la entrega.</p>';
  const extension=student.extension,active=extension?.active===true;
  const deadline=student.deadline||{source:active?'extension':'activity',dueAt:active?extension.dueAt:report.activity.dueAt||report.activity.closesAt},source={extension:'Autorización individual',correction:'Plazo de corrección',activity:'Plazo de la actividad'}[deadline.source]||'Plazo vigente';
- return `<section class="extension-current" aria-label="Estado actual"><div><strong>${e(student.name)}</strong><span class="badge ${active?'green':'gray'}">${e(labels[student.submissionState]||'Sin entregar')}</span></div><dl><div><dt>Plazo vigente</dt><dd>${e(extensionDateLabel(deadline.dueAt||deadline.closesAt))}<small class="extension-deadline-source">${e(source)}${deadline.allowLate?' · admite tardías':''}</small></dd></div><div><dt>Autorización individual</dt><dd>${active?e(extensionDateLabel(extension.dueAt))+(extension.dueAt&&Date.parse(extension.dueAt)<=now?' · vencida':''):'Sin habilitación vigente'}</dd></div></dl>${active?`<button type="button" class="text-button extension-revoke" data-extension-action="revoke">${icon('back')}Retirar autorización</button><p class="field-hint">Puedes habilitarla de nuevo. Al retirarla se aplica el plazo vigente de la actividad o corrección.</p>`:''}</section>`;
+ return `<section class="extension-current" aria-label="Estado actual"><div><strong>${e(student.name)}</strong><span class="badge ${active?'green':'gray'}">${e(closedWithoutSubmission(student)?closedActivityLabel:labels[student.submissionState]||'Sin entregar')}</span></div>${automaticZeroHTML(student)}<dl><div><dt>Plazo vigente</dt><dd>${e(extensionDateLabel(deadline.dueAt||deadline.closesAt))}<small class="extension-deadline-source">${e(source)}${deadline.allowLate?' · admite tardías':''}</small></dd></div><div><dt>Autorización individual</dt><dd>${active?e(extensionDateLabel(extension.dueAt))+(extension.dueAt&&Date.parse(extension.dueAt)<=now?' · vencida':''):'Sin habilitación vigente'}</dd></div></dl>${active?`<button type="button" class="text-button extension-revoke" data-extension-action="revoke">${icon('back')}Retirar autorización</button><p class="field-hint">Puedes habilitarla de nuevo. Al retirarla se aplica el plazo vigente de la actividad o corrección.</p>`:''}</section>`;
 }
 
 export function renderActivityExtensionWindow({activities=[],activityId='',report=null,studentId='',search='',draft=null,loading=false,error='',message='',now=Date.now(),otherDrafts=0}={}){
