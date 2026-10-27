@@ -10,6 +10,7 @@ import { openDatabase, bootstrapAdmin, backfillStudentInitialPasswords } from '.
 import { token, digest, hashPassword, verifyPassword, passwordError, RateLimiter } from './security.mjs';
 import { importMigration, MigrationError, MIGRATION_MAX_BYTES } from './migration.mjs';
 import { createAcademics } from './academics.mjs';
+import {activityOutcome} from './chapter-outcomes.mjs';
 import { createQuickResources } from './quick-resources.mjs';
 import {upgradeData} from './upgrade.mjs';
 import {createAccessModel} from './access-model.mjs';
@@ -223,14 +224,17 @@ export async function createApp(options = {}) {
   }
   function courseActivitySummaries(course,auth,modules,teacher=false) {
     const activities=query('SELECT id,module_id,config FROM activities WHERE course_id=? ORDER BY created_at,id',course.id);
+    const personal=!teacher&&!auth?.preview&&auth?.assurance==='password'&&isEnrolled(auth.user.id,course.id);
+    const grading=personal?academics.settings(course.id):null;
+    const grades=new Map(personal?academics.gradeRow(academics.list(course.id).filter(activity=>activity.status==='published'),auth.user.id,grading,false).cells.map(cell=>[cell.activityId,cell]):[]);
     return sortCourseActivities(activities,modules,courseChapterOrder(course)).flatMap(row=>{
       const a=JSON.parse(row.config);
       if(!teacher&&(a.status!=='published'||row.module_id&&!modules.some(module=>module.id===row.module_id)))return [];
-      const latest=!teacher&&auth?.assurance==='password'?one('SELECT state,returned_at,return_due_at FROM submissions WHERE activity_id=? AND student_id=? AND superseded=0 ORDER BY attempt DESC,updated_at DESC LIMIT 1',row.id,auth.user.id):null;
+      const latest=personal?one('SELECT id,state,returned_at,return_due_at FROM submissions WHERE activity_id=? AND student_id=? AND superseded=0 ORDER BY attempt DESC,updated_at DESC LIMIT 1',row.id,auth.user.id):null;
       const submitted=Boolean(latest&&!['draft','returned'].includes(latest.state));
       const responseState=latest?.state==='draft'&&latest.returned_at?'returned':latest?.state||null;
-      const deadline=!teacher&&!auth?.preview&&auth?.assurance==='password'?academics.studentDeadline({...a,id:row.id},auth.user.id,latest):null;
-      return [{id:row.id,moduleId:row.module_id,title:a.title,kind:a.kind,status:a.status,weight:a.weight,dueAt:a.dueAt,opensAt:a.opensAt,closesAt:a.closesAt,allowLate:a.allowLate,submitted,responseState,returnedAt:latest?.returned_at||null,returnDueAt:latest?.return_due_at||null,...(deadline?{deadline,extension:deadline.extension,effectiveDueAt:deadline.dueAt,effectiveClosesAt:deadline.closesAt}:{})}];
+      const deadline=personal?academics.studentDeadline({...a,id:row.id},auth.user.id,latest):null;
+      return [{id:row.id,moduleId:row.module_id,title:a.title,kind:a.kind,status:a.status,weight:a.weight,dueAt:a.dueAt,opensAt:a.opensAt,closesAt:a.closesAt,allowLate:a.allowLate,submitted,responseState,returnedAt:latest?.returned_at||null,returnDueAt:latest?.return_due_at||null,...(personal?{outcome:activityOutcome(latest,grades.get(row.id),grading)}:{}),...(deadline?{deadline,extension:deadline.extension,effectiveDueAt:deadline.dueAt,effectiveClosesAt:deadline.closesAt}:{})}];
     });
   }
   function courseView(course, auth, details = false) {
@@ -246,7 +250,8 @@ export async function createApp(options = {}) {
     if (details) result.modules = modules.map(module => ({ id:module.id, courseId:module.course_id, title:module.title, position:module.position, published:Boolean(module.published), resources:resources.filter(r => r.module_id === module.id).map(resourceView) }));
     if (details) {
       const teacher = auth?.user.role === 'admin' && auth.assurance === 'password';
-      // Course listings expose only activity metadata, never questions, keys or grades.
+      // Course listings expose metadata and the owner's public outcome label,
+      // never questions, answer keys or private/numeric grading data.
       result.activities = !result.locked && (teacher || result.enrolled) ? courseActivitySummaries(course,auth,modules,teacher) : [];
     }
     if (details) result.quickResources = result.locked ? [] : quickResources.list(course.id, auth);

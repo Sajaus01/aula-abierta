@@ -147,7 +147,8 @@ test('el contenido del curso ubica actividades por capítulo sin filtrar respues
  const a=await f.activity({title:'Tarea del capítulo',moduleId:'chapter-one'}),quiz=await f.activity({kind:'quiz',questions,moduleId:'chapter-two'}),draft=await f.activity({status:'draft',moduleId:'chapter-one'}),archived=await f.activity({status:'archived'}),general=await f.activity();
  const detail=()=>f.student.call(`/courses/${f.course.id}`);
  let c=ok(await detail());assert.equal(c.activities.length,3);assert.equal(c.activities.find(x=>x.id===a.id).moduleId,'chapter-one');assert.equal(c.activities.find(x=>x.id===general.id).moduleId,null);
- assert.deepEqual(Object.keys(c.activities.find(x=>x.id===quiz.id)).sort(),['id','moduleId','title','kind','status','weight','dueAt','opensAt','closesAt','allowLate','submitted','responseState','returnedAt','returnDueAt','deadline','extension','effectiveDueAt','effectiveClosesAt'].sort());
+ assert.deepEqual(Object.keys(c.activities.find(x=>x.id===quiz.id)).sort(),['id','moduleId','title','kind','status','weight','dueAt','opensAt','closesAt','allowLate','submitted','responseState','returnedAt','returnDueAt','deadline','extension','effectiveDueAt','effectiveClosesAt','outcome'].sort());
+ assert.deepEqual(c.activities.find(x=>x.id===quiz.id).outcome,{state:'pending',satisfactory:false});
  assert.equal(c.activities.find(x=>x.id===quiz.id).extension,null);
  assert.equal(c.activities.find(x=>x.id===quiz.id).deadline.source,'activity');
  assert.equal(c.activities.find(x=>x.id===quiz.id).responseState,null);
