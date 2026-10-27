@@ -9,6 +9,15 @@ export function sortCourseModules(modules=[],order='asc'){
  const direction=order==='desc'?-1:1;
  return [...modules].sort((left,right)=>direction*((Number(left.position)||0)-(Number(right.position)||0)||(String(left.id)<String(right.id)?-1:String(left.id)>String(right.id)?1:0)));
 }
+export const sortCourseResources=sortCourseModules;
+// Activities have no manual position. Keep their authored sequence within each
+// chapter, reversing it only when the teacher selects descending presentation.
+export function sortCourseActivities(activities=[],modules=[],order='asc'){
+ const ranks=new Map(sortCourseModules(modules,order).map((module,index)=>[module.id,index]));
+ const rank=activity=>ranks.get(activity.moduleId??activity.module_id)??ranks.size;
+ const sequence=order==='desc'?[...activities].reverse():[...activities];
+ return sequence.sort((left,right)=>rank(left)-rank(right));
+}
 const ident=s=>'"'+s.replaceAll('"','""')+'"';
 function insert(db,table,row){const keys=Object.keys(row);db.prepare(`INSERT INTO ${ident(table)} (${keys.map(ident)}) VALUES (${keys.map(()=>'?')})`).run(...keys.map(k=>row[k]));}
 function add(db,table,name,definition){if(!db.prepare(`PRAGMA table_info(${table})`).all().some(c=>c.name===name))db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${definition}`);}

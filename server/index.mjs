@@ -1,5 +1,5 @@
 import {createStorage} from './storage.mjs';
-import {setupCourseModel,courseChapterOrder,sortCourseModules} from './course-model.mjs';
+import {setupCourseModel,courseChapterOrder,sortCourseModules,sortCourseResources,sortCourseActivities} from './course-model.mjs';
 import {summarizeCourseLearning} from '../public/learning.js';
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
@@ -221,7 +221,8 @@ export async function createApp(options = {}) {
     return { id:row.id, moduleId:row.module_id, labResults:row.lab_results||'optional', published:Boolean(row.published), title:row.title, kind:row.kind, url:row.url, content:row.content, position:row.position, fileName:row.file_name, fileMime:row.file_mime, fileSize:row.file_size, fileUrl:row.file_key ? `/api/resources/${row.id}/file` : null, previewUrl:['html','lab'].includes(row.kind) && (row.content || row.file_key) ? `/api/resources/${row.id}/preview` : null, createdAt:row.created_at, updatedAt:row.updated_at };
   }
   function courseActivitySummaries(course,auth,modules,teacher=false) {
-    return query('SELECT id,module_id,config FROM activities WHERE course_id=? ORDER BY created_at,id',course.id).flatMap(row=>{
+    const activities=query('SELECT id,module_id,config FROM activities WHERE course_id=? ORDER BY created_at,id',course.id);
+    return sortCourseActivities(activities,modules,courseChapterOrder(course)).flatMap(row=>{
       const a=JSON.parse(row.config);
       if(!teacher&&(a.status!=='published'||row.module_id&&!modules.some(module=>module.id===row.module_id)))return [];
       const latest=!teacher&&auth?.assurance==='password'?one('SELECT state,returned_at,return_due_at FROM submissions WHERE activity_id=? AND student_id=? AND superseded=0 ORDER BY attempt DESC,updated_at DESC LIMIT 1',row.id,auth.user.id):null;
@@ -234,7 +235,7 @@ export async function createApp(options = {}) {
     const teacher = auth?.user.role === 'admin' && auth.assurance === 'password';
     const modules = sortCourseModules(query('SELECT * FROM modules WHERE course_id=? ORDER BY position,id', course.id).filter(m => teacher || m.published),courseChapterOrder(course));
     const resourceScope = 'FROM resources r JOIN modules m ON m.id=r.module_id WHERE m.course_id=? AND (?=1 OR (r.published=1 AND m.published=1))';
-    const resources = details ? query(`SELECT r.* ${resourceScope} ORDER BY r.position,r.id`, course.id, Number(teacher)) : [];
+    const resources = details ? sortCourseResources(query(`SELECT r.* ${resourceScope} ORDER BY r.position,r.id`, course.id, Number(teacher)),courseChapterOrder(course)) : [];
     const resourceCount = details ? resources.length : one(`SELECT COUNT(*) AS count ${resourceScope}`, course.id, Number(teacher)).count;
     const result = { id:course.id, title:course.title, description:course.description, accessMode:course.access_mode, published:Boolean(course.published), coverUrl:course.cover_url, chapterOrder:courseChapterOrder(course), createdAt:course.created_at, updatedAt:course.updated_at, enrolled:isEnrolled(auth?.user.id, course.id), locked:!canAccess(course, auth), resourceCount, moduleCount:modules.length };
     if(auth?.preview)result.enrolled=true;
@@ -263,11 +264,11 @@ export async function createApp(options = {}) {
         p.completed,p.updated_at,p.opened_at,p.last_opened_at
         FROM resources r JOIN modules m ON m.id=r.module_id
         LEFT JOIN progress p ON p.resource_id=r.id AND p.user_id=?
-        WHERE m.course_id=? AND m.published=1 AND r.published=1 ORDER BY m.position ${moduleOrder},m.id ${moduleOrder},r.position,r.id`, auth.user.id, course.id);
+        WHERE m.course_id=? AND m.published=1 AND r.published=1 ORDER BY m.position ${moduleOrder},m.id ${moduleOrder},r.position ${moduleOrder},r.id ${moduleOrder}`, auth.user.id, course.id);
       const opened = resources.filter(row => row.opened_at || row.last_opened_at || row.completed);
       const history = opened.map(row => ({ ...resourceSummary(row), lastOpenedAt:row.last_opened_at || row.opened_at || row.updated_at })).sort(byRecent);
       const next = resources.find(row => !row.completed);
-      const modules=query('SELECT id FROM modules WHERE course_id=? AND published=1',course.id);
+      const modules=query('SELECT id,position FROM modules WHERE course_id=? AND published=1',course.id);
       const courseActivities=isEnrolled(auth.user.id,course.id)?courseActivitySummaries(course,auth,modules):[];
       const overall=summarizeCourseLearning(resources.map(resourceSummary),courseActivities,resources.map(row=>({resourceId:row.id,completed:Boolean(row.completed),openedAt:row.opened_at,lastOpenedAt:row.last_opened_at})));
       courses.push({ courseId:course.id, total:resources.length, opened:opened.length,
@@ -860,7 +861,7 @@ export async function createApp(options = {}) {
           const published = own(body, 'published') ? boolean(body.published, 'Publicado') : module.published;
           run('UPDATE modules SET title=?,position=?,published=? WHERE id=?', title, order, published, module.id);
           audit(auth.user, 'module.update', module.id);
-          return json(res, { id:module.id, courseId:module.course_id, title, position:order, published:Boolean(published), resources:query('SELECT * FROM resources WHERE module_id=? ORDER BY position,id', module.id).map(resourceView) });
+          return json(res, { id:module.id, courseId:module.course_id, title, position:order, published:Boolean(published), resources:sortCourseResources(query('SELECT * FROM resources WHERE module_id=? ORDER BY position,id', module.id),courseChapterOrder(existing('courses',module.course_id,'Curso'))).map(resourceView) });
         }
         match = /^\/api\/admin\/modules\/([^/]+)\/resources$/.exec(path);
         if (match && method === 'POST') {

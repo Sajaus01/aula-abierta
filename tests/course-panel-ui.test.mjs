@@ -56,6 +56,22 @@ test('chapter display respects the teacher supplied order without mutating the c
  const first=html.indexOf('data-module-id="m3"'),second=html.indexOf('data-module-id="m1"');assert.ok(first>=0&&second>first);assert.match(html,/Reto general del curso/);assert.equal(JSON.stringify(course),snapshot);
 });
 
+test('student rendering and content filters preserve the server sequence inside descending chapters',()=>{
+ const course=makeCourse();course.chapterOrder='desc';
+ course.modules[0].resources=[{id:'r-high',title:'A material at position40',position:40,kind:'html',published:true},{id:'r-low',title:'Z material at position3',position:3,kind:'html',published:true}];
+ course.activities=[{id:'a-new',moduleId:'m1',title:'Second authored quiz',kind:'quiz',status:'published'},{id:'a-old',moduleId:'m1',title:'First authored task',kind:'task',status:'published'}];
+ const before=JSON.stringify(course),model=coursePanelModel(course,[],{now});
+ assert.deepEqual(model.modules[0].resources.map(item=>item.id),['r-high','r-low']);
+ assert.deepEqual(model.modules[0].activities.map(item=>item.id),['a-new','a-old']);
+ for(const filter of ['all','materials','pending']){
+  const html=renderCoursePanel(course,{filter,query:'material',now});
+  assert.ok(html.indexOf('data-action="resource:r-high"')<html.indexOf('data-action="resource:r-low"'));
+ }
+ const activities=renderCoursePanel(course,{filter:'activities',now});
+ assert.ok(activities.indexOf('aria-label="Abrir Second authored quiz"')<activities.indexOf('aria-label="Abrir First authored task"'));
+ assert.equal(JSON.stringify(course),before);
+});
+
 test('correction uses its extended deadline, retains priority and does not sort by the expired original deadline',()=>{
  const course=makeCourse(),original='2026-10-20T15:00:00.000Z',extended='2026-11-10T15:00:00.000Z';
  course.activities[0].dueAt='2026-10-28T15:00:00.000Z';

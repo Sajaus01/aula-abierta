@@ -85,7 +85,7 @@ export function createPlatformUI(ctx){
   if(!route.startsWith('curso/'))return;const c=getState().currentCourse;if(!c?.entityKind)return;
   const contentHeading=document.querySelector('.detail-grid > section > .section-head');
   if(c.permissions.edit&&contentHeading&&!contentHeading.querySelector('.course-chapter-order')){
-   contentHeading.insertAdjacentHTML('beforeend',`<label class="course-chapter-order">Orden de capítulos<select data-course-chapter-order="${e(c.id)}" title="Ascendente: primero el primer capítulo. Descendente: primero el último capítulo."><option value="asc" ${c.chapterOrder!=='desc'?'selected':''}>Ascendente</option><option value="desc" ${c.chapterOrder==='desc'?'selected':''}>Descendente</option></select></label>`);
+   contentHeading.insertAdjacentHTML('beforeend',`<label class="course-chapter-order">Orden del contenido<select data-course-chapter-order="${e(c.id)}" title="Aplica a capítulos, materiales y actividades. Las posiciones manuales se conservan."><option value="asc" ${c.chapterOrder!=='desc'?'selected':''}>Ascendente</option><option value="desc" ${c.chapterOrder==='desc'?'selected':''}>Descendente</option></select></label>`);
    const select=contentHeading.querySelector('[data-course-chapter-order]');
    select.addEventListener('change',async()=>{
     const state=getState(),owner=state.user?.id,view=state.viewMode,currentRoute=location.hash,previous=c.chapterOrder||'asc',next=select.value,scroll=window.scrollY;
@@ -97,7 +97,7 @@ export function createPlatformUI(ctx){
      if(getState().user?.id!==owner||getState().viewMode!==view||getState().preview)return;
      c.chapterOrder=result.chapterOrder;
      await refresh();
-     if(getState().user?.id===owner&&location.hash===currentRoute){await render();window.scrollTo(0,scroll);toast('Orden de capítulos guardado.');}
+     if(getState().user?.id===owner&&location.hash===currentRoute){await render();window.scrollTo(0,scroll);toast('Orden del contenido guardado.');}
     }catch(error){if(select.isConnected)select.value=persisted?next:previous;if(getState().user?.id===owner)toast(persisted?'El orden se guardó. Recarga para actualizar la lista.':error.message||'No se pudo guardar el orden. Intenta de nuevo.');}
     finally{if(select.isConnected)select.disabled=false;}
    });
