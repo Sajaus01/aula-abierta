@@ -1,4 +1,8 @@
 .teacher-course-study{max-width:1220px;margin:0 auto;color:#1d1d1f;font-family:var(--course-font,inherit)}
+.teacher-chapter-meta{display:flex;align-items:center;flex-wrap:wrap;gap:4px 9px;margin-top:3px;min-width:0}
+.teacher-chapter-meta>.activity-evaluation-summary{margin:0}
+.teacher-chapter-meta>small{margin:0}
+.teacher-item-meta>small{font-size:10px;line-height:1.45;color:#747d89}
 .teacher-course-study [hidden]{display:none!important}
 .teacher-course-back{display:inline-flex;align-items:center;gap:5px;margin-bottom:11px;color:#73737c;font-size:11px;text-decoration:none}.teacher-course-back .icon{width:13px;height:13px}
 .teacher-course-study .teacher-course-header{display:grid;grid-template-columns:144px minmax(0,1fr) auto;gap:19px;align-items:center;min-height:158px;margin:0;border:1px solid #e3e3e9;border-radius:16px;background:#fff;overflow:visible;padding:0 18px 0 0;box-shadow:0 2px 5px #1d1d1f02}

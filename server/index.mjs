@@ -224,6 +224,7 @@ export async function createApp(options = {}) {
   }
   function courseActivitySummaries(course,auth,modules,teacher=false) {
     const activities=query('SELECT id,module_id,config FROM activities WHERE course_id=? ORDER BY created_at,id',course.id);
+    const evaluation=teacher?academics.evaluationSummary(course.id,auth):null;
     const personal=!teacher&&!auth?.preview&&auth?.assurance==='password'&&isEnrolled(auth.user.id,course.id);
     if(personal)academics.reconcileClosures({courseId:course.id,studentId:auth.user.id});
     const grading=personal?academics.settings(course.id):null;
@@ -236,7 +237,7 @@ export async function createApp(options = {}) {
       const submitted=Boolean(latest&&['submitted','graded'].includes(latest.state));
       const responseState=closure?.closed?'missing':latest?.state==='draft'&&latest.returned_at?'returned':latest?.state||null;
       const deadline=personal?academics.studentDeadline({...a,id:row.id},auth.user.id,latest):null;
-      return [{id:row.id,moduleId:row.module_id,title:a.title,kind:a.kind,status:a.status,weight:a.weight,dueAt:a.dueAt,opensAt:a.opensAt,closesAt:a.closesAt,allowLate:a.allowLate,submitted,responseState,returnedAt:latest?.returned_at||null,returnDueAt:latest?.return_due_at||null,...(personal?{closure,outcome:activityOutcome(latest,grades.get(row.id),grading)}:{}),...(deadline?{deadline,extension:deadline.extension,effectiveDueAt:deadline.dueAt,effectiveClosesAt:deadline.closesAt}:{})}];
+      return [{id:row.id,moduleId:row.module_id,title:a.title,kind:a.kind,status:a.status,weight:a.weight,dueAt:a.dueAt,opensAt:a.opensAt,closesAt:a.closesAt,allowLate:a.allowLate,submitted,responseState,returnedAt:latest?.returned_at||null,returnDueAt:latest?.return_due_at||null,...(evaluation?{evaluation:evaluation.byActivity.get(row.id)?.evaluation}:{}),...(personal?{closure,outcome:activityOutcome(latest,grades.get(row.id),grading)}:{}),...(deadline?{deadline,extension:deadline.extension,effectiveDueAt:deadline.dueAt,effectiveClosesAt:deadline.closesAt}:{})}];
     });
   }
   function courseView(course, auth, details = false) {

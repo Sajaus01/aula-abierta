@@ -79,23 +79,56 @@ test('la cola muestra una sola respuesta vigente por estudiante y un borrador po
  assert.match(reviewStatus(records[6]),/sin devolver/);
 });
 
-function reviewHarness(t,request){
+function reviewHarness(t,request,{submission={}}={}){
  const previousFormData=globalThis.FormData;
  globalThis.FormData=class{constructor(form){this.values={...form.values};}get(name){return this.values[name]??null;}has(name){return Boolean(this.values[name]);}};
  t.after(()=>{globalThis.FormData=previousFormData;});
  const handlers=new Map(),status={textContent:'',classList:{toggle(){}}},error={textContent:''};
  const input={checkValidity:()=>true},form={values:{points:'12',feedback:'Revisar unidades.'},querySelector:()=>input};
  const root={innerHTML:'',inert:false},elements=new Map([['[data-review-root]',root],['[data-review=prev]',{}],['[data-review=next]',{}],['[data-review=release-all]',{}],['[data-queue-count]',{}],['.review-queue-list',{}],['.review-response-pane',{focus(){}}],['#review-grade-form',form],['[data-save-status]',status],['#review-grade-form .review-error',error]]);
- let closed=0;
+ let closed=0,renders=0;
  const modal={open:false,dataset:{},classList:{add(){}},querySelector:selector=>elements.get(selector),setAttribute(){},removeAttribute(){},close(){closed++;this.open=false;},addEventListener(event,fn,options){const list=handlers.get(event)||[];list.push({fn,options});handlers.set(event,list);}};
- const review=createActivityReview({modal,openModal:()=>{modal.open=true;},icon:()=>'',questionMedia:()=>'',api:request,toast(){},render(){}});
+ const review=createActivityReview({modal,openModal:()=>{modal.open=true;},icon:()=>'',questionMedia:()=>'',api:request,toast(){},render(){renders++;}});
  t.after(()=>review.dispose());
- review.open({activity:{id:'activity',kind:'task',maxPoints:100,status:'published',title:'Actividad',weight:0},submissions:[{id:'submission',name:'Prueba',state:'submitted',points:null,studentId:'student',attempt:1,version:1}],id:'submission'});
+ review.open({activity:{id:'activity',kind:'task',maxPoints:100,status:'published',title:'Actividad',weight:0},submissions:[{id:'submission',name:'Prueba',state:'submitted',points:null,studentId:'student',attempt:1,version:1,...submission}],id:'submission'});
  const change=()=>handlers.get('input')[0].fn({target:{id:'',closest:selector=>selector==='#review-grade-form'?form:null,matches:()=>true}});
  const close=()=>handlers.get('click').find(h=>h.options.capture).fn({target:{closest:selector=>selector==='[data-action="close-modal"]'?{}:null},preventDefault(){},stopImmediatePropagation(){}});
  const action=name=>handlers.get('click').find(h=>!h.options.capture).fn({target:{closest:selector=>selector==='[data-review]'?{dataset:{review:name}}:null}});
- return {form,change,close,action,status,error,root,closed:()=>closed};
+ const closedEvent=()=>handlers.get('close').forEach(({fn,options})=>{if(!options.signal.aborted)fn();});
+ return {form,change,close,action,status,error,root,closedEvent,closed:()=>closed,renders:()=>renders};
 }
+
+test('devolver a todos sin editar una nota actualiza la página al cerrar la revisión',async t=>{
+ const calls=[],activity={id:'activity',kind:'task',maxPoints:100,status:'published',title:'Actividad',weight:0};
+ const harness=reviewHarness(t,async(path,options)=>{
+  calls.push({path,options});
+  if(options?.method==='POST')return {releasedCount:1,skippedCount:0};
+  return {activity,submissions:[{id:'submission',name:'Prueba',state:'graded',points:12,published:true,studentId:'student',attempt:1,version:2}]};
+ },{submission:{state:'graded',points:12,published:false}});
+ await harness.action('release-all');
+ assert.deepEqual(calls.map(call=>call.path),['/academics/activities/activity/release','/academics/activities/activity/submissions']);
+ assert.deepEqual(calls[0].options.body,{submissions:[{id:'submission',version:1}]});
+ assert.equal(harness.renders(),0,'the review stays open until the teacher closes it');
+ harness.close();await new Promise(resolve=>setImmediate(resolve));harness.closedEvent();
+ assert.equal(harness.renders(),1,'the underlying evaluation status must be fetched again');
+});
+
+test('una devolución en lote rechazada no marca la página como modificada',async t=>{
+ let calls=0;
+ const harness=reviewHarness(t,async()=>{calls++;throw Error('La calificación cambió. Actualiza antes de devolver.');},{submission:{state:'graded',points:12,published:false}});
+ await harness.action('release-all');
+ assert.equal(calls,1);assert.match(harness.error.textContent,/Actualiza/);
+ harness.close();await new Promise(resolve=>setImmediate(resolve));harness.closedEvent();
+ assert.equal(harness.renders(),0);
+});
+
+test('si la devolución se guardó pero falla su recarga, cerrar vuelve a consultar la página',async t=>{
+ const harness=reviewHarness(t,async(path,options)=>{if(options?.method==='POST')return {releasedCount:1,skippedCount:0};throw Error('No se pudo actualizar la lista.');},{submission:{state:'graded',points:12,published:false}});
+ await harness.action('release-all');
+ assert.match(harness.error.textContent,/actualizar la lista/);
+ harness.close();await new Promise(resolve=>setImmediate(resolve));harness.closedEvent();
+ assert.equal(harness.renders(),1);
+});
 
 test('cerrar espera el guardado privado y conserva otra edición hecha mientras la solicitud estaba en curso',async t=>{
  const calls=[];let resolveFirst;

@@ -89,6 +89,26 @@ test('modern group announcements and presence have compact integration targets w
 });
 
 function node(dataset={}){return {dataset,hidden:false,open:false,value:'',textContent:'',listeners:new Map(),addEventListener(type,fn){this.listeners.set(type,fn);},querySelector(){return null;},querySelectorAll(){return [];}};}
+
+test('evaluation signals and filters are confined to authorized teacher activity rows',()=>{
+ const data=fixture();data.activities[1].evaluation={state:'pending',submitted:3,evaluated:2,pending:1,unreleased:1,returned:0};
+ const html=renderTeacherCoursePanel(data);
+ assert.match(html,/data-activity-evaluation-state="pending"/);assert.match(html,/>Por calificar</);assert.match(html,/value="evaluated"/);
+ assert.match(chapter(html,'basics'),/por calificar/i,'the collapsed chapter exposes its activity evaluation summary');
+ const readonly=renderTeacherCoursePanel(data,{permissions:{view:true},filter:'pending'});
+ assert.doesNotMatch(readonly,/data-activity-evaluation-state|activity-evaluation|value="pending"|value="evaluated"|value="correction"/);
+ assert.match(readonly,/data-teacher-course-filter><option value="all" selected/,'a saved grading filter cannot hide content after permission loss');
+ assert.doesNotMatch(renderTeacherCoursePanel(fixture()),/data-activity-evaluation-state/,'a publication badge or absent summary cannot imply evaluation');
+});
+
+test('evaluation filtering preserves chapter order and excludes materials and other evaluation states',()=>{
+ const data=fixture(),pending={state:'pending',submitted:1,evaluated:0,pending:1,unreleased:0,returned:0};
+ data.activities[1].evaluation=pending;data.activities[2]={...data.activities[2],status:'published',evaluation:{...pending,state:'evaluated',evaluated:1,pending:0}};
+ const before=JSON.stringify(data),model=teacherCourseModel(data,{filter:'pending'});
+ assert.deepEqual(model.chapters.map(item=>item.id),['advanced','basics']);assert.equal(model.chapters[1].activities[0].visible,true);
+ assert.ok(model.chapters.every(item=>item.resources.every(resource=>!resource.visible)));assert.equal(model.general[0].visible,false);
+ assert.equal(teacherCourseModel(data,{filter:'evaluated'}).general[0].visible,true);assert.equal(JSON.stringify(data),before);
+});
 test('local filtering retains draft rows and restores expansion without API calls or navigation',()=>{
  const search=node(),filter=node(),expand=node(),count=node(),empty=node(),row=node({teacherSearch:'simulacion guia',teacherKind:'material',teacherDraft:'true'}),activity=node({teacherSearch:'simulacion ejercicio',teacherKind:'activity',teacherDraft:'true'}),chapterNode=node({moduleId:'m',teacherTitle:'simulacion',teacherDraft:'true'}),chapterEmpty=node();filter.value='all';
  chapterNode.querySelectorAll=()=>[row,activity];chapterNode.querySelector=selector=>selector==='[data-teacher-chapter-empty]'?chapterEmpty:row;
