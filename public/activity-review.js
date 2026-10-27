@@ -34,13 +34,13 @@ export function latestReviewSubmissions(records){
 }
 export const releasableReviewSubmissions=records=>latestReviewSubmissions(records).filter(s=>['submitted','graded'].includes(s.state)&&s.points!==null&&s.points!==undefined&&!s.procedureReviewPending&&(!s.published||s.gradeDraft));
 
-export function createActivityReview({api,modal,openModal,icon,toast,render,questionMedia}){
- let cleanup=()=>{};
+export function createActivityReview({api,modal,openModal,icon,toast,render,questionMedia,canDismissModal=()=>true}){
+ let cleanup=()=>{},leave=async()=>true;
  function open({activity,submissions,id,onUpdate,mode='grade'}){
-  cleanup();let records=[...submissions],selected=id||latestReviewSubmissions(records)[0]?.id||records[0]?.id,filter='current',query='',changed=false,busy=false,dirty=false,timer=null,pending=Promise.resolve(true),lastError='';
+  cleanup();let records=[...submissions],selected=id||latestReviewSubmissions(records)[0]?.id||records[0]?.id,filter='current',query='',changed=false,busy=false,dirty=false,returnDirty=false,timer=null,pending=Promise.resolve(true),lastError='';
   if(records.find(s=>s.id===selected)?.superseded)filter='all';
   const controller=new AbortController(),options={signal:controller.signal};
-  cleanup=()=>{clearTimeout(timer);controller.abort();};
+  cleanup=()=>{clearTimeout(timer);controller.abort();leave=async()=>true;};
   const button=(label,action,glyph='check',style='secondary',extra='')=>`<button type="button" class="btn ${style}" data-review="${action}" ${extra}>${icon(glyph)}${label}</button>`;
   const list=()=>{
    const base=filter==='current'?latestReviewSubmissions(records):records.filter(s=>filter==='all'||reviewCategory(s)===filter);
@@ -62,25 +62,27 @@ export function createActivityReview({api,modal,openModal,icon,toast,render,ques
 
   function queue(){const visible=list();return `<div class="review-queue-head"><h3>Estudiantes</h3><label><span class="sr-only">Buscar estudiante</span><input id="review-search" type="search" aria-label="Buscar estudiante" placeholder="Buscar estudiante" value="${e(query)}"></label><label><span class="sr-only">Filtrar entregas</span><select id="review-filter" aria-label="Filtrar entregas">${[['current','Última entrega'],['pending','Por calificar o devolver'],['published','Devueltas con nota'],['returned','En corrección'],['draft','Sin enviar'],['history','Versiones anteriores'],['all','Todos los intentos']].map(([v,t])=>`<option value="${v}" ${filter===v?'selected':''}>${t}</option>`).join('')}</select></label><p class="field-hint" data-queue-count>${visible.length} ${filter==='current'?'estudiantes':'registros'}</p></div><div class="review-queue-list">${queueItems(visible)}</div>`;}
   function queueItems(visible){return visible.map(s=>`<button type="button" class="review-person ${s.id===selected?'active':''}" data-review="select" data-id="${e(s.id)}" aria-current="${s.id===selected?'true':'false'}"><span class="review-person-avatar">${e((s.name||'?').split(' ').map(v=>v[0]).slice(0,2).join(''))}</span><span><strong>${e(s.name)}</strong><small>${reviewStatus(s)}</small></span><span class="review-person-score">${number(s.points)}</span></button>`).join('')||'<p class="field-hint review-queue-empty">Sin resultados.</p>';}
-  function paint(){const s=current();if(!s)return;if(mode==='return'&&returnBlockReason(s,activity,records))mode='grade';const a=itemActivity(s);modal.querySelector('[data-review-root]').innerHTML=`<div class="review-topline"><div><strong>${e(activity.title)}</strong><span>${number(activity.maxPoints)} puntos · ${number(activity.weight)} %</span></div><div class="review-top-actions"><a class="btn secondary small" href="/api/academics/activities/${e(activity.id)}/download?aula_view=teaching" download>${icon('download')}Descargar ZIP</a>${button('Devolver a todos','release-all','users','secondary small',releasableReviewSubmissions(records).length?'':'disabled')}${button('Anterior','prev','back','ghost small')}${button('Siguiente','next','arrow','ghost small')}${button('Nota','jump-grade','edit','secondary small review-mobile-grade')}</div></div><div class="review-layout"><aside class="review-queue" aria-label="Lista de estudiantes">${queue()}</aside><main class="review-response-pane" tabindex="-1">${content(s,a)}</main><aside class="review-grading-pane" id="review-grading" aria-label="Calificar respuesta">${panel(s,a)}</aside></div>`;modal.dataset.dirty='false';updateNavigation();}
+  function paint(){returnDirty=false;const s=current();if(!s)return;if(mode==='return'&&returnBlockReason(s,activity,records))mode='grade';const a=itemActivity(s);modal.querySelector('[data-review-root]').innerHTML=`<div class="review-topline"><div><strong>${e(activity.title)}</strong><span>${number(activity.maxPoints)} puntos · ${number(activity.weight)} %</span></div><div class="review-top-actions"><a class="btn secondary small" href="/api/academics/activities/${e(activity.id)}/download?aula_view=teaching" download>${icon('download')}Descargar ZIP</a>${button('Devolver a todos','release-all','users','secondary small',releasableReviewSubmissions(records).length?'':'disabled')}${button('Anterior','prev','back','ghost small')}${button('Siguiente','next','arrow','ghost small')}${button('Nota','jump-grade','edit','secondary small review-mobile-grade')}</div></div><div class="review-layout"><aside class="review-queue" aria-label="Lista de estudiantes">${queue()}</aside><main class="review-response-pane" tabindex="-1">${content(s,a)}</main><aside class="review-grading-pane" id="review-grading" aria-label="Calificar respuesta">${panel(s,a)}</aside></div>`;modal.dataset.dirty='false';updateNavigation();}
   function updateNavigation(){const visible=list(),at=visible.findIndex(s=>s.id===selected);const prev=modal.querySelector('[data-review=prev]'),next=modal.querySelector('[data-review=next]');if(prev)prev.disabled=at<=0;if(next)next.disabled=at<0||at>=visible.length-1;}
   function updateQueue(){const items=modal.querySelector('.review-queue-list');if(items)items.innerHTML=queueItems(list());const count=modal.querySelector('[data-queue-count]');if(count)count.textContent=list().length+' '+(filter==='current'?'estudiantes':'registros');const all=modal.querySelector('[data-review=release-all]');if(all)all.disabled=!releasableReviewSubmissions(records).length;updateNavigation();}
   function status(message,error=false){const el=modal.querySelector('[data-save-status]');if(el){el.textContent=message;el.classList.toggle('error',error);}}
   function showError(message){const el=modal.querySelector(mode==='return'?'#review-return-form .review-error':'#review-grade-form .review-error');if(el)el.textContent=message;else if(message)toast(message);const recovery=modal.querySelector('[data-save-recovery]');if(recovery)recovery.hidden=!message;}
-  function markDirty(){dirty=true;lastError='';modal.dataset.dirty='false';status('Guardando…');clearTimeout(timer);timer=setTimeout(()=>void saveNow(),650);}
+  function markDirty(){dirty=true;lastError='';modal.dataset.dirty='true';status('Guardando…');clearTimeout(timer);timer=setTimeout(()=>void saveNow(),650);}
   function saveNow(){clearTimeout(timer);pending=pending.then(async()=>{
    if(!dirty)return true;
    const s=current(),form=modal.querySelector('#review-grade-form');if(!canGrade(s)||!form)return true;
    const input=form.querySelector('[name=points]');if(!input.checkValidity()){lastError='La nota debe estar entre 0 y '+number(itemActivity(s).maxPoints)+'.';status(lastError,true);return false;}
    const fd=new FormData(form),body={version:s.version,points:fd.get('points')===''?null:Number(fd.get('points')),feedback:fd.get('feedback'),published:false,procedureReviewed:fd.has('procedureReviewed')};
    dirty=false;status('Guardando…');
-   try{const saved=await api('/academics/submissions/'+s.id+'/grade',{method:'PATCH',body});records=records.map(v=>v.id===s.id?{...v,...saved}:v);update();updateQueue();lastError='';showError('');status(dirty?'Guardando…':'Guardado · solo tú puedes ver los cambios');return true;}
+   try{const saved=await api('/academics/submissions/'+s.id+'/grade',{method:'PATCH',body});records=records.map(v=>v.id===s.id?{...v,...saved}:v);update();updateQueue();lastError='';showError('');modal.dataset.dirty=dirty||returnDirty?'true':'false';status(dirty?'Guardando…':'Guardado · solo tú puedes ver los cambios');return true;}
    catch(err){dirty=true;lastError=err.message;status('No se pudo guardar. Tus cambios siguen aquí.',true);showError(err.message);return false;}
   });return pending;}
   async function flush(){clearTimeout(timer);await pending;while(dirty){if(!await saveNow())return false;}return true;}
-  async function navigate(target){if(!target||target===selected||busy)return;busy=true;try{if(!await flush())return;selected=target;mode='grade';paint();}finally{busy=false;}}
+  leave=async()=>{if(busy)return false;if(!await flush())return false;modal.dataset.dirty=returnDirty?'true':'false';return true;};
+  function canAbandonCorrection(next){if(!returnDirty)return true;modal.dataset.dirty='true';return canDismissModal(()=>{returnDirty=false;modal.dataset.dirty='false';modal.querySelector('.discard-changes')?.remove();next();});}
+  async function navigate(target){if(!target||target===selected||busy)return;busy=true;try{if(!await flush()||!canAbandonCorrection(()=>void navigate(target)))return;selected=target;mode='grade';returnDirty=false;paint();}finally{busy=false;}}
   async function reload(){const result=await api('/academics/activities/'+activity.id+'/submissions');activity=result.activity;records=result.submissions;onUpdate?.(result);if(!current())selected=latestReviewSubmissions(records)[0]?.id||records[0]?.id;}
-  async function run(action){if(busy)return;busy=true;modal.setAttribute('aria-busy','true');
+  async function run(action){if(busy||action!=='return'&&!canAbandonCorrection(()=>void run(action)))return;busy=true;modal.setAttribute('aria-busy','true');
    try{if(!await flush())return;
     modal.querySelector('[data-review-root]').inert=true;
     if(action==='release'){const s=current();if(s.points===null||s.points===undefined)throw Error('Escribe una nota antes de devolver.');if(s.procedureReviewPending)throw Error('Revisa los archivos y marca su revisión antes de devolver.');const saved=await api('/academics/submissions/'+s.id+'/release',{method:'POST',body:{version:s.version}});records=records.map(v=>v.id===s.id?{...v,...saved}:v);update();paint();toast('Nota y comentario devueltos al estudiante.');}
@@ -89,7 +91,7 @@ export function createActivityReview({api,modal,openModal,icon,toast,render,ques
     if(action==='return'){const s=current(),form=modal.querySelector('#review-return-form');if(!form.reportValidity())return;const fd=new FormData(form);const saved=await api('/academics/submissions/'+s.id+'/return',{method:'PATCH',body:{version:s.version,reason:fd.get('reason'),returnDueAt:fd.get('returnDueAt')?new Date(fd.get('returnDueAt')).toISOString():null}});records=records.map(v=>v.id===s.id?{...v,...saved}:v);mode='grade';update();paint();toast('Corrección solicitada en el mismo intento.');}
    }catch(err){showError(err.message);}finally{busy=false;const root=modal.querySelector('[data-review-root]');if(root)root.inert=false;modal.removeAttribute('aria-busy');}
   }
-  async function dismiss(){if(busy)return;busy=true;try{if(await flush()){modal.dataset.dirty='false';modal.close();}}finally{busy=false;}}
+  async function dismiss(){if(busy)return;busy=true;try{if(await flush()){modal.dataset.dirty=returnDirty?'true':'false';if(canDismissModal(()=>modal.close()))modal.close();}}finally{busy=false;}}
   openModal('Revisar entregas',`<div data-review-root></div>`,null,{wide:true});modal.classList.add('review-workspace');
   modal.addEventListener('close',()=>{if(modal.open)return;cleanup();if(changed)void render();},options);
   modal.addEventListener('cancel',ev=>{ev.preventDefault();ev.stopImmediatePropagation();void dismiss();},{...options,capture:true});
@@ -101,7 +103,7 @@ export function createActivityReview({api,modal,openModal,icon,toast,render,ques
    if(action==='prev'||action==='next'||action==='save-next'){const visible=list(),at=visible.findIndex(v=>v.id===selected);await navigate(visible[at+(action==='prev'?-1:1)]?.id);}
    if(action==='jump-grade')modal.querySelector('.review-grading-pane').scrollIntoView({behavior:'smooth',block:'start'});
    if(action==='instructions'){const detail=modal.querySelector('.review-instructions');detail.open=!detail.open;if(detail.open)detail.scrollIntoView({block:'nearest'});}
-   if(action==='return-mode'||action==='grade-mode'){if(action==='return-mode'&&returnBlockReason(s,activity,records))return;busy=true;try{if(!await flush())return;mode=action==='return-mode'?'return':'grade';modal.querySelector('[data-review-grade]').hidden=mode==='return';modal.querySelector('[data-review-return]').hidden=mode!=='return';modal.dataset.dirty='false';if(mode==='return')modal.querySelector('#review-return-form [name=reason]').focus();}finally{busy=false;}}
+   if(action==='return-mode'||action==='grade-mode'){if(action==='return-mode'&&returnBlockReason(s,activity,records))return;busy=true;try{if(!await flush())return;mode=action==='return-mode'?'return':'grade';modal.querySelector('[data-review-grade]').hidden=mode==='return';modal.querySelector('[data-review-return]').hidden=mode!=='return';modal.dataset.dirty=returnDirty?'true':'false';if(mode==='return')modal.querySelector('#review-return-form [name=reason]').focus();}finally{busy=false;}}
    if(action==='score-auto'){const input=modal.querySelector('[name=points]');input.value=s.automaticPoints;markDirty();}
    if(action==='retry-save'){busy=true;try{if(await flush())toast('Cambios guardados.');}finally{busy=false;}}
    if(action==='discard-reload'){busy=true;clearTimeout(timer);try{await pending;await reload();dirty=false;lastError='';modal.dataset.dirty='false';paint();toast('Entrega actualizada. Se descartaron tus cambios sin guardar.');}catch(err){showError(err.message);}finally{busy=false;}}
@@ -112,10 +114,10 @@ export function createActivityReview({api,modal,openModal,icon,toast,render,ques
    if(ev.target.id==='review-search'){query=ev.target.value.toLocaleLowerCase();updateQueue();}
    if(ev.target.id==='review-filter'){filter=ev.target.value;updateQueue();}
    if(ev.target.closest('#review-grade-form')&&ev.target.matches('input,textarea'))markDirty();
-   else if(ev.target.closest('#review-return-form'))modal.dataset.dirty='false';
+   else if(ev.target.closest('#review-return-form')){returnDirty=true;modal.dataset.dirty='true';}
   }
   modal.addEventListener('input',fieldChanged,options);modal.addEventListener('change',fieldChanged,options);
   paint();modal.querySelector('.review-response-pane').focus({preventScroll:true});
  }
- return {open,dispose:()=>cleanup()};
+ return {open,beforeLeave:()=>leave(),dispose:()=>cleanup()};
 }

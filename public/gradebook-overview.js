@@ -34,9 +34,17 @@ export function bindGradebookOverview(root=document){
   if(form.elements.from.value&&form.elements.to.value&&form.elements.from.value>form.elements.to.value){form.elements.to.setCustomValidity('La fecha final debe ser posterior a la inicial.');form.elements.to.reportValidity();return;}
   form.elements.to.setCustomValidity('');
   const query=new URLSearchParams();for(const key of ['student','from','to'])if(form.elements[key].value)query.set(key,form.elements[key].value);
-  location.hash='calificaciones/'+encodeURIComponent(form.elements.group.value)+(query.size?'?'+query:'');
+  location.hash=gradebookFilterRoute(form.elements.group.value,query,location.hash);
  });
  form.elements.to.addEventListener('input',()=>form.elements.to.setCustomValidity(''));
  form.elements.from.addEventListener('input',()=>form.elements.to.setCustomValidity(''));
  form.elements.group.addEventListener('change',()=>{form.elements.student.value='';form.requestSubmit();});
+}
+
+export function gradebookFilterRoute(group,filters,currentHash=''){
+ const current=gradebookRoute(currentHash.replace(/^#/,'')),query=new URLSearchParams(filters);
+ if(current.id===group&&current.query.get('view')==='matrix')query.set('view','matrix');
+ else query.delete('view');
+ if(current.id!==group)query.delete('student');
+ return '#calificaciones/'+encodeURIComponent(group)+(query.size?'?'+query:'');
 }

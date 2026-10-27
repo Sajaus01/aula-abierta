@@ -7,6 +7,7 @@ import {createCommunityUI} from './community.js';
 import {createPanoramaUI} from './panorama.js';
 import {createAnalyticsUI} from './analytics.js';
 import {createEngagementTracker} from './engagement.js';
+import {createNavigation,navigationScope} from './navigation.js';
 import {createLibraryUI} from './library.js';
 import {createPlatformUI} from './platform.js';
 import { createQuickResourcesUI } from './quick-resources.js';
@@ -32,7 +33,7 @@ const route = () => state.user?.mustChangePassword ? 'crear-contrasena' : locati
 const modal = document.getElementById('modal');
 const app = document.getElementById('app');
 let pendingModalDismiss=null;
-let modalHandler, renderVersion = 0, toastTimer, renderedRoute=null;
+let modalHandler, renderVersion = 0, toastTimer, renderedRoute=null,renderedScope=null;
 async function api(path, options={}) {
   const requestedView=state.viewMode;
   const res = await fetch(`/api${path}`, {credentials:'same-origin',...options,headers:{'Content-Type':'application/json',...(state.preview?{'X-Aula-Preview':state.preview,...(state.previewActivity?{'X-Aula-Activity-Preview':state.previewActivity}:{})}:state.user?.roles?{'X-Aula-View':requestedView}:{}),...options.headers},body:options.body === undefined ? undefined : JSON.stringify(options.body)});
@@ -152,7 +153,7 @@ async function coursePage(id,version) {
  state.currentCourse=c;
  if(!admin())return learnerCoursePage(c);
  const resources=(c.modules||[]).flatMap(m=>m.resources||[]),done=resources.filter(r=>state.progress.some(p=>p.resourceId===r.id&&p.completed)).length;
- return `<a class="text-button" href="#${admin()?(c.entityKind==='group'?'grupos':'cursos'):'catalogo'}">Volver a ${c.entityKind==='group'?'los grupos':'los cursos'}</a><div class="course-header"><div><div style="margin-top:24px" class="flex">${badge(c.accessMode)}${!c.published?'<span class="badge gray">Borrador</span>':''}</div><h1>${e(c.title)}</h1><p>${e(c.description)}</p></div>${admin()?`<div class="flex wrap" style="margin-top:26px">${btn(c.entityKind==='group'?'Editar grupo':'Editar curso',`edit-course:${c.id}`,'secondary','edit')}${btn(c.published?'Volver a borrador':'Publicar curso',`publish-course:${c.id}`,c.published?'secondary':'','globe')}${academicsUI.courseLinks(c.id)}</div>`:''}</div>${c.accessMode==='document'?'<div class="notice warning">'+icon('shield')+'Este curso permite entrar con solo cédula. Este método no comprueba la identidad de quien accede.</div>':''}<div class="detail-grid"><section><div class="section-head"><h2>Contenido del curso</h2>${admin()?btn('Añadir capítulo',`new-module:${c.id}`,'secondary small','plus'):`<small>${c.modules.length} capítulos · ${resources.length} recursos</small>`}</div>${c.modules.length?c.modules.map((m,i)=>`<article class="module publication-module ${m.published?'':'is-draft'}" data-module-id="${e(m.id)}"><div class="module-head"><div class="module-title"><span class="number">${String([...c.modules].sort((a,b)=>(a.position??0)-(b.position??0)||a.id.localeCompare(b.id)).findIndex(item=>item.id===m.id)+1).padStart(2,'0')}</span><h3>${e(m.title)}</h3><span class="badge ${m.published?'green':'gray'}">${m.published?'Publicado':'Borrador'}</span></div>${admin()?`<div class="flex wrap">${btn(m.published?'Ocultar':'Publicar',`publish-module:${m.id}`,'secondary small','globe')}${btn('Añadir material',`new-resource:${m.id}`,'ghost small','plus')}${btn('Crear actividad',`academic-new-module:${m.id}`,'ghost small','plus')}<button class="icon-btn" data-action="edit-module:${m.id}" aria-label="Editar capítulo">${icon('edit')}</button><button class="icon-btn" data-action="delete-module:${m.id}" aria-label="Eliminar capítulo">${icon('trash')}</button></div>`:''}</div>${!m.published?'<p class="publication-hint">Capítulo oculto: sus materiales y actividades no se muestran a los estudiantes.</p>':!c.published?'<p class="publication-hint">Este capítulo se mostrará cuando publiques el curso.</p>':''}${m.resources.map(r=>`<div class="resource-row"><span class="resource-icon">${icon(kindIcon(r.kind))}</span><div class="spacer"><strong>${e(r.title)}</strong><small>${kinds[r.kind]} · <span class="publication-state">${!r.published?'Borrador':!m.published?'Publicado · capítulo oculto':!c.published?'Publicado · curso en borrador':'Publicado'}</span>${state.progress.some(p=>p.resourceId===r.id&&p.completed)?' · Completado':''}</small></div>${btn('Abrir',`resource:${r.id}`,'secondary small','arrow')}${admin()?`${btn(r.published?'Ocultar':'Publicar',`publish-resource:${r.id}`,'secondary small','globe')}<button class="icon-btn" data-action="edit-resource:${r.id}" aria-label="Editar recurso">${icon('edit')}</button><button class="icon-btn" data-action="delete-resource:${r.id}" aria-label="Eliminar recurso">${icon('trash')}</button>`:''}</div>`).join('')}${academicsUI.courseRows((c.activities||[]).filter(a=>a.moduleId===m.id))}${!m.resources.length&&!(c.activities||[]).some(a=>a.moduleId===m.id)?'<p class="small-paragraph" style="padding:24px">Añade el primer material o actividad de este capítulo.</p>':''}</article>`).join(''):empty('Empieza por el primer capítulo',admin()?'Divide el curso en capítulos y añade sus materiales.':'El contenido de este curso estará disponible pronto.',admin()?btn('Crear capítulo',`new-module:${c.id}`,'secondary','plus'):'','folder')}${academicsUI.generalSection((c.activities||[]).filter(a=>!a.moduleId))}</section><aside><div class="panel"><h2>${admin()?'Tu curso, paso a paso':'Tu avance'}</h2>${admin()?`<div class="steps"><div class="step">${icon('folder')}<span class="small-paragraph">${c.modules.length} capítulos organizados</span></div><div class="step">${icon('file')}<span class="small-paragraph">${resources.length} materiales añadidos</span></div><div class="step">${icon('users')}<span class="small-paragraph">${state.enrollments.filter(x=>x.courseId===c.id&&x.active).length} matrículas activas</span></div></div><div class="form-actions">${btn('Matricular estudiantes',`enroll-course:${c.id}`,'secondary small')}</div>`:`<div class="progress-track"><div class="progress-fill" style="width:${resources.length?Math.round(done/resources.length*100):0}%"></div></div><p class="small-paragraph">${done} de ${resources.length} recursos completados</p>${!state.user?'<p class="field-hint" style="margin-top:12px">Ingresa para guardar tu avance.</p>':''}`}<div class="mode-card" style="margin-top:18px"><p>Abre cada recurso para leerlo, verlo o descargarlo.</p></div>${admin()&&!state.user?.roles?btn('Eliminar curso',`delete-course:${c.id}`,'danger small','trash'):''}</div>${quickResourcesUI.panel(c)}</aside></div>`;
+ return `<a data-nav-back class="text-button" href="#${admin()?(c.entityKind==='group'?'grupos':'cursos'):'catalogo'}">Volver a ${c.entityKind==='group'?'los grupos':'los cursos'}</a><div class="course-header"><div><div style="margin-top:24px" class="flex">${badge(c.accessMode)}${!c.published?'<span class="badge gray">Borrador</span>':''}</div><h1>${e(c.title)}</h1><p>${e(c.description)}</p></div>${admin()?`<div class="flex wrap" style="margin-top:26px">${btn(c.entityKind==='group'?'Editar grupo':'Editar curso',`edit-course:${c.id}`,'secondary','edit')}${btn(c.published?'Volver a borrador':'Publicar curso',`publish-course:${c.id}`,c.published?'secondary':'','globe')}${academicsUI.courseLinks(c.id)}</div>`:''}</div>${c.accessMode==='document'?'<div class="notice warning">'+icon('shield')+'Este curso permite entrar con solo cédula. Este método no comprueba la identidad de quien accede.</div>':''}<div class="detail-grid"><section><div class="section-head"><h2>Contenido del curso</h2>${admin()?btn('Añadir capítulo',`new-module:${c.id}`,'secondary small','plus'):`<small>${c.modules.length} capítulos · ${resources.length} recursos</small>`}</div>${c.modules.length?c.modules.map((m,i)=>`<article class="module publication-module ${m.published?'':'is-draft'}" data-module-id="${e(m.id)}"><div class="module-head"><div class="module-title"><span class="number">${String([...c.modules].sort((a,b)=>(a.position??0)-(b.position??0)||a.id.localeCompare(b.id)).findIndex(item=>item.id===m.id)+1).padStart(2,'0')}</span><h3>${e(m.title)}</h3><span class="badge ${m.published?'green':'gray'}">${m.published?'Publicado':'Borrador'}</span></div>${admin()?`<div class="flex wrap">${btn(m.published?'Ocultar':'Publicar',`publish-module:${m.id}`,'secondary small','globe')}${btn('Añadir material',`new-resource:${m.id}`,'ghost small','plus')}${btn('Crear actividad',`academic-new-module:${m.id}`,'ghost small','plus')}<button class="icon-btn" data-action="edit-module:${m.id}" aria-label="Editar capítulo">${icon('edit')}</button><button class="icon-btn" data-action="delete-module:${m.id}" aria-label="Eliminar capítulo">${icon('trash')}</button></div>`:''}</div>${!m.published?'<p class="publication-hint">Capítulo oculto: sus materiales y actividades no se muestran a los estudiantes.</p>':!c.published?'<p class="publication-hint">Este capítulo se mostrará cuando publiques el curso.</p>':''}${m.resources.map(r=>`<div class="resource-row"><span class="resource-icon">${icon(kindIcon(r.kind))}</span><div class="spacer"><strong>${e(r.title)}</strong><small>${kinds[r.kind]} · <span class="publication-state">${!r.published?'Borrador':!m.published?'Publicado · capítulo oculto':!c.published?'Publicado · curso en borrador':'Publicado'}</span>${state.progress.some(p=>p.resourceId===r.id&&p.completed)?' · Completado':''}</small></div>${btn('Abrir',`resource:${r.id}`,'secondary small','arrow')}${admin()?`${btn(r.published?'Ocultar':'Publicar',`publish-resource:${r.id}`,'secondary small','globe')}<button class="icon-btn" data-action="edit-resource:${r.id}" aria-label="Editar recurso">${icon('edit')}</button><button class="icon-btn" data-action="delete-resource:${r.id}" aria-label="Eliminar recurso">${icon('trash')}</button>`:''}</div>`).join('')}${academicsUI.courseRows((c.activities||[]).filter(a=>a.moduleId===m.id))}${!m.resources.length&&!(c.activities||[]).some(a=>a.moduleId===m.id)?'<p class="small-paragraph" style="padding:24px">Añade el primer material o actividad de este capítulo.</p>':''}</article>`).join(''):empty('Empieza por el primer capítulo',admin()?'Divide el curso en capítulos y añade sus materiales.':'El contenido de este curso estará disponible pronto.',admin()?btn('Crear capítulo',`new-module:${c.id}`,'secondary','plus'):'','folder')}${academicsUI.generalSection((c.activities||[]).filter(a=>!a.moduleId))}</section><aside><div class="panel"><h2>${admin()?'Tu curso, paso a paso':'Tu avance'}</h2>${admin()?`<div class="steps"><div class="step">${icon('folder')}<span class="small-paragraph">${c.modules.length} capítulos organizados</span></div><div class="step">${icon('file')}<span class="small-paragraph">${resources.length} materiales añadidos</span></div><div class="step">${icon('users')}<span class="small-paragraph">${state.enrollments.filter(x=>x.courseId===c.id&&x.active).length} matrículas activas</span></div></div><div class="form-actions">${btn('Matricular estudiantes',`enroll-course:${c.id}`,'secondary small')}</div>`:`<div class="progress-track"><div class="progress-fill" style="width:${resources.length?Math.round(done/resources.length*100):0}%"></div></div><p class="small-paragraph">${done} de ${resources.length} recursos completados</p>${!state.user?'<p class="field-hint" style="margin-top:12px">Ingresa para guardar tu avance.</p>':''}`}<div class="mode-card" style="margin-top:18px"><p>Abre cada recurso para leerlo, verlo o descargarlo.</p></div>${admin()&&!state.user?.roles?btn('Eliminar curso',`delete-course:${c.id}`,'danger small','trash'):''}</div>${quickResourcesUI.panel(c)}</aside></div>`;
 }
 async function refresh() {
  const isAdmin=admin();
@@ -161,7 +162,11 @@ async function refresh() {
  [state.courses,state.students,state.enrollments,state.progress,state.learning,state.academicOverview]=results;
 }
 async function render() {
- const version=++renderVersion; academicsUI.cancelPending();const current=route();let content;
+ const version=++renderVersion,current=route(),scope=navigationScope(state);
+ if(renderedScope&&renderedScope!==scope)academicsUI.dispose();
+ else if(!await academicsUI.beforeLeave())return;
+ if(version!==renderVersion||scope!==navigationScope(state)||current!==route())return;
+ academicsUI.cancelPending();const navToken=navigation.beginRender(current);let content;
  if(!/^(curso|actividad|actividades|calificaciones|estadisticas)\//.test(current))state.currentCourse=null;
  try {
   if(state.user?.mustChangePassword) content=firstPasswordPage();
@@ -182,9 +187,9 @@ async function render() {
   else if(current==='cuenta') content=heading('Mi cuenta','Tu información de acceso.')+`<section class="panel" style="max-width:650px"><h2>${e(state.user.name)}</h2><p class="small-paragraph" style="margin:15px 0">Usuario: ${e(state.user.document)}<br>Acceso actual: ${state.assurance==='password'?'Con contraseña':'Solo cédula'}</p>${state.user.roles?`<p class="small-paragraph">Funciones: ${state.user.roles.map(r=>({master:'Máster',admin:'Administrativo',teacher:'Docente',student:'Estudiante'}[r]||r)).join(' · ')}</p>`:''}${hasDualRole()?`<p class="small-paragraph">Puedes cambiar entre Docencia y Aprendizaje desde la barra lateral. Tus matrículas y grupos asignados se conservan por separado.</p>`:''}${state.assurance==='password'?btn('Cambiar contraseña','change-password','secondary','lock'):btn('Ingresar con contraseña','password-login','secondary','lock')}</section>`;
   else if(!admin()){location.hash='mis-cursos';return;}
   else content=({inicio:dashboard,cursos:()=>coursesPage(),estudiantes:studentsPage,matriculas:enrollmentsPage,biblioteca:libraryPage,ajustes:settingsPage}[current]||dashboard)();
-  if(version!==renderVersion)return;
+  if(version!==renderVersion||navToken.scope!==navigationScope(state)||current!==route())return;
   app.innerHTML=state.user?.mustChangePassword?firstPasswordShell(content):state.user&&current!=='login'?shell(content,current):publicShell(content);
-  renderedRoute=current;
+  renderedRoute=current;renderedScope=scope;
   if(admin()&&current==='ajustes')document.querySelector('.settings-grid')?.insertAdjacentHTML('beforeend',`<section class="panel"><h2>Trasladar un aula existente</h2><p class="small-paragraph">Importa una copia de migración en una plataforma sin cursos ni estudiantes. Conserva la cuenta de administrador de destino. El archivo contiene datos privados: no lo subas a GitHub.</p><div class="form-actions">${btn('Importar traslado','import-migration','secondary','upload')}</div></section>`);
   storageUI.bind();
   platformUI.enhance(current);
@@ -195,9 +200,19 @@ async function render() {
   enhanceUI(app);
   bindForms();
   document.title=`${document.querySelector('main h1')?.textContent||'Mi aula'} · ${state.settings.name||'Aula Abierta'}`;
-  if(current.startsWith('curso/')){const deep=parseCourseDeepLink(current),resourceId=deep.resourceId||state.pendingResourceId;state.pendingResourceId=null;if(deep.resourceId||deep.quickResourceId){history.replaceState(null,'','#curso/'+deep.courseId);renderedRoute=route();}if(resourceId&&state.currentCourse?.modules.some(m=>m.resources.some(r=>r.id===resourceId)))await viewResource(resourceId);else if(deep.quickResourceId&&state.currentCourse?.quickResources?.some(item=>item.id===deep.quickResourceId))await quickResourcesUI.action('quick-view',deep.quickResourceId);else if(deep.moduleId){const chapter=Array.from(document.querySelectorAll('[data-module-id]')).find(node=>node.dataset.moduleId===deep.moduleId);if(chapter?.tagName==='DETAILS')chapter.open=true;chapter?.scrollIntoView({block:'start',behavior:'instant'});}}
+  navigation.completeRender(navToken);
+  if(current.startsWith('curso/')){
+   const deep=parseCourseDeepLink(current),resourceId=deep.resourceId||state.pendingResourceId;state.pendingResourceId=null;
+   if(deep.resourceId||deep.quickResourceId){navigation.replaceRoute('curso/'+deep.courseId);renderedRoute=route();}
+   state.viewerReturnToOrigin=resourceId||deep.quickResourceId?{route:route(),scope}:null;
+   try{
+    if(resourceId&&state.currentCourse?.modules.some(m=>m.resources.some(r=>r.id===resourceId)))await viewResource(resourceId);
+    else if(deep.quickResourceId&&state.currentCourse?.quickResources?.some(item=>item.id===deep.quickResourceId))await quickResourcesUI.action('quick-view',deep.quickResourceId);
+    else if(deep.moduleId){const chapter=Array.from(document.querySelectorAll('[data-module-id]')).find(node=>node.dataset.moduleId===deep.moduleId);if(chapter?.tagName==='DETAILS')chapter.open=true;chapter?.scrollIntoView({block:'start',behavior:'instant'});}
+   }finally{state.viewerReturnToOrigin=null;}
+  }
 
- }catch(error){if(version!==renderVersion)return;const message=empty('No pudimos abrir esta página',e(error.message),btn('Volver a intentar','reload','secondary','arrow')+`<a class="btn ghost" href="#${admin()?'inicio':'mis-cursos'}">Volver al inicio</a>`,'help');app.innerHTML=state.user?shell(message,current):publicShell(message);enhanceUI(app);}
+ }catch(error){if(version!==renderVersion||navToken.scope!==navigationScope(state)||current!==route())return;const message=empty('No pudimos abrir esta página',e(error.message),btn('Volver a intentar','reload','secondary','arrow')+`<a class="btn ghost" href="#${admin()?'inicio':'mis-cursos'}">Volver al inicio</a>`,'help');app.innerHTML=state.user?shell(message,current):publicShell(message);enhanceUI(app);renderedRoute=current;navigation.completeRender(navToken);}
 }
 function detachFloatingTools(){courseHelpUI.detachFromViewer();const chats=document.getElementById('chat-root');if(chats?.closest('dialog'))document.body.append(chats);}
 function openModal(title,body,onSubmit,{wide=false,submit='Guardar'}={}) {
@@ -206,18 +221,19 @@ function openModal(title,body,onSubmit,{wide=false,submit='Guardar'}={}) {
  document.documentElement.classList.remove('resource-viewer-open');
  modal.className=wide?'wide':'';
  modal.innerHTML=`<div class="modal-head"><h2 id="modal-title">${title}</h2><button type="button" class="icon-btn" data-action="close-modal" aria-label="Cerrar">${icon('close')}</button></div>${onSubmit?'<form id="modal-form">':''}${body}${onSubmit?`<div class="form-error" role="alert"></div><div class="form-actions"><button type="button" class="btn secondary" data-action="close-modal">Cancelar</button><button type="submit" class="btn">${submit}</button></div></form>`:''}`;
- modal.dataset.dirty='false';modalHandler=onSubmit;enhanceUI(modal);modal.showModal();
+ modal.dataset.dirty='false';modalHandler=onSubmit;enhanceUI(modal);navigation.openOverlay();modal.showModal();
 }
 function openResourceViewer(resource,view,actions) {
  detachFloatingTools();
- const backLabel=resource.id.startsWith('academic-file-')?'Volver a la actividad':'Volver al curso';
+ const returnToOrigin=state.viewerReturnToOrigin?.route===route()&&state.viewerReturnToOrigin?.scope===navigationScope(state);
+ const backLabel=returnToOrigin&&navigation.originLabel()||navigation.overlayOriginLabel()|| (resource.id.startsWith('academic-file-')?'Volver a la actividad':'Volver al curso');
  if(modal.open)modal.close();
  modal.className='resource-viewer';
  modal.dataset.dirty='false';
  modal.innerHTML=`<header class="viewer-header"><button type="button" class="btn secondary viewer-back" data-action="close-modal" aria-label="${backLabel}" autofocus>${icon('arrow')}<span class="viewer-action-label">${backLabel}</span></button><div class="viewer-heading"><h2 id="modal-title" title="${e(resource.title)}">${e(resource.title)}</h2><span>${materialName(resource.kind)}</span></div><div class="viewer-actions">${actions}<button type="button" class="icon-btn" data-action="close-modal" aria-label="Cerrar material" title="Cerrar material">${icon('close')}</button></div></header><p class="viewer-message" role="status" hidden></p><div class="content-view">${view}</div>`;
- modalHandler=null;state.activeResourceId=resource.id;state.activeResourceRoute=route();
+ modalHandler=null;state.activeResourceId=resource.id;state.activeResourceRoute=route();state.activeResourceScope=navigationScope(state);state.activeResourceScroll=window.scrollY;
  document.documentElement.classList.add('resource-viewer-open');
- modal.showModal();courseHelpUI.enhance();chatUI.enhance();
+ navigation.openOverlay(resource.id.startsWith('academic-file-')?null:()=>viewResource(resource.id),{replacePage:returnToOrigin});modal.showModal();courseHelpUI.enhance();chatUI.enhance();
 }
 async function submitForm(form,fn) {
  const submit=form.querySelector('[type=submit]'),error=form.querySelector('.form-error');if(submit.disabled)return;error.textContent='';const label=submit.innerHTML;submit.disabled=true;submit.setAttribute('aria-busy','true');submit.innerHTML=icon('clock')+'Guardando…';
@@ -318,8 +334,8 @@ function resourceForm(id,moduleId) {
 function confirmAction(title,copy,fn) {openModal(title,`<p class="small-paragraph">${copy}</p>`,async()=>{await fn();await saved();},{submit:'Confirmar'});}
 async function viewResource(id) {
  const r=findResource(id);if(!r)throw new Error('Abre primero el curso que contiene este recurso.');
- const initialUser=state.user?.id,initialRoute=route();
- if(student()&&!state.preview){const opened=await post(`/progress/${id}/open`);if(state.user?.id!==initialUser||route()!==initialRoute)return;state.progress=state.progress.filter(p=>p.resourceId!==id).concat(opened);}
+ const initialScope=navigationScope(state),initialRoute=route();
+ if(student()&&!state.preview){const opened=await post(`/progress/${id}/open`);if(navigationScope(state)!==initialScope||route()!==initialRoute)return;state.progress=state.progress.filter(p=>p.resourceId!==id).concat(opened);}
  const url=safeUrl(r.url),embed=videoEmbed(url),file=r.fileUrl;let view='';
  if(['html','lab'].includes(r.kind)&&(r.content||file)){
   view=`<iframe title="${e(r.title)}" sandbox="allow-scripts" referrerpolicy="no-referrer" src="/api/resources/${encodeURIComponent(r.id)}/preview?aula_view=${!state.preview&&student()?'learning':'teaching'}"></iframe>`;
@@ -366,14 +382,15 @@ function canDismissModal(after=()=>modal.close()){
 modal.addEventListener('cancel',ev=>{if(!canDismissModal())ev.preventDefault();});
 modal.addEventListener('close',async()=>{
  if(modal.open)return;
- const resourceId=state.activeResourceId,originRoute=state.activeResourceRoute,scroll=window.scrollY,initialUser=state.user?.id;
+ navigation.closeOverlay();
+ const resourceId=state.activeResourceId,originRoute=state.activeResourceRoute,scroll=state.activeResourceScroll??window.scrollY,initialScope=state.activeResourceScope;
  state.activeResourceId=null;state.activeResourceRoute=null;
  detachFloatingTools();modal.replaceChildren();modalHandler=null;courseHelpUI.enhance();
  document.documentElement.classList.remove('resource-viewer-open');
  if(state.importResult)state.importResult=null;
  if(state.enrollmentReportUrl){URL.revokeObjectURL(state.enrollmentReportUrl);state.enrollmentReportUrl=null;}
  if(resourceId&&student()&&!resourceId.startsWith('academic-file-')){
-  try{const learning=await api('/learning');if(state.user?.id!==initialUser)return;state.learning=learning;}catch{/* The material's saved progress remains available. */}
+  try{const learning=await api('/learning');if(navigationScope(state)!==initialScope)return;state.learning=learning;}catch{/* The material's saved progress remains available. */}
   if(route()===originRoute&&!modal.open){await render();window.scrollTo(0,scroll);document.querySelector(`[data-action="resource:${resourceId}"]`)?.focus({preventScroll:true});}
   else if(route()==='mis-cursos'&&!modal.open&&student())await render();
  }
@@ -387,6 +404,7 @@ document.addEventListener('click',async ev=>{
  const el=ev.target.closest('[data-action]');if(!el)return;const [action,id]=el.dataset.action.split(':');if(el.disabled)return;
  const menu=el.closest('.action-menu');if(menu)menu.open=false;el.setAttribute('aria-busy','true');if(el.tagName==='BUTTON')el.disabled=true;
  try {
+  if(['logout','view-mode','platform-preview','platform-activity-preview','platform-exit-preview'].includes(action)&&(!await academicsUI.beforeLeave()||modal.open&&!canDismissModal(()=>el.click())))return;
   if(action==='lab-results'){if(admin()){const rows=await api('/labs/'+id+'/results');openModal('Resultados del laboratorio',rows.map(r=>'<p>'+e(r.name||r.user_id)+' · '+e(new Date(r.created_at).toLocaleString())+'</p><pre>'+e(r.result)+'</pre>').join('')||'<p>Sin resultados registrados.</p>');}else openModal('Registrar resultados','<label>Resultados y observaciones<textarea name="result" required maxlength="10000" rows="8"></textarea></label>',async fd=>{await post('/labs/'+id+'/results',{result:fd.get('result')});modal.close();toast('Resultados guardados');});return;}
   if(action.startsWith('library-')){await libraryUI.action(action,id,el);return;}
   if(action==='platform-activity-preview'&&modal.open&&!canDismissModal(()=>platformUI.action(action,id)))return;
@@ -445,7 +463,6 @@ document.addEventListener('click',async ev=>{
   }
  }catch(err){toast(err.message);}finally{el.removeAttribute('aria-busy');if(el.tagName==='BUTTON')el.disabled=false;}
 });
-window.addEventListener('hashchange',()=>{if(renderedRoute===route())return;if(modal.open)modal.close();state.query='';state.filter='all';state.resourceFilter='all';render();window.scrollTo(0,0);});
 async function boot() {
  try { const [status,session,settings]=await Promise.all([api('/status'),api('/auth/me'),api('/settings')]);Object.assign(state,session,{settings,setupRequired:status.setupRequired});setInitialView();await refresh();await render(); }
  catch(error){app.innerHTML=publicShell(heading('No pudimos conectar con el aula','Intenta nuevamente en unos momentos. Si el problema continúa, comunícate con tu docente.')+btn('Volver a intentar','reload','secondary','arrow'));}
@@ -462,7 +479,12 @@ const analyticsUI=createAnalyticsUI({api,heading,getState:()=>state});
 const engagementTracker=createEngagementTracker({api,getState:()=>state});
 const platformUI=createPlatformUI({api,getState:()=>state,openModal,modal,render,refresh,toast,btn,heading,courseCard});
 const storageUI=createStorageUI({api,getState:()=>state,heading,btn,icon,openModal,render,toast,modal});
-const academicsUI=createAcademicUI({openResourceViewer,api,getState:()=>state,openModal,toast,render,modal,btn,icon,heading,empty});
+const academicsUI=createAcademicUI({openResourceViewer,api,getState:()=>state,openModal,canDismissModal,isNavigationRestore:()=>navigation.hasSnapshot(),toast,render,modal,btn,icon,heading,empty});
+const navigation=createNavigation({getState:()=>state,getRoute:route,render,isModalOpen:()=>modal.open,closeModal:()=>modal.close(),beforeLeave:async({retry})=>{
+ if(!await academicsUI.beforeLeave())return false;
+ return !modal.open||canDismissModal(()=>{modal.dataset.dirty='false';modal.close();retry();});
+}});
+navigation.start();
 boot();
 
 
@@ -471,4 +493,4 @@ boot();
 
 document.addEventListener('input',event=>{if(!event.target.matches('[data-course-search]')||event.isComposing)return;state.courseContentQuery=event.target.value;state.courseOpenChapters=null;refreshCoursePanel({searchFocus:true});});
 document.addEventListener('click',event=>{const button=event.target.closest('[data-course-expand]');if(!button)return;const chapters=[...document.querySelectorAll('.course-chapter')],expand=chapters.some(chapter=>!chapter.open);chapters.forEach(chapter=>chapter.open=expand);button.textContent=expand?'Contraer todo':'Expandir todo';});
-document.addEventListener('toggle',event=>{if(!event.target.matches?.('.course-chapter'))return;const chapters=[...document.querySelectorAll('.course-chapter')],button=document.querySelector('[data-course-expand]');state.courseOpenChapters=new Set(chapters.filter(chapter=>chapter.open).map(chapter=>chapter.dataset.moduleId));if(button)button.textContent=chapters.length&&chapters.every(chapter=>chapter.open)?'Contraer todo':'Expandir todo';},true);
+document.addEventListener('toggle',event=>{if(!event.target.matches?.('.course-chapter')||!document.contains(event.target))return;const chapters=[...document.querySelectorAll('.course-chapter')],button=document.querySelector('[data-course-expand]');state.courseOpenChapters=new Set(chapters.filter(chapter=>chapter.open).map(chapter=>chapter.dataset.moduleId));if(button)button.textContent=chapters.length&&chapters.every(chapter=>chapter.open)?'Contraer todo':'Expandir todo';},true);
