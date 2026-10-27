@@ -33,7 +33,7 @@ export function createAcademicTools({api,getState,openModal,modal,render,toast,q
    const body={periods,scaleMax:Number(fd.get('scaleMax')),passMark:Number(fd.get('passMark')),missingAsZero:fd.has('missingAsZero'),finalPublished:fd.has('finalPublished')};
    if(body.passMark>body.scaleMax)throw Error('La nota mínima no puede superar el máximo de la escala.');
    const preview=await api('/academics/courses/'+id+'/settings',{method:'PUT',body:{...body,preview:true}}),changes=preview.impact.filter(x=>x.before!==x.after);
-   if(!window.confirm(`Cambiará el promedio provisional de ${changes.length} estudiante(s).\n${changes.slice(0,12).map(x=>{const s=page.students?.find(s=>s.id===x.studentId);return `${s?.name||'Estudiante'}: ${x.before??'—'} → ${x.after??'—'}`;}).join('\n')}\n¿Aplicar el esquema?`))return;
+   if(!window.confirm(`Cambiará la nota acumulada sobre el 100 % de ${changes.length} estudiante(s).\n${changes.slice(0,12).map(x=>{const s=page.students?.find(s=>s.id===x.studentId);return `${s?.name||'Estudiante'}: ${x.before??'—'} → ${x.after??'—'}`;}).join('\n')}\n¿Aplicar el esquema?`))return;
    await api('/academics/courses/'+id+'/settings',{method:'PUT',body:{...body,confirmImpact:true}});modal.close();await render();toast('Evaluación guardada.');
   },{wide:true});
   const list=modal.querySelector('#period-rows'),total=modal.querySelector('#period-total'),add=modal.querySelector('#add-period');

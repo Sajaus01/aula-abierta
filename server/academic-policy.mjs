@@ -28,10 +28,17 @@ export function validatePeriods(input,fail){
 export function gradeCalculation(activities,userId,cfg,forAdmin,{rows,closed,override}){
  const round=n=>Math.round((n+Number.EPSILON)*100)/100;
  const cells=activities.map(a=>{const history=rows(a.id,userId),latest=history[0],s=latest?.state==='draft'&&latest.returned_at?{...latest,state:'returned'}:history.find(r=>r.state!=='draft'),old=s?JSON.parse(s.payload).previousActivity:null;const maxPoints=old?.maxPoints||a.maxPoints;const visible=s&&s.state!=='returned'&&s.points!==null&&(forAdmin||s.published);const exempt=override(a.id,userId);const zero=!s&&cfg.missingAsZero&&closed(a);return {activityId:a.id,title:a.title,periodId:a.periodId||'',weight:a.weight,maxPoints,submissionId:s?.id||null,points:visible?s.points:null,published:Boolean(s?.published),state:exempt?'exempt':s?.state==='returned'?'returned':zero?'missing':!s?'pending':visible?'graded':'submitted',late:Boolean(s?.late),ready:!!exempt||!!zero||!!(s?.state!=='returned'&&s?.published&&s.points!==null)};});
- function calculate(list){const nonExempt=list.filter(c=>c.state!=='exempt'),total=nonExempt.reduce((n,c)=>n+c.weight,0),graded=nonExempt.filter(c=>c.state==='graded'||c.state==='missing'),gradedWeight=graded.reduce((n,c)=>n+c.weight,0),earned=graded.reduce((n,c)=>n+(c.points||0)/c.maxPoints*c.weight,0);return {weightTotal:round(list.reduce((n,c)=>n+c.weight,0)),gradedWeight:round(gradedWeight),provisional:gradedWeight?round(earned/gradedWeight*cfg.scaleMax):null,accumulated:total?round(earned/total*cfg.scaleMax):null,ready:Math.abs(list.reduce((n,c)=>n+c.weight,0)-100)<.001&&list.every(c=>!c.weight||c.ready),allExempt:!!list.length&&!nonExempt.length};}
+ function calculate(list){
+  const nonExempt=list.filter(c=>c.state!=='exempt'),exemptWeight=list.filter(c=>c.state==='exempt').reduce((n,c)=>n+c.weight,0);
+  // Unassigned and ungraded percentages remain in the budget. Only an explicit
+  // exemption redistributes weight according to the existing grading policy.
+  const budget=Math.max(0,100-exemptWeight),graded=nonExempt.filter(c=>c.state==='graded'||c.state==='missing');
+  const gradedWeight=graded.reduce((n,c)=>n+c.weight,0),earned=graded.reduce((n,c)=>n+(c.points||0)/c.maxPoints*c.weight,0),weightTotal=list.reduce((n,c)=>n+c.weight,0);
+  return {weightTotal:round(weightTotal),gradedWeight:budget?round(gradedWeight/budget*100):0,provisional:gradedWeight?round(earned/gradedWeight*cfg.scaleMax):null,accumulated:budget?round(earned/budget*cfg.scaleMax):null,ready:Math.abs(weightTotal-100)<.001&&list.every(c=>!c.weight||c.ready),allExempt:budget<.0001};
+ }
  const periods=(cfg.periods||[]).map(p=>({...p,...calculate(cells.filter(c=>c.periodId===p.id))}));
  if(!periods.length){const v=calculate(cells);return {...v,cells,periods:[],final:cfg.finalPublished&&v.ready?v.accumulated:null};}
  const counted=periods.filter(p=>!p.allExempt),weight=counted.reduce((n,p)=>n+p.weight,0),graded=counted.filter(p=>p.provisional!==null),evaluated=graded.reduce((n,p)=>n+p.weight,0),ready=periods.every(p=>p.ready)&&cells.every(c=>periods.some(p=>p.id===c.periodId));
  const accumulated=weight?round(counted.reduce((n,p)=>n+(p.accumulated||0)*p.weight,0)/weight):null;
- return {cells,periods,weightTotal:round(periods.reduce((n,p)=>n+p.weight,0)),gradedWeight:round(evaluated),provisional:evaluated?round(graded.reduce((n,p)=>n+p.provisional*p.weight,0)/evaluated):null,accumulated,ready,final:cfg.finalPublished&&ready?accumulated:null};
+ return {cells,periods,weightTotal:round(periods.reduce((n,p)=>n+p.weight,0)),gradedWeight:weight?round(counted.reduce((n,p)=>n+p.gradedWeight*p.weight,0)/weight):0,provisional:evaluated?round(graded.reduce((n,p)=>n+p.provisional*p.weight,0)/evaluated):null,accumulated,ready,final:cfg.finalPublished&&ready?accumulated:null};
 }

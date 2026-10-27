@@ -94,7 +94,11 @@ Pulsa **Pedir corrección** y escribe indicaciones. La nota se retira del cálcu
 
 En **Libro de notas** ves la matriz del curso. **Devolver notas del grupo** comparte las notas listas de actividades publicadas, incluidos los cuestionarios automáticos. Se devuelve únicamente el último intento vigente de cada estudiante. Los envíos sin nota o con soportes pendientes de revisión siguen pendientes. **Descargar libro CSV** incluye las notas guardadas, aunque todavía no estén publicadas; un campo vacío no representa cero.
 
-En **Configurar evaluación** defines la escala, inicialmente 0–5, y el umbral aprobatorio, inicialmente 3. El promedio provisional usa solo los porcentajes ya evaluados; para estudiantes, solo notas publicadas.
+En **Configurar evaluación** defines la escala, inicialmente 0–5, y el umbral aprobatorio, inicialmente 3. **Nota acumulada sobre el 100 %** muestra lo aportado a la nota del semestre con toda su ponderación: el porcentaje aún sin asignar o sin calificar aporta cero provisionalmente, sin repartirse entre lo ya evaluado. Una actividad del 40 % con 4,0 sobre 5 aporta 1,6 sobre 5, aunque todavía no se haya publicado ninguna actividad para el 60 % restante.
+
+Este cero provisional solo interviene en la suma: no guarda una nota de cero en las entregas ni cambia los estados de borrador, sin entregar, devuelta para corregir o pendiente de calificación. El estudiante ve únicamente el aporte de las notas devueltas; el libro docente y su CSV también incluyen las notas privadas guardadas. La nota final se muestra por separado y requiere publicación y evaluación completa. El promedio provisional anterior se conserva como dato secundario en el CSV y en la API para compatibilidad.
+
+Con cortes, cada actividad se calcula sobre el 100 % completo de su corte y después se aplica el peso de ese corte en el semestre. Por ejemplo, una actividad del 40 % con 4,0 sobre 5 dentro de un corte del 30 % aporta 0,48 sobre 5 al semestre; representa 12 % evaluado, no todo el 30 % del corte. Los cortes todavía sin notas aportan cero. Las exenciones expresas conservan la política existente de redistribuir su peso; el porcentaje pendiente nunca se excluye por falta de calificación. Un corte con solo 40 % asignado y exento conserva el 60 % sin asignar, por lo que no se trata como un corte enteramente exento.
 
 La nota final se calcula con:
 
