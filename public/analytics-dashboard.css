@@ -16,3 +16,71 @@
 @media(min-width:851px){.analytics-filter-hint{display:none}}
 @media(min-width:1101px){.analytics-roster{display:grid;grid-template-columns:minmax(160px,.65fr) minmax(0,2.5fr);gap:0 14px}.analytics-roster>header{grid-column:1;align-self:center;align-items:center;gap:7px;margin:0 0 10px;flex-wrap:wrap}.analytics-roster>header p{display:none}.analytics-roster>header>span{font-size:9px}.analytics-roster-tools{grid-column:2;grid-row:1;grid-template-columns:minmax(170px,1.4fr) minmax(180px,1.2fr) minmax(140px,1fr)}.analytics-roster>.analytics-table-wrap,.analytics-roster>.analytics-empty,.analytics-roster>.analytics-footnote{grid-column:1/-1}}
 @media(max-width:580px){.analytics-dashboard .page-heading h1{font-size:21px}.analytics-metric{padding:9px 8px;gap:5px}.analytics-metric>span{font-size:9px;min-height:24px}.analytics-metric>strong{font-size:17px}.analytics-metric>small{font-size:8px;line-height:1.5;white-space:normal}.analytics-filter-panel{padding:11px}.analytics-filter-panel input,.analytics-filter-panel select{height:34px;min-height:34px}.analytics-filter-hint{display:block}.analytics-measurement-note{font-size:9px;line-height:1.55}.analytics-roster-tools{gap:8px}.analytics-roster{padding:13px}.analytics-roster>header p{font-size:10px}}
+
+/* The academic roster uses two readable lines instead of stacked mini-cards. */
+.analytics-summary{gap:7px;margin-bottom:7px}
+.analytics-metric{padding:8px 10px;gap:3px;border-radius:9px}
+.analytics-metric>span{font-size:11px;line-height:1.25;min-height:0;gap:4px;color:#666670}
+.analytics-metric>strong{font-size:19px;line-height:1.2;letter-spacing:-.4px}
+.analytics-metric>small{font-size:11px;line-height:1.3;margin:0;color:#74747f}
+.analytics-scope-note,.analytics-footnote{font-size:11px;line-height:1.4;margin:6px 0 9px;color:#73737f}
+.analytics-measurement-note{font-size:11px;line-height:1.4;padding:6px 9px;margin-bottom:9px}
+.analytics-roster.analytics-panel{padding:11px 12px;margin-bottom:12px}
+.analytics-roster>header{gap:7px;margin-bottom:8px}
+.analytics-roster>header>span{font-size:11px;line-height:1.3;white-space:nowrap}
+.analytics-roster-tools{gap:8px;margin-bottom:8px}
+.analytics-roster-tools label{font-size:12px;line-height:1.3;gap:3px;color:#63636d}
+.analytics-roster-tools input,.analytics-roster-tools select{height:32px;min-height:32px;font-size:12px;line-height:1.3;padding:5px 8px}
+.analytics-roster .analytics-table-wrap{border-radius:8px}
+.analytics-roster .analytics-student-table{font-size:12px;min-width:940px}
+.analytics-roster .analytics-student-table th{font-size:11px;line-height:1.3;padding:8px;vertical-align:bottom}
+.analytics-roster .analytics-student-table td{height:46px;font-size:12px;line-height:1.3;padding:6px 8px;vertical-align:middle}
+.analytics-roster .analytics-student-table td strong{font-weight:550}
+.analytics-roster .analytics-student-table td small{font-size:11px;line-height:1.3;margin-top:2px;color:#777781;max-width:none}
+.analytics-roster .analytics-student-table th:first-child{min-width:180px}
+.analytics-roster .analytics-student-table td:first-child{position:relative;min-width:180px;padding-right:76px}
+.analytics-roster .analytics-student-table td:first-child>small{min-width:80px}
+.analytics-roster .analytics-student-name{font-size:12px;line-height:1.3;font-weight:550;display:block;white-space:nowrap}
+.analytics-roster .analytics-inline-link{position:absolute;right:8px;bottom:7px;display:inline-flex;gap:3px;margin:0;font-size:11px;line-height:1.3;white-space:nowrap;color:#3873b6}
+.analytics-roster .analytics-inline-link .icon{width:12px;height:12px}
+.analytics-roster .analytics-student-table th:nth-child(2){min-width:105px}
+.analytics-roster .analytics-student-table th:nth-child(3){min-width:70px}
+.analytics-roster .analytics-student-table th:nth-child(4){min-width:220px}
+.analytics-roster .analytics-student-table td:nth-child(4){white-space:nowrap}
+.analytics-roster .analytics-student-table td:nth-child(4)>span:first-child,.analytics-roster .analytics-student-table td:nth-child(4)>small:first-of-type{display:inline;font-size:12px;line-height:1.3}
+.analytics-roster .analytics-student-table td:nth-child(4)>small:first-of-type:before{content:' · ';color:#aaaab3}
+.analytics-roster .analytics-student-table td:nth-child(4)>small:nth-of-type(2){display:block;line-height:1.3;margin-top:2px}
+.analytics-roster .analytics-student-table th:nth-child(5){min-width:100px}
+.analytics-roster .analytics-student-table td:nth-child(5){white-space:nowrap}
+.analytics-roster .analytics-progress{display:inline-block;vertical-align:middle;width:42px;height:4px;margin:0 0 2px 5px}
+.analytics-roster .analytics-student-table td:nth-child(5)>small{display:block;margin-top:2px}
+.analytics-roster .analytics-student-table th:nth-child(6){min-width:140px}
+.analytics-roster .analytics-student-table td:last-child>small{display:none}
+.analytics-roster .analytics-student-table td time{font-size:12px;line-height:1.3;white-space:nowrap}
+.analytics-roster .analytics-student-table tbody tr:hover td{background:#fafbfd}
+.analytics-roster .analytics-student-table tbody tr:focus-within td{background:#f3f7fd}
+.analytics-roster .analytics-footnote{font-size:11px;margin-top:7px}
+.analytics-panel .analytics-links .text-button{font-size:12px}
+details.analytics-scope-note{display:inline-block;vertical-align:top;margin:0 12px 8px 0;max-width:100%;font-size:11px;line-height:1.4}
+details.analytics-scope-note>summary{display:inline-flex;align-items:center;gap:5px;min-height:28px;cursor:pointer;list-style:none;font-size:11px;color:#55769f;text-decoration:underline;text-underline-offset:3px}
+details.analytics-scope-note>summary::-webkit-details-marker{display:none}
+details.analytics-scope-note>summary:after{content:'+';font-size:13px;color:#7e8c9d;text-decoration:none}
+details.analytics-scope-note[open]{display:block;margin-bottom:8px}
+details.analytics-scope-note[open]>summary:after{content:'−'}
+details.analytics-scope-note>p{margin:5px 0 0;font-size:11px;line-height:1.45;max-width:85ch;color:#6c6c78}
+.analytics-summary~.analytics-measurement-note{display:inline-flex;vertical-align:top;max-width:100%;margin:0 0 8px;min-height:28px}
+@media(min-width:1101px){.analytics-roster.analytics-panel{grid-template-columns:minmax(160px,.65fr) minmax(0,2.5fr);gap:0 12px}.analytics-roster-tools{grid-template-columns:minmax(160px,1.4fr) minmax(160px,1.2fr) minmax(135px,1fr)}.analytics-roster>header>span{font-size:11px}}
+@media(max-width:580px){
+ .analytics-metric{padding:8px;gap:3px}
+ .analytics-metric>span{font-size:11px;line-height:1.25;min-height:0}
+ .analytics-metric>strong{font-size:18px}
+ .analytics-metric>small{font-size:11px;line-height:1.35;white-space:normal}
+ .analytics-measurement-note,.analytics-scope-note,.analytics-footnote{font-size:11px;line-height:1.4}
+ .analytics-roster.analytics-panel{padding:10px}
+ .analytics-roster-tools{grid-template-columns:minmax(0,1fr);gap:8px}
+ .analytics-roster-tools>label:first-child{grid-column:auto}
+ .analytics-roster-tools input,.analytics-roster-tools select{height:38px;min-height:38px;font-size:16px}
+ .analytics-roster>header p{font-size:11px}
+ .analytics-roster .analytics-student-table td{padding:7px 8px}
+ .analytics-roster .analytics-inline-link{min-height:26px;align-items:center;bottom:3px}
+}

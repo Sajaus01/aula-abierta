@@ -1,10 +1,57 @@
-.gradebook-overview-filters{display:grid;grid-template-columns:minmax(150px,1.2fr) minmax(150px,1.2fr) minmax(120px,.8fr) minmax(120px,.8fr) auto auto;gap:10px;align-items:end;margin:15px 0;padding:13px;border:1px solid #e5e5eb;border-radius:12px;background:#fff}
-.gradebook-overview-filters label{display:grid;gap:5px;font-size:11px;color:#63636d}.gradebook-overview-filters select,.gradebook-overview-filters input{margin:0;min-height:33px;height:33px;font-size:12px;padding:5px 9px;border-radius:7px}
-.gradebook-overview-filters>.field-hint{grid-column:1/-1;margin:0;font-size:10px;line-height:1.5}.gradebook-overview-filters>.text-button{font-size:11px;padding-bottom:9px}
-.gradebook-insights>.academic-actions{margin:12px 0;gap:7px}.gradebook-insights>.academic-actions .btn{min-height:32px;padding:6px 10px;font-size:11px}.gradebook-followup{display:inline-flex;margin:0 0 10px;font-size:11px}
-.gradebook-matrix{margin-top:16px;border:1px solid #e2e2e9;border-radius:12px;background:#fff;overflow:hidden}.gradebook-matrix>summary{cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px;font-size:12px;font-weight:600;list-style:none;color:#30303a}.gradebook-matrix>summary:after{content:'+';font-size:18px;font-weight:400;color:#777784}.gradebook-matrix[open]>summary:after{content:'−'}.gradebook-matrix>summary>span{margin-left:auto;font-size:10px;font-weight:400;color:#777784}.gradebook-matrix>summary:focus-visible{outline:2px solid #007aff;outline-offset:-3px}.gradebook-matrix>summary::-webkit-details-marker{display:none}.gradebook-matrix[open]{padding:0 13px 13px}.gradebook-matrix[open]>summary{margin:0 -13px 12px;border-bottom:1px solid #eeeef3}
-@media(max-width:1050px){.gradebook-overview-filters{grid-template-columns:1fr 1fr 1fr}.gradebook-overview-filters>.text-button{justify-self:start}}
-@media(max-width:580px){.gradebook-overview-filters{grid-template-columns:1fr 1fr;padding:11px;gap:9px}.gradebook-overview-filters label:nth-child(-n+2){grid-column:1/-1}.gradebook-overview-filters select,.gradebook-overview-filters input{font-size:16px;height:36px}.gradebook-matrix>summary{flex-wrap:wrap}.gradebook-matrix>summary>span{margin:0;font-size:9px}.gradebook-insights>.academic-actions{gap:6px}}
-.teacher-gradebook-overview>.page-heading{margin-bottom:12px}.teacher-gradebook-overview>.page-heading h1{font-size:25px;letter-spacing:-.6px}.teacher-gradebook-overview>.page-heading p{font-size:12px}.teacher-gradebook-overview>a:first-child{min-height:0;padding:0;margin-bottom:8px;font-size:11px}
-.teacher-gradebook-overview .gradebook-overview-filters{padding:10px;gap:8px;margin:10px 0}.teacher-gradebook-overview .gradebook-overview-filters>.field-hint{font-size:9px}.teacher-gradebook-overview .gradebook-insights>.academic-actions{display:inline-flex;flex-wrap:wrap;max-width:100%;vertical-align:middle;margin-right:12px}.teacher-gradebook-overview .gradebook-followup{margin:0;vertical-align:middle;font-size:10px}
-.gradebook-individual{min-width:0}.gradebook-individual>header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin:4px 0 9px}.gradebook-individual h3{font-size:14px;margin:0}.gradebook-individual>header>span{font-size:11px;color:#6e6e78}.gradebook-individual>p{font-size:10px;line-height:1.5;margin:0 0 12px}.gradebook-individual td>.btn,.gradebook-individual td>.text-button{font-size:10px;min-height:29px;padding:5px 8px}.gradebook-individual th:first-child{min-width:140px}.gradebook-individual .analytics-table-wrap table{min-width:580px}
+.teacher-gradebook-overview{min-width:0}
+.teacher-gradebook-overview>.page-heading{margin-bottom:12px;gap:12px}
+.teacher-gradebook-overview>.page-heading h1{font-size:25px;line-height:1.2;letter-spacing:-.6px}
+.teacher-gradebook-overview>.page-heading p{font-size:12px}
+.teacher-gradebook-overview>a:first-child{min-height:24px;padding:0;margin-bottom:5px;font-size:12px}
+.gradebook-overview-filters{display:grid;grid-template-columns:minmax(150px,1.35fr) minmax(150px,1.2fr) repeat(2,minmax(120px,.8fr)) auto auto;gap:6px 10px;align-items:end;margin:10px 0 12px;padding:11px 12px;border:1px solid #e5e5eb;border-radius:11px;background:#fff}
+.gradebook-overview-filters label{display:grid;gap:3px;min-width:0;font-size:12px;font-weight:500;color:#60606a}
+.gradebook-overview-filters select,.gradebook-overview-filters input{width:100%;min-width:0;margin:0;min-height:32px;height:32px;font-size:12px;line-height:1.3;padding:5px 8px;border-radius:7px}
+.teacher-gradebook-overview .gradebook-overview-filters>.btn{min-height:32px;padding:5px 10px;font-size:12px}
+.gradebook-overview-filters>.field-hint{grid-column:1/-1;margin:0;font-size:11px;line-height:1.4;color:#72727d}
+.gradebook-overview-filters>.text-button{display:inline-flex;align-items:center;min-height:32px;font-size:12px;padding:4px}
+.teacher-grading .gradebook-tools{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:10px 0 12px;min-width:0}
+.gradebook-primary-actions{display:flex;align-items:center;flex-wrap:wrap;gap:6px;min-width:0}
+.teacher-grading .gradebook-tools .btn{min-height:30px;padding:5px 10px;font-size:12px;line-height:1.3;border-radius:7px;gap:6px}
+.gradebook-tools .gradebook-followup{margin:0;font-size:12px}
+.gradebook-matrix{margin-top:12px;border:1px solid #e2e2e9;border-radius:11px;background:#fff;min-width:0}
+.gradebook-matrix>summary{cursor:pointer;display:flex;align-items:center;gap:10px;padding:11px 12px;min-height:42px;font-size:12px;font-weight:600;list-style:none;color:#30303a}
+.gradebook-matrix>summary:after{content:'+';font-size:18px;font-weight:400;color:#777784;flex:none}
+.gradebook-matrix[open]>summary:after{content:'−'}
+.gradebook-matrix>summary>span{margin-left:auto;font-size:11px;font-weight:400;color:#74747f}
+.gradebook-matrix>summary:focus-visible{outline:2px solid #007aff;outline-offset:-3px;border-radius:10px}
+.gradebook-matrix>summary::-webkit-details-marker{display:none}
+.gradebook-matrix[open]{padding:0 12px 12px}
+.gradebook-matrix[open]>summary{margin:0 -12px 10px;border-bottom:1px solid #eeeef3}
+.gradebook-matrix .gradebook-matrix-tools{margin-top:0;padding-top:0;border-top:0}
+.gradebook-individual{min-width:0}
+.gradebook-individual>header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin:3px 0 7px}
+.gradebook-individual h3{font-size:14px;margin:0}
+.gradebook-individual>header>span{font-size:12px;color:#6e6e78}
+.gradebook-individual>p{font-size:11px;line-height:1.45;margin:0 0 9px}
+.gradebook-individual .analytics-table-wrap table{min-width:620px;font-size:12px}
+.teacher-grading .gradebook-individual .analytics-table-wrap th{font-size:11px;line-height:1.3;padding:8px 10px}
+.teacher-grading .gradebook-individual .analytics-table-wrap td{height:44px;padding:6px 10px;font-size:12px;line-height:1.3;vertical-align:middle}
+.gradebook-individual th:first-child{min-width:150px}
+.gradebook-individual td:first-child a{display:block;max-width:320px;overflow-wrap:anywhere}
+.gradebook-individual td small{font-size:11px;line-height:1.3;margin-top:2px}
+.gradebook-individual-actions{display:flex;align-items:center;gap:4px;white-space:nowrap}
+.teacher-grading .gradebook-individual-actions>.btn,.teacher-grading .gradebook-individual-actions>.text-button{font-size:12px;min-height:28px;padding:4px 8px;line-height:1.3}
+.teacher-grading .gradebook-individual-actions>.extension-entry-icon{width:28px;height:28px;min-width:28px;padding:5px;display:grid;place-items:center}
+@media(max-width:1050px){.gradebook-overview-filters{grid-template-columns:repeat(4,minmax(0,1fr))}.gradebook-overview-filters>label:nth-child(-n+2){grid-column:span 2}}
+@media(max-width:580px){
+ .teacher-gradebook-overview>.page-heading h1{font-size:22px}
+ .gradebook-overview-filters{grid-template-columns:1fr 1fr;padding:10px;gap:8px}
+ .gradebook-overview-filters>label:nth-child(-n+2){grid-column:1/-1}
+ .gradebook-overview-filters select,.gradebook-overview-filters input{font-size:16px;height:38px;min-height:38px}
+ .teacher-gradebook-overview .gradebook-overview-filters>.btn,.gradebook-overview-filters>.text-button{min-height:40px}
+ .gradebook-overview-filters>.field-hint{font-size:11px;line-height:1.45}
+ .teacher-grading .gradebook-tools{align-items:flex-start;gap:6px}
+ .teacher-grading .gradebook-tools .btn{min-height:40px;white-space:normal}
+ .gradebook-primary-actions{flex:1;gap:6px}
+ .gradebook-matrix>summary{flex-wrap:wrap;gap:4px 8px}
+ .gradebook-matrix>summary>span{font-size:11px;margin-left:0}
+ .gradebook-matrix>summary:after{margin-left:auto}
+ .teacher-grading .gradebook-individual .analytics-table-wrap td{padding:7px 9px}
+ .teacher-grading .gradebook-individual-actions>.btn,.teacher-grading .gradebook-individual-actions>.text-button,.teacher-grading .gradebook-individual-actions>.extension-entry-icon{min-height:40px}
+ .teacher-grading .gradebook-individual-actions>.extension-entry-icon{width:40px;height:40px;min-width:40px}
+}

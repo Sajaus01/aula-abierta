@@ -1,4 +1,5 @@
 import {renderCoursePanel} from './course-panel.js';
+import {renderTeacherCoursePanel,bindTeacherCoursePanel} from './teacher-course-panel.js';
 import {activityDueAt,individualDeadlineLabel} from './activity-deadline.js';
 import {createStorageUI} from './storage.js';
 import {createChatUI} from './chat.js';
@@ -137,6 +138,16 @@ function learningPage() {
 function learnerCoursePage(c) {
  return renderCoursePanel(c,{progress:state.preview?[]:state.progress,filter:state.resourceFilter,query:state.courseContentQuery||'',openChapters:state.courseOpenChapters||null,learner:student(),showChapterStatus:student()&&state.assurance==='password'&&!state.preview,canNotify:!!state.user?.roles&&state.assurance==='password'&&!state.preview,quickResourcesHTML:quickResourcesUI.panel(c),contactHTML:contactTeacher()});
 }
+const teacherCourseViews=new Map();
+function teacherCourseViewState(id){
+ const key=navigationScope(state)+'|'+id;
+ if(!teacherCourseViews.has(key))teacherCourseViews.set(key,{query:'',filter:'all',openChapters:null});
+ return teacherCourseViews.get(key);
+}
+function teacherCoursePage(c){
+ const enrollmentCount=Array.isArray(state.enrollments)?state.enrollments.filter(item=>item.courseId===c.id&&item.active).length:null;
+ return renderTeacherCoursePanel(c,{...teacherCourseViewState(c.id),permissions:state.user?.roles?c.permissions:{edit:true,grade:true,manage:true},legacy:!state.user?.roles,quickResourcesHTML:quickResourcesUI.panel(c),linkedGroups:state.courses.filter(group=>group.templateId===c.id),enrollmentCount});
+}
 function refreshCoursePanel({searchFocus=false}={}) {
  const current=document.querySelector('.course-study-content>section');if(!current||!state.currentCourse)return false;
  const search=current.querySelector('[data-course-search]'),selection=searchFocus&&search?[search.selectionStart,search.selectionEnd]:null;
@@ -157,8 +168,7 @@ async function coursePage(id,version) {
  if(version!==renderVersion)return '';
  state.currentCourse=c;
  if(!admin())return learnerCoursePage(c);
- const resources=(c.modules||[]).flatMap(m=>m.resources||[]),done=resources.filter(r=>state.progress.some(p=>p.resourceId===r.id&&p.completed)).length;
- return `<a data-nav-back class="text-button" href="#${admin()?(c.entityKind==='group'?'grupos':'cursos'):'catalogo'}">Volver a ${c.entityKind==='group'?'los grupos':'los cursos'}</a><div class="course-header"><div><div style="margin-top:24px" class="flex">${badge(c.accessMode)}${!c.published?'<span class="badge gray">Borrador</span>':''}</div><h1>${e(c.title)}</h1><p>${e(c.description)}</p></div>${admin()?`<div class="flex wrap" style="margin-top:26px">${btn(c.entityKind==='group'?'Editar grupo':'Editar curso',`edit-course:${c.id}`,'secondary','edit')}${btn(c.published?'Volver a borrador':'Publicar curso',`publish-course:${c.id}`,c.published?'secondary':'','globe')}${academicsUI.courseLinks(c.id)}</div>`:''}</div>${c.accessMode==='document'?'<div class="notice warning">'+icon('shield')+'Este curso permite entrar con solo cédula. Este método no comprueba la identidad de quien accede.</div>':''}<div class="detail-grid"><section><div class="section-head"><h2>Contenido del curso</h2>${admin()?btn('Añadir capítulo',`new-module:${c.id}`,'secondary small','plus'):`<small>${c.modules.length} capítulos · ${resources.length} recursos</small>`}</div>${c.modules.length?c.modules.map((m,i)=>`<article class="module publication-module ${m.published?'':'is-draft'}" data-module-id="${e(m.id)}"><div class="module-head"><div class="module-title"><span class="number">${String([...c.modules].sort((a,b)=>(a.position??0)-(b.position??0)||a.id.localeCompare(b.id)).findIndex(item=>item.id===m.id)+1).padStart(2,'0')}</span><h3>${e(m.title)}</h3><span class="badge ${m.published?'green':'gray'}">${m.published?'Publicado':'Borrador'}</span></div>${admin()?`<div class="flex wrap">${btn(m.published?'Ocultar':'Publicar',`publish-module:${m.id}`,'secondary small','globe')}${btn('Añadir material',`new-resource:${m.id}`,'ghost small','plus')}${btn('Crear actividad',`academic-new-module:${m.id}`,'ghost small','plus')}<button class="icon-btn" data-action="edit-module:${m.id}" aria-label="Editar capítulo">${icon('edit')}</button><button class="icon-btn" data-action="delete-module:${m.id}" aria-label="Eliminar capítulo">${icon('trash')}</button></div>`:''}</div>${!m.published?'<p class="publication-hint">Capítulo oculto: sus materiales y actividades no se muestran a los estudiantes.</p>':!c.published?'<p class="publication-hint">Este capítulo se mostrará cuando publiques el curso.</p>':''}${m.resources.map(r=>`<div class="resource-row"><span class="resource-icon">${icon(kindIcon(r.kind))}</span><div class="spacer"><strong>${e(r.title)}</strong><small>${kinds[r.kind]} · <span class="publication-state">${!r.published?'Borrador':!m.published?'Publicado · capítulo oculto':!c.published?'Publicado · curso en borrador':'Publicado'}</span>${state.progress.some(p=>p.resourceId===r.id&&p.completed)?' · Completado':''}</small></div>${btn('Abrir',`resource:${r.id}`,'secondary small','arrow')}${admin()?`${btn(r.published?'Ocultar':'Publicar',`publish-resource:${r.id}`,'secondary small','globe')}<button class="icon-btn" data-action="edit-resource:${r.id}" aria-label="Editar recurso">${icon('edit')}</button><button class="icon-btn" data-action="delete-resource:${r.id}" aria-label="Eliminar recurso">${icon('trash')}</button>`:''}</div>`).join('')}${academicsUI.courseRows((c.activities||[]).filter(a=>a.moduleId===m.id))}${!m.resources.length&&!(c.activities||[]).some(a=>a.moduleId===m.id)?'<p class="small-paragraph" style="padding:24px">Añade el primer material o actividad de este capítulo.</p>':''}</article>`).join(''):empty('Empieza por el primer capítulo',admin()?'Divide el curso en capítulos y añade sus materiales.':'El contenido de este curso estará disponible pronto.',admin()?btn('Crear capítulo',`new-module:${c.id}`,'secondary','plus'):'','folder')}${academicsUI.generalSection((c.activities||[]).filter(a=>!a.moduleId))}</section><aside><div class="panel"><h2>${admin()?'Tu curso, paso a paso':'Tu avance'}</h2>${admin()?`<div class="steps"><div class="step">${icon('folder')}<span class="small-paragraph">${c.modules.length} capítulos organizados</span></div><div class="step">${icon('file')}<span class="small-paragraph">${resources.length} materiales añadidos</span></div><div class="step">${icon('users')}<span class="small-paragraph">${state.enrollments.filter(x=>x.courseId===c.id&&x.active).length} matrículas activas</span></div></div><div class="form-actions">${btn('Matricular estudiantes',`enroll-course:${c.id}`,'secondary small')}</div>`:`<div class="progress-track"><div class="progress-fill" style="width:${resources.length?Math.round(done/resources.length*100):0}%"></div></div><p class="small-paragraph">${done} de ${resources.length} recursos completados</p>${!state.user?'<p class="field-hint" style="margin-top:12px">Ingresa para guardar tu avance.</p>':''}`}<div class="mode-card" style="margin-top:18px"><p>Abre cada recurso para leerlo, verlo o descargarlo.</p></div>${admin()&&!state.user?.roles?btn('Eliminar curso',`delete-course:${c.id}`,'danger small','trash'):''}</div>${quickResourcesUI.panel(c)}</aside></div>`;
+ return teacherCoursePage(c);
 }
 async function refresh() {
  const isAdmin=admin();
@@ -209,6 +219,10 @@ async function render() {
   if(state.user?.roles&&!state.preview)libraryUI.enhance(current);
   if(state.preview)document.querySelector('main')?.insertAdjacentHTML('afterbegin',`<div class="notice warning">Vista previa del estudiante · No se guardan entregas, notas ni avances. ${btn('Salir de vista previa','platform-exit-preview','secondary small')}</div>`);
   academicsUI.bind();
+  if(admin()&&state.currentCourse&&current.startsWith('curso/')){
+   const view=teacherCourseViewState(state.currentCourse.id);
+   bindTeacherCoursePanel(app,{onQuery:value=>{view.query=value;},onFilter:value=>{view.filter=value;},onOpenChapters:value=>{view.openChapters=value;}});
+  }
   enhanceUI(app);
   bindForms();
   document.title=`${document.querySelector('main h1')?.textContent||'Mi aula'} · ${state.settings.name||'Aula Abierta'}`;

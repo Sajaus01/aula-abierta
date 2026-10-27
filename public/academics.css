@@ -75,3 +75,138 @@ dialog.review-workspace{background:#f5f5f7}.review-workspace>.modal-head{positio
 .activity-missing-row>div{flex:1;min-width:0}.activity-missing-row strong{font-size:12px;font-weight:550;overflow-wrap:anywhere}.activity-missing-row small{display:block;margin-top:3px;font-size:10px;color:#73737c}.activity-missing-row>.academic-automatic-zero{margin:0;white-space:nowrap}
 .activity-missing-roster>p{margin:0;padding:8px 12px;border-top:1px solid #f1e8e5;font-size:11px;line-height:1.45;color:#73737c}
 @media(max-width:580px){.activity-missing-row{flex-wrap:wrap;gap:5px 10px}.activity-missing-row>div{flex-basis:calc(100% - 105px)}.activity-missing-row>.extension-entry{margin-left:auto}.activity-missing-roster>header{align-items:flex-start}}
+
+/* Keep grading controls together and reserve each table row for two lines. */
+.teacher-grading{min-width:0}
+.teacher-grading>.page-heading{margin-bottom:12px}
+.teacher-grading>.page-heading h1{font-size:25px;line-height:1.2;letter-spacing:-.6px}
+.teacher-grading .panel.submission-workbench{padding:14px;border-radius:12px;box-shadow:none}
+.teacher-grading .grading-breadcrumb{gap:10px;margin:2px 0 7px}
+.teacher-grading .grading-breadcrumb .btn{min-height:24px;padding:2px 0;font-size:12px}
+.teacher-grading .grading-activity-meta{gap:5px 13px;margin:-3px 0 12px;font-size:12px;line-height:1.4}
+.teacher-grading .grading-activity-meta span+span:before{margin-right:11px}
+.submission-workbench .section-head{gap:10px;align-items:center}
+.submission-workbench .section-head>div{min-width:180px}
+.submission-workbench .section-head h2{font-size:15px;line-height:1.3}
+.submission-workbench .section-head p{font-size:12px;margin-top:4px;line-height:1.4}
+.teacher-grading .submission-workbench .section-head>.btn{min-height:32px;padding:6px 10px;font-size:12px}
+.teacher-grading .submission-summary{display:flex;flex-wrap:wrap;gap:0;margin:12px 0 10px;border:0;border-block:1px solid #ededf1;border-radius:0;overflow:visible}
+.teacher-grading .submission-summary>div{flex:1;display:flex;align-items:center;gap:7px;min-width:150px;padding:9px 10px;background:transparent}
+.teacher-grading .submission-summary>div:first-child{padding-left:0}
+.teacher-grading .submission-summary>div+div{border:0}
+.teacher-grading .submission-summary strong{font-size:19px;line-height:1.2;font-weight:600;letter-spacing:-.4px;margin:0;font-variant-numeric:tabular-nums}
+.teacher-grading .submission-summary span{font-size:12px;line-height:1.3}
+.teacher-grading .submission-primary-actions{gap:6px;margin:0 0 10px}
+.teacher-grading .submission-primary-actions>.btn{min-height:30px;padding:5px 9px;font-size:12px;line-height:1.3;gap:6px;border-radius:7px}
+.submission-ready{font-size:11px;line-height:1.4;color:#6e6e78;margin-left:auto}
+.teacher-grading .academic-options{padding:0;border:0;flex:none;position:relative}
+.teacher-grading .academic-options>summary{display:flex;align-items:center;gap:5px;min-height:30px;font-size:12px;padding:5px 8px;line-height:1.3;list-style:none}
+.teacher-grading .academic-options>summary::-webkit-details-marker{display:none}
+.teacher-grading .academic-options .action-menu-popover{min-width:225px;max-width:calc(100vw - 48px);z-index:30}
+.teacher-grading .academic-options .action-menu-popover>.btn{justify-content:flex-start;min-height:32px;font-size:12px;line-height:1.35;padding:6px 9px;border-radius:6px}
+.teacher-grading .submission-toolbar{display:grid;grid-template-columns:minmax(170px,1fr) minmax(220px,1fr) auto;gap:8px 12px;align-items:end;margin:10px 0;padding:0;border:0}
+.teacher-grading .submission-toolbar label{min-width:0;font-size:12px;gap:3px;font-weight:500}
+.teacher-grading .submission-toolbar input,.teacher-grading .submission-toolbar select{min-height:32px;height:32px;min-width:0;padding:5px 8px;font-size:12px;border-radius:7px;line-height:1.3}
+.teacher-grading .submission-toolbar>.field-hint{font-size:11px;line-height:1.4;margin:0;padding-bottom:7px;white-space:nowrap}
+.teacher-grading .submission-table-wrap{border:1px solid #e8e8ee;border-radius:9px;max-width:100%;min-width:0}
+.teacher-grading .submission-table{min-width:640px;table-layout:fixed;font-size:12px}
+.teacher-grading .submission-table th{font-size:11px;line-height:1.3;padding:8px 10px}
+.teacher-grading .submission-table th:first-child{width:30%}
+.teacher-grading .submission-table th:nth-child(2){width:36%}
+.teacher-grading .submission-table th:nth-child(3){width:16%}
+.teacher-grading .submission-table th:last-child{width:18%}
+.teacher-grading .submission-table td{height:46px;padding:6px 10px;font-size:12px;line-height:1.3;vertical-align:middle}
+.teacher-grading .submission-table td>.muted{font-size:11px;line-height:1.3;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.teacher-grading .submission-table .badge{font-size:11px;line-height:1.3;max-width:100%;padding:2px 6px;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
+.submission-student-name{display:block;font-size:12px;font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.submission-score strong{font-weight:550;font-variant-numeric:tabular-nums;white-space:nowrap}
+.academic-row-actions{display:flex;align-items:center;justify-content:flex-end;gap:4px;white-space:nowrap}
+.teacher-grading .academic-row-actions>.icon-btn,.teacher-grading .gradebook-cell-actions>.icon-btn{display:grid;place-items:center;width:28px;height:28px;min-width:28px;min-height:28px;padding:5px;border-radius:6px;color:#6a6a74}
+.teacher-grading .academic-row-actions>.icon-btn:hover,.teacher-grading .gradebook-cell-actions>.icon-btn:hover{background:#edf3fc;color:#0066cc}
+.teacher-grading .academic-row-actions .icon,.teacher-grading .gradebook-cell-actions .icon{width:16px;height:16px}
+.teacher-grading .grading-download-note{margin:9px 0 0;padding:8px 0 0;font-size:11px;line-height:1.4}
+.teacher-grading .grading-instructions{padding:12px 14px;margin-top:12px;border-radius:12px;box-shadow:none}
+.teacher-grading .grading-instructions>summary{font-size:12px;min-height:20px}
+.teacher-grading .grading-instructions>div{margin-top:12px}
+.teacher-grading .academic-gradebook{border-radius:9px;max-width:100%;min-width:0;padding:0}
+.teacher-grading .academic-gradebook table{font-size:12px;line-height:1.3;table-layout:fixed}
+.teacher-grading .academic-gradebook th{min-width:150px;width:150px;padding:8px 9px;font-size:11px;line-height:1.3;vertical-align:top}
+.teacher-grading .academic-gradebook th:first-child{width:180px;min-width:180px;position:sticky;left:0;z-index:3}
+.teacher-grading .academic-gradebook th small{font-size:11px;line-height:1.3;font-weight:400;margin-top:3px}
+.gradebook-activity-title{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;line-height:1.3;color:#4c4c57;font-weight:550}
+.teacher-grading .academic-gradebook td{height:46px;padding:6px 9px;font-size:12px;line-height:1.3;vertical-align:middle}
+.teacher-grading .academic-gradebook td:first-child{width:180px;max-width:180px}
+.teacher-grading .academic-gradebook td:first-child>strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:550}
+.teacher-grading .academic-gradebook td>.muted{font-size:11px;line-height:1.3;margin-top:2px}
+.gradebook-cell{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto auto;gap:2px 4px;align-items:center;min-width:0}
+.gradebook-cell-score{grid-column:1;grid-row:1;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.3;width:max-content;min-width:16px;color:#30303a}
+.gradebook-cell-score:hover{text-decoration:underline;text-underline-offset:2px;color:#0066cc}
+.teacher-grading .gradebook-cell>.muted,.teacher-grading .gradebook-cell>.academic-automatic-zero{grid-column:1;grid-row:2;min-width:0;display:block;margin:0;font-size:11px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gradebook-cell-actions{grid-column:2;grid-row:1/3;display:flex;align-items:center;gap:2px}
+.teacher-grading .academic-gradebook tbody tr:hover td,.teacher-grading .submission-table tbody tr:hover td{background:#fafbfd}
+.teacher-grading .academic-gradebook tbody tr:focus-within td,.teacher-grading .submission-table tbody tr:focus-within td{background:#f3f7fd}
+.teacher-grading .activity-missing-roster{margin:10px 0}
+.teacher-grading .activity-missing-roster>header{padding:8px 10px;font-size:12px}
+.teacher-grading .activity-missing-row{padding:5px 10px;min-height:44px;gap:8px}
+.teacher-grading .activity-missing-row small{font-size:11px;line-height:1.3;margin-top:2px}
+.teacher-grading .activity-missing-row>.extension-entry{min-height:28px;padding:4px 8px;font-size:12px}
+.teacher-activities-overview>.enrollment-summary{display:flex;flex-wrap:wrap;gap:18px;margin:12px 0;border-block:1px solid #e6e6ec}
+.teacher-activities-overview>.enrollment-summary>div{display:flex;align-items:baseline;gap:7px;min-width:0;padding:9px 0;background:transparent;border:0;border-radius:0}
+.teacher-activities-overview>.enrollment-summary strong{font-size:19px;line-height:1.3;font-weight:600;letter-spacing:-.4px}
+.teacher-activities-overview>.enrollment-summary span{font-size:12px;color:#71717c}
+.teacher-grading .activity-list-actions{display:flex;align-items:center;gap:7px;margin:10px 0 12px}
+.teacher-grading .activity-list-actions>.btn{min-height:30px;font-size:12px;padding:5px 10px}
+.activity-management{display:grid;gap:0;border:1px solid #e4e4eb;border-radius:11px;background:#fff;min-width:0}
+.activity-management-row{display:grid;grid-template-columns:minmax(150px,1.2fr) minmax(150px,1fr) 80px auto;gap:14px;align-items:center;padding:10px 12px;min-width:0;min-height:58px}
+.activity-management-row+.activity-management-row{border-top:1px solid #eeeef3}
+.activity-management-title,.activity-management-deadline{min-width:0}
+.activity-management-title>a{font-size:13px;line-height:1.35;font-weight:550;display:block;overflow-wrap:anywhere;color:#30303a}
+.activity-management-title>a:hover{color:#0066cc;text-decoration:underline;text-underline-offset:2px}
+.activity-management-title>span,.activity-management-row small{display:block;font-size:11px;line-height:1.3;margin-top:3px;color:#767680}
+.activity-management-deadline>span{font-size:12px;line-height:1.3;white-space:nowrap}
+.activity-management-deadline>small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.activity-management-weight strong{font-size:12px;font-weight:550;line-height:1.3;font-variant-numeric:tabular-nums}
+.activity-management-actions{display:flex;align-items:center;justify-content:flex-end;gap:5px}
+.teacher-grading .activity-management-actions>.btn{min-height:30px;padding:5px 9px;font-size:12px;line-height:1.3}
+dialog.review-workspace .review-topline{min-height:56px;padding:12px 62px 12px 18px;gap:12px}
+dialog.review-workspace .review-top-actions .btn{min-height:30px;font-size:12px;padding:5px 9px}
+dialog.review-workspace .review-queue-head{padding:12px;gap:7px}
+dialog.review-workspace .review-queue-head input,dialog.review-workspace .review-queue-head select{min-height:32px;height:32px;font-size:12px;padding:5px 8px}
+dialog.review-workspace .review-person{min-height:52px;padding:9px 10px;gap:7px}
+dialog.review-workspace .review-person strong{font-size:12px;line-height:1.3}
+dialog.review-workspace .review-person small{font-size:11px;line-height:1.3;margin-top:3px}
+dialog.review-workspace .review-person-avatar{width:28px;height:28px;font-size:11px}
+dialog.review-workspace .review-response-pane{padding:20px 24px}
+dialog.review-workspace .review-grading-pane{padding:18px}
+dialog.review-workspace .review-panel-heading{margin-bottom:16px}
+dialog.review-workspace .review-grading-pane .form-stack{gap:14px}
+dialog.review-workspace .review-score-input input{height:48px;font-size:26px;padding:6px 10px}
+dialog.review-workspace .review-grading-pane textarea{min-height:112px;font-size:13px;padding:9px;line-height:1.5}
+dialog.review-workspace .review-save-actions{padding-top:12px;gap:7px}
+dialog.review-workspace .review-save-actions .btn{min-height:36px;font-size:13px;padding:7px 10px}
+dialog.review-workspace .review-secondary-actions{padding-top:12px;gap:6px}
+dialog.review-workspace .review-secondary-actions .btn{min-height:32px;font-size:12px}
+@media(max-width:850px){.teacher-grading .submission-toolbar{grid-template-columns:1fr 1fr}.teacher-grading .submission-toolbar>.field-hint{grid-column:1/-1;padding:0}.teacher-grading .submission-summary>div{min-width:135px}.submission-ready{flex-basis:100%;margin-left:0}}
+@media(max-width:580px){
+ .teacher-grading .panel.submission-workbench{padding:11px}
+ .teacher-grading .submission-workbench .section-head{align-items:flex-start;gap:8px}
+ .teacher-grading .submission-workbench .section-head>.btn,.teacher-grading .submission-primary-actions>.btn,.teacher-grading .academic-options>summary{min-height:40px}
+ .teacher-grading .submission-summary>div{flex-basis:50%;min-width:0;padding:8px 4px;gap:6px}
+ .teacher-grading .submission-summary span{font-size:11px}
+ .teacher-grading .submission-toolbar{grid-template-columns:minmax(0,1fr);gap:8px;margin:10px 0}
+ .teacher-grading .submission-toolbar input,.teacher-grading .submission-toolbar select{height:38px;min-height:38px;font-size:16px}
+ .teacher-grading .academic-row-actions>.icon-btn,.teacher-grading .gradebook-cell-actions>.icon-btn{width:40px;height:40px;min-width:40px;min-height:40px;padding:10px}
+ .teacher-grading .academic-options .action-menu-popover>.btn{min-height:40px}
+ .teacher-grading .activity-missing-row>.extension-entry{min-height:40px}
+ .teacher-activities-overview>.enrollment-summary{gap:8px 16px}
+ .teacher-activities-overview>.enrollment-summary>div{flex-basis:calc(50% - 8px);padding:8px 0}
+ .activity-management-row{grid-template-columns:minmax(0,1fr) auto;gap:8px 10px;padding:11px}
+ .activity-management-title{grid-column:1/-1}
+ .activity-management-deadline{grid-column:1}
+ .activity-management-weight{grid-column:2}
+ .activity-management-actions{grid-column:1/-1;justify-content:flex-start;gap:6px}
+ .teacher-grading .activity-management-actions>.btn{min-height:40px}
+ dialog.review-workspace .review-top-actions .btn{min-height:40px}
+ dialog.review-workspace .review-response-pane,dialog.review-workspace .review-grading-pane{padding:16px}
+ dialog.review-workspace .review-save-actions .btn,dialog.review-workspace .review-secondary-actions .btn{min-height:42px}
+}

@@ -24,8 +24,17 @@ export function createLibraryUI({api,getState,openModal,modal,render,refresh,toa
   if(route==='biblioteca')destination=null;
   document.getElementById('library-search')?.addEventListener('input',ev=>{let count=0;for(const row of document.querySelectorAll('[data-library-search]')){row.hidden=!row.dataset.librarySearch.includes(ev.target.value.toLowerCase());if(!row.hidden)count++;}let hint=document.getElementById('library-no-results');if(!hint){hint=document.createElement('p');hint.id='library-no-results';hint.className='quiet-empty';document.getElementById('library-items').append(hint);}hint.textContent=count?'':'No hay coincidencias. Prueba con otro nombre o tipo.';hint.hidden=!!count;});
   if(getState().preview||!getState().currentCourse?.permissions?.edit)return;
-  for(const button of document.querySelectorAll('[data-action^="new-module:"],[data-action^="academic-new:"]')){const [action,id]=button.dataset.action.split(':');button.insertAdjacentHTML('afterend',`<button type="button" class="btn ghost small" data-action="library-pick:${e(id)}" data-kind="${action==='new-module'?'module':'activity'}">${icon('folder')}Desde biblioteca</button>`);}
-  for(const button of document.querySelectorAll('[data-action^="new-resource:"]')){const id=button.dataset.action.split(':')[1];button.insertAdjacentHTML('afterend',`<button type="button" class="btn ghost small" data-action="library-pick:${e(id)}" data-module="${e(id)}">${icon('folder')}Desde biblioteca</button>`);}
+  const teacherPanel=document.querySelector('[data-teacher-course-panel]');
+  if(teacherPanel)for(const slot of teacherPanel.querySelectorAll('[data-teacher-library-slot]')){
+   if(slot.children.length)continue;
+   const kind=slot.dataset.teacherLibrarySlot,id=slot.dataset.module||slot.dataset.course,label={module:'Capítulo de la biblioteca',activity:'Actividad de la biblioteca',resource:'Material de la biblioteca'}[kind];
+   if(!label||!id)continue;
+   slot.innerHTML=`<button type="button" class="btn ghost small" data-action="library-pick:${e(id)}" data-kind="${e(kind)}"${slot.dataset.module?` data-module="${e(slot.dataset.module)}"`:''}>${icon('folder')}${label}</button>`;
+  }
+  if(!teacherPanel){
+   for(const button of document.querySelectorAll('[data-action^="new-module:"],[data-action^="academic-new:"]')){const [action,id]=button.dataset.action.split(':');button.insertAdjacentHTML('afterend',`<button type="button" class="btn ghost small" data-action="library-pick:${e(id)}" data-kind="${action==='new-module'?'module':'activity'}">${icon('folder')}Desde biblioteca</button>`);}
+   for(const button of document.querySelectorAll('[data-action^="new-resource:"]')){const id=button.dataset.action.split(':')[1];button.insertAdjacentHTML('afterend',`<button type="button" class="btn ghost small" data-action="library-pick:${e(id)}" data-module="${e(id)}">${icon('folder')}Desde biblioteca</button>`);}
+  }
   for(const button of document.querySelectorAll('[data-action^="edit-module:"],[data-action^="edit-resource:"],[data-action^="academic-edit:"]')){const [action,id]=button.dataset.action.split(':');button.insertAdjacentHTML('afterend',`<button type="button" class="btn ghost small" data-action="library-save:${action==='edit-module'?'module':action==='edit-resource'?'resource':'activity'}~${e(id)}">${icon('folder')}Guardar en biblioteca</button>`);}
  }
  return {page,action,enhance};

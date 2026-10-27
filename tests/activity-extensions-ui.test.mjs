@@ -149,12 +149,14 @@ test('a conflict reloads the current exception while retaining the requested dat
 });
 
 test('the teacher activity offers habilitation even when nobody has submitted, while an editor cannot use it',async()=>{
- async function page(grade){
-  const context=state();context.courses[0].permissions={grade,edit:true};const course={...context.courses[0],modules:[]},activity={...report().activity,description:'',attachments:[],questions:[],maxPoints:5,weight:10,version:1};
-  const api=async path=>{if(path==='/academics/activities/task')return {course,activity};if(path==='/academics/activities/task/submissions')return {submissions:[]};if(path==='/courses/group')return course;throw Error('Unexpected request '+path);};
-  const ui=createAcademicUI({api,getState:()=>context,openModal(){},toast(){},render(){},modal:{open:false},btn:(label,action)=>`<button data-action="${action}">${label}</button>`,icon:()=>'',heading:title=>`<h1>${title}</h1>`,empty:title=>`<p>${title}</p>`});
-  return {html:await ui.pageHTML('actividad/task'),ui};
+ async function page(grade,edit=true){
+  const context=state();context.courses[0].permissions={grade,edit};const course={...context.courses[0],modules:[]},activity={...report().activity,description:'Indicaciones visibles del docente',attachments:[],questions:[],maxPoints:5,weight:10,version:1},requests=[];
+  const api=async path=>{requests.push(path);if(path==='/academics/activities/task')return {course,activity};if(path==='/academics/activities/task/submissions')return {submissions:[]};if(path==='/courses/group')return course;throw Error('Unexpected request '+path);};
+  const ui=createAcademicUI({api,getState:()=>context,openModal(){},toast(){},render(){},modal:{open:false},btn:(label,action)=>`<button data-action="${action}">${label}</button>`,icon:()=>'',heading:(title,_subtitle,actions='')=>`<h1>${title}</h1>${actions}`,empty:title=>`<p>${title}</p>`});
+  return {html:await ui.pageHTML('actividad/task'),ui,requests};
  }
  const teacher=await page(true);assert.match(teacher.html,/academic-extension:task/);assert.match(teacher.html,/Aún no hay entregas/);
- const editor=await page(false);assert.doesNotMatch(editor.html,/academic-extension/);await assert.rejects(()=>editor.ui.action('academic-extension','task',{dataset:{}}),/permiso para calificar/);
+ const editor=await page(false);assert.match(editor.html,/Indicaciones visibles del docente/);assert.match(editor.html,/academic-edit:task/);assert.match(editor.html,/academic-publication:task/);assert.doesNotMatch(editor.html,/academic-extension|academic-release|academic-grade:|\/download|Revisar entregas|Devolver a todos/);assert.ok(!editor.requests.some(path=>path.endsWith('/submissions')));await assert.rejects(()=>editor.ui.action('academic-extension','task',{dataset:{}}),/permiso para calificar/);
+ const viewer=await page(false,false);assert.match(viewer.html,/Indicaciones visibles del docente/);assert.doesNotMatch(viewer.html,/academic-edit:|academic-publication:|academic-delete:|platform-activity-preview:|academic-extension|academic-release|academic-grade:|\/download/);assert.ok(!viewer.requests.some(path=>path.endsWith('/submissions')));
+ const grader=await page(true,false);assert.match(grader.html,/academic-release-activity:task/);assert.match(grader.html,/academic-extension:task/);assert.doesNotMatch(grader.html,/academic-edit:|academic-publication:|academic-delete:/);
 });

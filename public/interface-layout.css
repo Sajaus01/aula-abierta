@@ -1,0 +1,264 @@
+/* Shared shell and management screens. Keep course workspaces, messaging,
+   media viewers and embedded materials under their own layout styles. */
+:root{
+ --sidebar-width:204px;
+ --toolbar-height:48px;
+ --layout-edge:clamp(18px,2vw,28px);
+ --layout-gap:14px;
+}
+
+/* Navigation takes little room while keeping every destination available. */
+.shell>.workspace{min-width:0}
+.shell>.sidebar{padding:15px 10px 10px;background:#f8f8fa;border-right-color:#e2e2e7}
+.sidebar>.brand{font-size:17px;line-height:1.3;padding-inline:8px;gap:8px}
+.sidebar>.brand .brand-mark{width:29px;height:29px;flex:0 0 29px;border-radius:9px}
+.sidebar>.brand .icon{width:20px;height:20px}
+.sidebar>.brand-sub{margin:7px 0 13px 45px;font-size:10px;line-height:1.4;letter-spacing:.045em}
+.sidebar>.nav-label{margin:0 10px 6px;font-size:10px;letter-spacing:.055em}
+.sidebar>.nav-list{gap:2px;padding-inline:2px;scroll-padding-block:8px}
+.sidebar .nav-link{min-height:32px;padding:6px 9px;gap:8px;font-size:13px;line-height:1.35;border-radius:7px}
+.sidebar .nav-icon,.sidebar .nav-icon>.icon{width:17px;flex-basis:17px}
+.sidebar>.role-switch{margin:10px 2px 7px;gap:2px;padding:3px}
+.sidebar .role-switch-option{min-height:29px;padding:4px;font-size:11px;gap:5px}
+.sidebar>.sidebar-bottom{padding-top:9px}
+.sidebar .sidebar-help{margin-bottom:3px}
+.sidebar .sidebar-help .text-button{min-height:31px;padding:5px 9px;font-size:12px;gap:8px}
+.sidebar-bottom>.profile{margin-top:5px;padding:9px 3px 0;gap:8px}
+.sidebar .profile strong{font-size:12px;line-height:1.4}
+.sidebar .profile small{font-size:10px;line-height:1.4}
+.sidebar .profile>.avatar{width:28px;height:28px;flex:0 0 28px}
+.workspace>.topbar{padding-inline:var(--layout-edge);gap:12px;height:var(--toolbar-height);min-height:var(--toolbar-height)}
+.topbar>.crumb{flex:1;min-width:0;gap:8px;font-size:12px}
+.topbar .crumb strong{max-width:none;font-size:12px;line-height:1.4}
+.topbar>.topbar-tools{flex-shrink:0;gap:8px}
+.topbar-tools>.btn{min-height:30px;padding:4px 9px;font-size:12px;border-radius:7px}
+.workspace>.main{padding:20px var(--layout-edge) 24px;max-width:1600px;min-width:0;font-size:14px;line-height:1.5}
+.main>.page-heading{align-items:flex-start;gap:12px;margin-bottom:16px}
+.main>.page-heading h1{font-size:24px;line-height:1.25;letter-spacing:-.035em}
+.main>.page-heading p{font-size:13px;line-height:1.5;margin-top:5px;max-width:80ch}
+.main>.page-heading>.heading-actions{gap:7px;max-width:100%;flex-shrink:0}
+.main>.toolbar{align-items:flex-end;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+.main>.toolbar>.search,.main>.toolbar>label{flex:1 1 240px;max-width:360px;min-width:0}
+.main>.toolbar>.search input{height:34px;min-height:34px;font-size:13px;padding-block:6px}
+.main>.toolbar>.search>.icon{top:9px}
+.main>.toolbar>label{font-size:12px;gap:5px}
+.main>.toolbar>label>input{height:34px;min-height:34px;font-size:13px;padding:6px 10px}
+.main>.toolbar>:is(small,.muted){font-size:12px;line-height:1.5;padding-block:7px}
+.main>.footer{margin-top:20px;padding-top:13px;font-size:11px;gap:10px;flex-wrap:wrap}
+
+/* Buttons in page management chrome do not resize chat or activity controls. */
+:is(.main>.page-heading,.main>.toolbar,.main>.course-grid,.main>.panel.table-panel:not(.academic-gradebook),.main>.settings-grid,.main>.role-explainer,.library-list,.storage-content) .btn{
+ min-height:32px;padding:5px 10px;font-size:13px;line-height:1.4;gap:6px;border-radius:8px;
+}
+:is(.main>.page-heading,.main>.toolbar,.main>.course-grid,.main>.panel.table-panel:not(.academic-gradebook),.main>.settings-grid,.library-list,.storage-content) .btn.small{
+ min-height:30px;padding:4px 8px;font-size:12px;border-radius:7px;
+}
+:is(.main>.page-heading,.main>.toolbar,.main>.course-grid,.main>.panel.table-panel:not(.academic-gradebook),.main>.settings-grid,.library-list,.storage-content) .btn>.icon{width:16px;height:16px;flex-shrink:0}
+
+/* Course/group collections: smaller covers and useful space inside each card. */
+.main>.course-grid{grid-template-columns:repeat(auto-fill,minmax(min(100%,250px),1fr));gap:14px}
+.main>.course-grid .course-card{border-radius:11px;box-shadow:0 1px 3px #1d1d1f04}
+.main>.course-grid .course-cover{height:64px;background:linear-gradient(120deg,#eef2f8,#f7f8fb)}
+.main>.course-grid .course-cover>.icon{width:30px;height:30px;stroke-width:1.5}
+.main>.course-grid .course-body{padding:14px;gap:0}
+.main>.course-grid .course-body h3{font-size:16px;line-height:1.35;margin:10px 0 5px}
+.main>.course-grid .course-body>p{font-size:13px;line-height:1.5}
+.main>.course-grid .course-body>.field-hint{font-size:12px;line-height:1.4;margin:3px 0 6px}
+.main>.course-grid .course-meta{font-size:12px;line-height:1.4;gap:7px 12px;margin:11px 0 10px}
+.main>.course-grid .course-body>.course-actions{padding-top:10px;gap:7px;align-items:center;flex-wrap:wrap}
+.main>.course-grid .course-actions>.btn{flex:0 1 auto}
+
+/* Students and enrollment tables remain real tables. Dense rows grow naturally
+   when a person has multiple roles or an action needs a second line. */
+.main>.panel.table-panel:not(.academic-gradebook){padding:0;border-radius:10px;box-shadow:none;overflow-x:auto;max-width:100%}
+.main>.panel.table-panel:not(.academic-gradebook)>table{font-size:13px;line-height:1.4}
+.main>.panel.table-panel:not(.academic-gradebook) :is(th,td){padding:6px 11px;vertical-align:middle}
+.main>.panel.table-panel:not(.academic-gradebook) th{padding-block:9px;font-size:11px;letter-spacing:.025em;background:#f8f8fa}
+.main>.panel.table-panel:not(.academic-gradebook) td{height:42px}
+.main>.panel.table-panel:not(.academic-gradebook) td :is(.muted,small){font-size:12px;line-height:1.4;margin-top:2px}
+.main>.panel.table-panel:not(.academic-gradebook) td.actions{white-space:normal;min-width:190px}
+.main>.panel.table-panel:not(.academic-gradebook) td.actions>.btn{margin:2px 3px 2px 0}
+.main>.panel.table-panel:not(.academic-gradebook) td .badge{line-height:1.4;padding:3px 6px}
+
+/* Three user filters occupy one desktop row; explanation and list share the
+   same restrained hierarchy rather than several large card-like regions. */
+.main>.role-explainer{padding:14px 16px;margin-bottom:14px;border-radius:10px;box-shadow:none;background:#fafafc}
+.main>.role-explainer>h2{font-size:14px;line-height:1.4;margin-bottom:10px}
+.role-explainer>.role-explainer-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px 18px}
+.role-explainer-grid>p{margin:0;font-size:12px;line-height:1.5}
+.role-explainer-grid>p>strong{display:block;font-size:13px;font-weight:600;color:var(--ink);margin-bottom:3px}
+.role-explainer-grid>p>span{display:block;color:var(--muted)}
+.main>.panel:has(#user-search){padding:14px 16px;border-radius:10px;box-shadow:none}
+.main>.panel:has(#user-search)>.form-grid{grid-template-columns:minmax(0,2fr) repeat(2,minmax(135px,1fr));gap:12px;align-items:end;margin-bottom:14px}
+.main>.panel:has(#user-search) label{font-size:12px;gap:5px}
+.main>.panel:has(#user-search) :is(input,select){min-height:34px;padding:6px 9px;font-size:13px}
+.main>.panel:has(#user-search) .table-wrap{max-width:100%;border:1px solid var(--line);border-radius:8px}
+.main>.panel:has(#user-search) table{font-size:13px;line-height:1.4}
+.main>.panel:has(#user-search) :is(th,td){padding:7px 10px}
+.main>.panel:has(#user-search) td{height:42px}
+.main>.panel:has(#user-search) td small{font-size:12px}
+.main>.panel:has(#user-search) td>.btn{min-height:30px;padding:4px 9px;font-size:12px}
+
+/* Library and ordinary settings use lists and aligned fields, not tall islands. */
+.main>.library-list{gap:8px}
+.main>.library-list>.resource-row{min-height:48px;padding:9px 12px;gap:10px;border-radius:9px}
+.main>.library-list .resource-row>.resource-icon{width:30px;height:32px;border-radius:7px}
+.main>.library-list .resource-row strong{font-size:13px;line-height:1.4}
+.main>.library-list .resource-row small{font-size:12px;line-height:1.4;margin-top:2px}
+.main>.settings-grid{gap:14px;align-items:start;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)}
+.main>.settings-grid>.panel{padding:16px;border-radius:10px;box-shadow:none;min-width:0}
+.settings-grid>.panel>h2{font-size:15px;margin-bottom:12px}
+.settings-grid .form-stack{gap:12px}
+.settings-grid :is(label,.small-paragraph){font-size:13px;line-height:1.5}
+.settings-grid :is(input,select,textarea){min-height:34px;padding:6px 10px;font-size:14px}
+.settings-grid textarea{min-height:80px}
+.settings-grid .mode-card{padding:10px 0}
+.settings-grid .mode-card>p{font-size:13px;margin-top:6px;line-height:1.5}
+.settings-grid .form-actions{margin-top:13px;padding-top:12px}
+
+/* Storage has its own scope: compact summaries, balanced columns and clear
+   values, with no changes to embedded content or academic grade tables. */
+.main>.storage-tabs{gap:3px;padding:3px;margin-bottom:14px;border-radius:8px}
+.main>.storage-tabs>button{min-height:32px;padding:5px 10px;gap:6px;border-radius:6px;font-size:13px;line-height:1.4}
+.main>.storage-content{gap:14px;min-width:0}
+.storage-content>.storage-stats{grid-template-columns:repeat(auto-fit,minmax(min(100%,175px),1fr));gap:10px;margin-bottom:0}
+.storage-stats>.storage-stat{padding:12px;border-radius:10px;gap:10px;min-width:0}
+.storage-stat>div{min-width:0;gap:3px}
+.storage-stat>div>span{font-size:12px;line-height:1.4}
+.storage-stat strong{font-size:21px;line-height:1.25;letter-spacing:-.025em;font-variant-numeric:tabular-nums}
+.storage-stat small{font-size:12px;line-height:1.45}
+.storage-content .storage-columns{grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr));gap:14px;align-items:start}
+.storage-content .storage-columns>.panel{padding:15px;border-radius:10px;box-shadow:none;min-width:0}
+.storage-content>.panel{padding:15px;border-radius:10px;box-shadow:none;min-width:0}
+.storage-content h2{font-size:15px;line-height:1.4;margin-bottom:10px}
+.storage-content>.panel>.section-head,.storage-content .storage-columns>.panel>.section-head{margin-bottom:10px;gap:10px}
+.storage-content .field-hint{font-size:12px;line-height:1.5}
+.storage-content .storage-breakdown{padding:10px 0;gap:6px 10px;font-size:13px;line-height:1.4}
+.storage-content .storage-breakdown>strong{font-size:13px;font-weight:600;white-space:nowrap}
+.storage-content .storage-breakdown>progress{height:6px}
+.storage-content .storage-rules{margin-bottom:12px}
+.storage-content .storage-rules>div{padding:8px 0;gap:12px;font-size:13px;line-height:1.4}
+.storage-rules dd{font-weight:600;white-space:nowrap}
+.storage-content .storage-filters{grid-template-columns:minmax(0,1fr) minmax(160px,210px);gap:12px;margin:12px 0}
+.storage-content .storage-filters label{font-size:12px;gap:5px}
+.storage-content :is(input,select){min-height:34px;padding:6px 10px;font-size:13px}
+.storage-content .table-wrap{max-width:100%;margin-top:10px;border:1px solid var(--line);border-radius:8px}
+.storage-content table{font-size:13px;line-height:1.4}
+.storage-content :is(th,td){padding:7px 10px}
+.storage-content th{font-size:11px;background:#f8f8fa}
+.storage-content .storage-meter{min-width:115px;max-width:330px;gap:5px;padding-block:3px}
+.storage-content .storage-meter>.flex{flex-wrap:wrap;gap:3px 8px}
+.storage-content .storage-meter :is(strong,small){font-size:12px;line-height:1.4}
+.storage-content .storage-meter>progress{height:6px}
+.storage-content .storage-subtext{font-size:12px;line-height:1.4;margin-top:3px}
+.storage-content .storage-backup-name{font-size:13px;line-height:1.45;overflow-wrap:anywhere}
+.storage-content .storage-history>article{padding:12px 0;gap:10px}
+.storage-content .storage-history p{font-size:13px;line-height:1.5;margin:4px 0}
+.storage-content .storage-history pre{padding:10px;font-size:12px;line-height:1.5}
+.storage-content .storage-own-courses{grid-template-columns:repeat(auto-fit,minmax(min(100%,245px),1fr));gap:12px}
+.storage-content .storage-own-courses>article{padding:12px;gap:6px;border-radius:9px}
+
+/* Ordinary administration dialogs only; rich editors and viewers keep their
+   own form geometry, scroll areas and media sizing. */
+#modal:not(.resource-viewer):not(.review-workspace):not(.activity-editor-modal):not(.activity-extensions-modal){padding:18px;max-height:calc(100dvh - 32px);border-radius:13px}
+#modal:not(.resource-viewer):not(.review-workspace):not(.activity-editor-modal):not(.activity-extensions-modal)>.modal-head{gap:12px;margin-bottom:14px;align-items:flex-start}
+#modal:not(.resource-viewer):not(.review-workspace):not(.activity-editor-modal):not(.activity-extensions-modal)>.modal-head>h2{font-size:18px;line-height:1.35}
+#modal:not(.resource-viewer):not(.review-workspace):not(.activity-editor-modal):not(.activity-extensions-modal) #modal-form{font-size:13px;line-height:1.5}
+#modal:not(.resource-viewer):not(.review-workspace):not(.activity-editor-modal):not(.activity-extensions-modal) :is(.form-stack,.form-grid){gap:12px}
+#modal:not(.resource-viewer):not(.review-workspace):not(.activity-editor-modal):not(.activity-extensions-modal) label{font-size:13px;line-height:1.45;gap:5px}
+#modal:not(.resource-viewer):not(.review-workspace):not(.activity-editor-modal):not(.activity-extensions-modal) :is(input,select,textarea):not([type=checkbox]):not([type=radio]){min-height:34px;padding:6px 10px;font-size:14px}
+#modal:not(.resource-viewer):not(.review-workspace):not(.activity-editor-modal):not(.activity-extensions-modal) textarea{min-height:88px}
+#modal:not(.resource-viewer):not(.review-workspace):not(.activity-editor-modal):not(.activity-extensions-modal) .form-actions{margin-top:14px;padding-top:12px;gap:7px;align-items:center}
+#modal:not(.resource-viewer):not(.review-workspace):not(.activity-editor-modal):not(.activity-extensions-modal) .btn{min-height:32px;padding:5px 10px;font-size:13px}
+#modal .role-fields{padding:12px;gap:7px}
+#modal .role-choice{padding:8px 10px;gap:9px}
+#modal .role-choice small{font-size:12px;line-height:1.45}
+#modal .permission-list{margin-block:10px;gap:6px}
+#modal .permission-row{padding:8px 10px}
+#modal .permission-row small{font-size:12px;line-height:1.45}
+#modal .enrollment-options{gap:12px;margin-top:14px}
+#modal .enrollment-options>section{padding:14px;gap:10px}
+#modal .enrollment-options p{font-size:13px;line-height:1.5}
+#modal .enrollment-target{padding:11px 13px;gap:5px}
+#modal .enrollment-summary{gap:8px;margin:12px 0}
+#modal .enrollment-summary>div{padding:10px}
+#modal .enrollment-summary strong{font-size:21px;line-height:1.3}
+#modal .enrollment-summary span{font-size:12px;margin-top:3px;line-height:1.4}
+#modal .enrollment-results{margin:12px 0;max-height:min(340px,42dvh)}
+#modal .enrollment-results :is(th,td){padding:8px 10px;font-size:12px}
+
+@media(min-width:801px){
+ .shell>.sidebar{width:var(--sidebar-width)}
+ .shell>.workspace{margin-left:var(--sidebar-width)}
+}
+@media(max-width:1100px){
+ .role-explainer>.role-explainer-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .main>.settings-grid{grid-template-columns:1fr}
+ .main>.page-heading>.heading-actions{flex-shrink:1}
+}
+@media(max-width:800px){
+ .shell>.workspace{margin-left:0}
+ .shell>.sidebar{width:min(280px,calc(100vw - 48px));padding-top:45px}
+ .workspace>.main{padding:17px 16px 22px}
+ .workspace>.topbar{padding-inline:14px}
+ .topbar>.crumb{gap:7px}
+ .topbar .crumb strong{max-width:50vw}
+ .topbar .mobile-menu{min-width:36px;min-height:36px;width:36px;height:36px;padding:8px}
+ .main>.page-heading{flex-wrap:wrap;gap:10px;margin-bottom:14px}
+ .main>.page-heading h1{font-size:23px}
+ .main>.page-heading>.heading-actions{width:100%;gap:7px}
+ .main>.panel:has(#user-search)>.form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .main>.panel:has(#user-search)>.form-grid>label:first-child{grid-column:1/-1}
+ .storage-content .storage-filters{grid-template-columns:1fr}
+}
+@media(max-width:580px){
+ .workspace>.main{padding:15px 12px 20px}
+ .main>.page-heading h1{font-size:22px}
+ .main>.page-heading p{font-size:13px}
+ .main>.toolbar{gap:9px}
+ .main>.toolbar>.search,.main>.toolbar>label{max-width:none;flex-basis:100%}
+ .main>.toolbar>.tabs{width:100%;flex-wrap:wrap;justify-content:flex-start}
+ .main>.course-grid{grid-template-columns:1fr;gap:12px}
+ .main>.course-grid .course-cover{height:60px}
+ .main>.course-grid .course-body{padding:13px}
+ .main>.panel.table-panel:not(.academic-gradebook)>table{min-width:620px}
+ .main>.panel.table-panel:not(.academic-gradebook) :is(th,td){padding-inline:9px}
+ .main>.panel.table-panel:not(.academic-gradebook) td.actions{min-width:190px}
+ .main>.role-explainer{padding:13px}
+ .role-explainer>.role-explainer-grid{grid-template-columns:1fr;gap:10px}
+ .main>.panel:has(#user-search){padding:12px}
+ .main>.panel:has(#user-search) table{min-width:480px}
+ .main>.library-list>.resource-row{padding:10px;gap:8px;flex-wrap:wrap}
+ .main>.library-list>.resource-row>.spacer{flex:1 1 calc(100% - 42px);min-width:0}
+ .main>.library-list>.resource-row>.btn{margin-left:auto}
+ .main>.settings-grid>.panel{padding:14px}
+ .main>.storage-tabs{gap:3px;flex-wrap:wrap}
+ .main>.storage-tabs>button{flex:1 1 auto;justify-content:center;white-space:normal}
+ .storage-content>.storage-stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+ .storage-stats>.storage-stat{padding:11px;gap:7px}
+ .storage-stats .stat-icon{display:none}
+ .storage-stat strong{font-size:20px}
+ .storage-content>.panel,.storage-content .storage-columns>.panel{padding:13px}
+ .storage-content .storage-rules>div{gap:8px}
+ .storage-content .storage-own-courses{grid-template-columns:1fr}
+ #modal:not(.resource-viewer):not(.review-workspace):not(.activity-editor-modal):not(.activity-extensions-modal){padding:15px;max-width:calc(100vw - 20px);max-height:calc(100dvh - 20px)}
+ #modal .enrollment-options{grid-template-columns:1fr}
+ #modal .enrollment-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
+/* Touch targets and 16px form text prevent cramped taps and iOS focus zoom.
+   Deliberately scoped away from diagrams, messaging and media-viewer tools. */
+@media(max-width:800px),(pointer:coarse){
+ .sidebar .nav-link,.sidebar .sidebar-help .text-button{min-height:40px}
+ .sidebar .role-switch-option{min-height:36px;font-size:12px}
+ .sidebar .profile>.icon-btn,.sidebar>.sidebar-close{width:38px;min-width:38px;height:38px;min-height:38px;padding:9px}
+ .topbar-tools>.btn{min-height:36px;padding-block:7px}
+ :is(.main>.page-heading,.main>.toolbar,.main>.course-grid,.main>.panel.table-panel:not(.academic-gradebook),.main>.settings-grid,.library-list,.storage-content) :is(.btn,.btn.small){min-height:38px;padding-block:7px}
+ .main>.panel:has(#user-search) td>.btn{min-height:38px;padding-block:7px}
+ .main>.storage-tabs>button{min-height:38px;padding-block:7px}
+ .main>.toolbar :is(input,select),.main>.panel:has(#user-search) :is(input,select),.settings-grid :is(input,select,textarea),.storage-content :is(input,select,textarea){font-size:16px;min-height:42px}
+ .main>.toolbar>.search>.icon{top:13px}
+ #modal:not(.resource-viewer):not(.review-workspace):not(.activity-editor-modal):not(.activity-extensions-modal) :is(input,select,textarea):not([type=checkbox]):not([type=radio]){font-size:16px;min-height:42px}
+ #modal:not(.resource-viewer):not(.review-workspace):not(.activity-editor-modal):not(.activity-extensions-modal) .btn{min-height:40px;padding-block:8px}
+ #modal:not(.resource-viewer):not(.review-workspace):not(.activity-editor-modal):not(.activity-extensions-modal) .check-label{min-height:36px}
+}

@@ -83,10 +83,14 @@ export function createPlatformUI(ctx){
   if(!global()){const account=document.querySelector('[href="#ajustes"]');if(account){account.href='#cuenta';account.innerHTML=icon('settings')+'Mi cuenta';account.classList.toggle('active',route==='cuenta');if(route==='cuenta')account.setAttribute('aria-current','page');}for(const el of document.querySelectorAll('[data-action="new-student"],[data-action="import-students"],[data-action^="edit-student:"],[data-action^="delete-student:"],[data-action^="reset-student:"]'))el.remove();}
   for(const el of document.querySelectorAll('[data-action^="edit-course:"]')){const id=el.dataset.action.split(':')[1];if(getState().courses.find(c=>c.id===id)?.permissions?.edit===false)el.remove();}
   if(!route.startsWith('curso/'))return;const c=getState().currentCourse;if(!c?.entityKind)return;
+  const teacherPanel=document.querySelector('[data-teacher-course-panel]');
   const contentHeading=document.querySelector('.detail-grid > section > .section-head');
-  if(c.permissions.edit&&contentHeading&&!contentHeading.querySelector('.course-chapter-order')){
+  if(c.permissions.edit&&contentHeading&&!document.querySelector('[data-course-chapter-order]')){
    contentHeading.insertAdjacentHTML('beforeend',`<label class="course-chapter-order">Orden del contenido<select data-course-chapter-order="${e(c.id)}" title="Aplica a capítulos, materiales y actividades. Las posiciones manuales se conservan."><option value="asc" ${c.chapterOrder!=='desc'?'selected':''}>Ascendente</option><option value="desc" ${c.chapterOrder==='desc'?'selected':''}>Descendente</option></select></label>`);
-   const select=contentHeading.querySelector('[data-course-chapter-order]');
+  }
+  const select=document.querySelector('[data-course-chapter-order]');
+  if(c.permissions.edit&&select&&!select.dataset.orderBound){
+   select.dataset.orderBound='true';
    select.addEventListener('change',async()=>{
     const state=getState(),owner=state.user?.id,view=state.viewMode,currentRoute=location.hash,previous=c.chapterOrder||'asc',next=select.value,scroll=window.scrollY;
     if(select.disabled||state.preview||view==='learning'||!state.currentCourse?.permissions.edit){select.value=previous;return;}
@@ -102,11 +106,11 @@ export function createPlatformUI(ctx){
     finally{if(select.isConnected)select.disabled=false;}
    });
   }
-  const header=document.querySelector('.course-header');if(header&&getState().user.role==='admin'){
+  const header=document.querySelector('.course-header');if(header&&!teacherPanel&&getState().user.role==='admin'){
    header.insertAdjacentHTML('beforebegin',`<div class="course-context">${icon(c.entityKind==='template'?'book':'users')}<span>${c.entityKind==='template'?'Curso plantilla':`Grupo ${e(c.groupCode)} · ${e(c.cohort)}`}</span><span class="badge ${c.lifecycle==='active'?'green':'gray'}">${{draft:'Borrador',active:'Activo',archived:'Archivado'}[c.lifecycle]}</span>${c.templateId&&getState().courses.some(v=>v.id===c.templateId)?`<a class="text-button" href="#curso/${e(c.templateId)}">Ver plantilla ${icon('arrow')}</a>`:''}</div>`);
    header.insertAdjacentHTML('afterend',`<div class="flex wrap platform-toolbar" aria-label="Herramientas del curso">${c.permissions.manage?btn(c.entityKind==='template'?'Crear grupo':'Duplicar grupo','platform-clone:'+c.id,'secondary','copy')+btn('Docentes y permisos','platform-staff:'+c.id,'ghost','users')+btn('Estado','platform-state:'+c.id,'ghost','settings'):''}${c.permissions.edit?btn('Apariencia','platform-appearance:'+c.id,'ghost','palette'):''}${c.entityKind==='group'?btn('Vista estudiante','platform-preview:'+c.id,'secondary','eye')+(c.permissions.grade?`<a class="btn ghost" href="#estadisticas/${e(c.id)}">${icon('chart')}Seguimiento</a>`:''):''}</div>`);
   }
-  if(c.entityKind==='template'&&header){const linked=getState().courses.filter(g=>g.templateId===c.id);header.insertAdjacentHTML('afterend',`<details class="linked-groups" ${linked.length?'':'open'}><summary>${icon('users')}Grupos de este curso <span class="badge gray">${linked.length}</span>${icon('chevron')}</summary><div class="linked-group-list">${linked.map(g=>`<a href="#curso/${e(g.id)}"><strong>${e(g.title)} · ${e(g.cohort)} / ${e(g.groupCode)}</strong><span class="badge ${g.lifecycle==='active'?'green':'gray'}">${e({draft:'Borrador',active:'Activo',archived:'Archivado'}[g.lifecycle])}</span>${icon('arrow')}</a>`).join('')||'<p class="small-paragraph">Crea un grupo para matricular estudiantes y comenzar las clases.</p>'}</div></details>`);}
+  if(c.entityKind==='template'&&header&&!teacherPanel){const linked=getState().courses.filter(g=>g.templateId===c.id);header.insertAdjacentHTML('afterend',`<details class="linked-groups" ${linked.length?'':'open'}><summary>${icon('users')}Grupos de este curso <span class="badge gray">${linked.length}</span>${icon('chevron')}</summary><div class="linked-group-list">${linked.map(g=>`<a href="#curso/${e(g.id)}"><strong>${e(g.title)} · ${e(g.cohort)} / ${e(g.groupCode)}</strong><span class="badge ${g.lifecycle==='active'?'green':'gray'}">${e({draft:'Borrador',active:'Activo',archived:'Archivado'}[g.lifecycle])}</span>${icon('arrow')}</a>`).join('')||'<p class="small-paragraph">Crea un grupo para matricular estudiantes y comenzar las clases.</p>'}</div></details>`);}
   for(const el of document.querySelectorAll('[data-action]')){const action=el.dataset.action.split(':')[0];if((!c.permissions.edit&&/^(edit-|new-module|new-resource|publish-|delete-module|delete-resource|academic-new|academic-edit|academic-delete|academic-publication|quick-(new|edit|delete|up|down))/.test(action))||((c.entityKind==='template'||!c.permissions.manage)&&action==='enroll-course')||(!c.permissions.manage&&action==='platform-delete-course'))el.remove();if(action==='platform-activity-preview'&&!c.permissions.edit)el.remove();}
 
  }

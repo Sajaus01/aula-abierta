@@ -14,6 +14,7 @@ test('gradebook filters retain the selected student, escape names and omit group
  const html=renderGradebookFilters(data,[{id:'g',title:'<Group>',entityKind:'group',permissions:{grade:true}},{id:'foreign',title:'Private group',entityKind:'group',permissions:{grade:false}}]);
  assert.match(html,/value="s" selected/);assert.match(html,/&lt;script&gt;student&lt;\/script&gt;/);assert.match(html,/&lt;Group&gt;/);assert.doesNotMatch(html,/Private group|<script>/);
  assert.match(html,/value="2026-10-01"/);assert.match(html,/estado actual/);
+ assert.match(html,/aria-describedby="gradebook-filter-description"/);assert.match(html,/<p class="field-hint sr-only" id="gradebook-filter-description">/);
 });
 
 function fixture(){
