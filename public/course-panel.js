@@ -1,13 +1,14 @@
 import {escapeHtml as e,safeUrl} from './lib.js';
 import {icon,button as btn} from './ui.js';
 import {materialStatus,activityCompleted,summarizeCourseLearning} from './learning.js';
+import {activityDueAt,studentDeadline,individualDeadlineLabel} from './activity-deadline.js';
 
 const materialNames={pdf:'Documento',slides:'Diapositivas',video:'Video',book:'Lectura',image:'Imagen',exercise:'Ejercicio de práctica',html:'Lección',lab:'Simulación',link:'Enlace'};
 const materialIcons={pdf:'file',slides:'file',video:'video',book:'book',image:'image',exercise:'edit',html:'book',lab:'code',link:'link'};
 const timestamp=value=>value?Date.parse(value):NaN;
 const future=(item,now)=>timestamp(item.opensAt)>now;
 const formattedDate=value=>Number.isFinite(timestamp(value))?new Date(value).toLocaleString('es-CO',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'';
-const effectiveDue=item=>item.responseState==='returned'?(item.returnDueAt||null):item.dueAt;
+const effectiveDue=item=>activityDueAt(item);
 const byDue=(a,b)=>(Number.isFinite(timestamp(effectiveDue(a)))?timestamp(effectiveDue(a)):Infinity)-(Number.isFinite(timestamp(effectiveDue(b)))?timestamp(effectiveDue(b)):Infinity);
 const activityName=item=>item.kind==='quiz'?'Cuestionario':'Tarea';
 export function coursePanelModel(course,progress=[],{now=Date.now()}={}){
@@ -31,13 +32,14 @@ export function courseActivityStatus(item,{now=Date.now()}={}){
  if(item.responseState==='returned')return {label:'Por corregir',tone:'attention'};
  if(activityCompleted(item))return {label:'Entregada',tone:'done'};
  if(future(item,now))return {label:'Programada',tone:'scheduled'};
+ if(studentDeadline(item,[],now).source==='extension'&&!studentDeadline(item,[],now).closed)return {label:'Entrega habilitada',tone:'started'};
  if(item.responseState==='draft')return {label:'En curso',tone:'started'};
  return {label:'Pendiente',tone:'pending'};
 }
 function progressRing(summary){return `<div class="course-total-ring" style="--progress:${summary.percent}%" role="progressbar" aria-label="Avance total del curso" aria-valuenow="${summary.percent}" aria-valuemin="0" aria-valuemax="100" aria-valuetext="${summary.completed} de ${summary.total} elementos completados"><span><strong>${summary.percent}%</strong><small>avance total</small></span></div>`;}
 function completionDetails(summary){return `<div class="course-progress-detail"><strong>${summary.completed} de ${summary.total} elementos</strong><span>${summary.pending?`${summary.pending} ${summary.pending===1?'pendiente':'pendientes'}`:summary.total?'Todo al día':'Sin contenido publicado'}</span><div class="course-progress-parts">${[['Materiales',summary.materials.completed,summary.materials.total],['Tareas',summary.tasksCompleted,summary.tasksTotal],['Cuestionarios',summary.quizzesCompleted,summary.quizzesTotal]].filter(([, ,total])=>total>0).map(([name,done,total])=>`<span>${name}<b>${done}/${total}</b></span>`).join('')}</div></div>`;}
 function resourceRow(item,progress,learner){const status=learner?materialStatus(item.id,progress):'unopened',label={completed:'Completado',opened:'En curso',unopened:'Sin abrir'}[status];return `<button type="button" class="course-item-row material ${status}" data-action="resource:${e(item.id)}" data-course-item="resource" aria-label="Abrir ${e(item.title)}"><span class="course-item-icon">${icon(status==='completed'?'check':materialIcons[item.kind]||'file')}</span><span class="course-item-copy"><strong>${e(item.title)}</strong><small>${e(materialNames[item.kind]||'Material')}</small></span>${learner?`<span class="course-item-state ${status==='completed'?'done':status==='opened'?'started':'pending'}">${label}</span>`:''}${icon('chevron')}</button>`;}
-function activityRow(item,learner,now){const status=courseActivityStatus(item,{now}),date=future(item,now)?'Abre '+formattedDate(item.opensAt):effectiveDue(item)?'Entrega '+formattedDate(effectiveDue(item)):'Sin fecha límite';return `<a class="course-item-row activity" href="#actividad/${e(item.id)}" data-course-item="activity" aria-label="Abrir ${e(item.title)}"><span class="course-item-icon ${status.tone}">${icon(activityCompleted(item)?'check':item.kind==='quiz'?'help':'edit')}</span><span class="course-item-copy"><strong>${e(item.title)}</strong><small>${activityName(item)} · ${e(date)}</small></span>${learner?`<span class="course-item-state ${status.tone}">${status.label}</span>`:''}${icon('chevron')}</a>`;}
+function activityRow(item,learner,now){const status=courseActivityStatus(item,{now}),date=future(item,now)?'Abre '+formattedDate(item.opensAt):individualDeadlineLabel(item,[],now)||(effectiveDue(item)?'Entrega '+formattedDate(effectiveDue(item)):'Sin fecha límite');return `<a class="course-item-row activity" href="#actividad/${e(item.id)}" data-course-item="activity" aria-label="Abrir ${e(item.title)}"><span class="course-item-icon ${status.tone}">${icon(activityCompleted(item)?'check':item.kind==='quiz'?'help':'edit')}</span><span class="course-item-copy"><strong>${e(item.title)}</strong><small>${activityName(item)} · ${e(date)}</small></span>${learner?`<span class="course-item-state ${status.tone}">${status.label}</span>`:''}${icon('chevron')}</a>`;}
 const normal=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('es');
 export function renderCoursePanel(course,{progress=[],filter='all',query='',learner=true,canNotify=false,quickResourcesHTML='',contactHTML='',openChapters=null,now=Date.now()}={}){
  const model=coursePanelModel(course,progress,{now}),{summary,next}=model,term=normal(query).trim();

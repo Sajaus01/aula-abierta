@@ -155,6 +155,15 @@ test('confirming a deferred in-app return restores the original entry rather tha
  h.guard=async()=>true;await retry();await h.settle();assert.equal(h.environment.location.hash,'#calificaciones/group-a?view=matrix&student=student-a');assert.equal(h.root.search.value,'Saved filter');assert.equal(h.environment.scrollY,820);
 });
 
+test('discarding a dirty dialog after browser Back does not travel twice when its close event precedes history completion',async()=>{
+ const h=harness({initial:'inicio'});await h.ready();await h.navigation.go('actividad/task-a');await h.settle();h.openModal();
+ let retry;h.guard=async options=>{retry=options.retry;return false;};
+ h.environment.history.back();await h.settle();assert.equal(h.modal,true);assert.equal(h.browser.data.index,2);
+ const originalGo=h.environment.history.go;h.environment.history.go=delta=>queueMicrotask(()=>originalGo(delta));
+ const returning=retry();h.navigation.closeOverlay();await returning;await h.settle();
+ assert.equal(h.environment.location.hash,'#actividad/task-a');assert.equal(h.browser.data.index,1);assert.equal(h.modal,false);
+});
+
 test('a rejected browser guard cannot roll an old account route over a newly rendered account',async()=>{
  const h=harness({initial:'curso/group-a'});await h.ready();await h.navigation.go('actividad/task-a');await h.settle();let release;
  h.guard=()=>new Promise(resolve=>{release=resolve;});h.environment.history.back();for(let index=0;index<10&&!release;index++)await Promise.resolve();assert.ok(release);

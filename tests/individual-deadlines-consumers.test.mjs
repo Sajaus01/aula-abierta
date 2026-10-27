@@ -1,0 +1,44 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {join,resolve,sep} from 'node:path';
+import {tmpdir} from 'node:os';
+import {createApp} from '../server/index.mjs';
+
+test('an individual window agrees across the course, agenda, progress, statistics and accumulated grade without reopening a peer',async t=>{
+ const dir=await mkdtemp(join(tmpdir(),'aula-deadline-consumers-')),app=await createApp({dataDir:dir,env:{NODE_ENV:'test',AULA_MODEL_V2:'1',ADMIN_DOCUMENT:'99861001',ADMIN_PASSWORD:'Deadline-Consumer-Master!'}});
+ await new Promise(done=>app.server.listen(0,'127.0.0.1',done));
+ t.after(async()=>{await new Promise(done=>app.server.close(done));assert.ok(resolve(dir).startsWith(resolve(tmpdir())+sep+'aula-deadline-consumers-'));await rm(dir,{recursive:true,force:true,maxRetries:5,retryDelay:100});});
+ const base='http://127.0.0.1:'+app.server.address().port;
+ const client=()=>{let cookie='';return async(path,body,method=body===undefined?'GET':'POST',status=200)=>{const response=await fetch(base+'/api'+path,{method,headers:{Cookie:cookie,Origin:base,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});if(response.headers.get('set-cookie'))cookie=response.headers.get('set-cookie').split(';')[0];const result=await response.json();assert.equal(response.status,status,JSON.stringify(result));return result.data;};};
+ const teacher=client(),target=client(),peer=client();await teacher('/auth/login',{document:'99861001',password:'Deadline-Consumer-Master!'});
+ const template=await teacher('/admin/courses',{title:'Plazos de prueba'},'POST',201),group=await teacher('/platform/courses/'+template.id+'/clone',{kind:'group',title:'Grupo de plazos',cohort:'2026-2',code:'P'},'POST',201);
+ await teacher('/platform/courses/'+group.id+'/state',{state:'active'});
+ await teacher('/admin/courses/'+group.id+'/enrollments/bulk',{students:[{document:'99861003',name:'Estudiante autorizado'},{document:'99861004',name:'Compañero sin autorización'}]},'POST',201);
+ let targetId,peerId;
+ for(const [call,document] of [[target,'99861003'],[peer,'99861004']]){const login=await call('/auth/login',{document,password:document});if(call===target)targetId=login.user.id;else peerId=login.user.id;await call('/auth/first-password',{newPassword:'4567',confirmPassword:'4567'});}
+ const activity=await teacher('/academics/courses/'+group.id+'/activities',{title:'Entrega cerrada',kind:'task',status:'published',weight:100,maxPoints:5,maxAttempts:1,dueAt:new Date(Date.now()-7200000).toISOString(),closesAt:new Date(Date.now()-3600000).toISOString()},'POST',201);
+ app.db.prepare('INSERT INTO grading_settings(course_id,config) VALUES(?,?) ON CONFLICT(course_id) DO UPDATE SET config=excluded.config').run(group.id,JSON.stringify({scaleMax:5,passMark:3,missingAsZero:true,finalPublished:true}));
+ const path='/academics/activities/'+activity.id,gradePath='/academics/courses/'+group.id;
+ const before=await teacher('/analytics/'+group.id);assert.equal(before.summary.group.overdue,2);
+ const initialBook=await teacher(gradePath+'/gradebook');assert.ok(initialBook.students.every(student=>student.cells[0].state==='missing'&&student.final===0));
+ const grant=await teacher(path+'/extensions/'+targetId,{dueAt:null,version:0},'PUT');assert.equal(grant.deadline.source,'extension');
+ const audit=await teacher('/platform/overview?group='+group.id+'&person='+targetId);assert.equal(audit.events.find(event=>event.action==='activity.extension.grant').context.student.id,targetId);
+ const ownCourse=await target('/courses/'+group.id),peerCourse=await peer('/courses/'+group.id);
+ assert.equal(ownCourse.activities[0].extension.active,true);assert.equal(ownCourse.activities[0].effectiveDueAt,null);assert.equal(ownCourse.activities[0].deadline.closed,false);
+ assert.equal(peerCourse.activities[0].extension,null);assert.equal(peerCourse.activities[0].deadline.closed,true);
+ const agenda=await target('/academics/courses'),ownAgenda=agenda.find(course=>course.id===group.id).activities[0];assert.equal(ownAgenda.effectiveDueAt,null);assert.equal(ownAgenda.deadline.source,'extension');
+ const ownPage=await target(path);assert.equal(ownPage.activity.deadline.closed,false);assert.equal(ownPage.activity.dueAt,activity.dueAt);
+ const learning=await target('/learning');assert.equal(learning.courses.find(course=>course.courseId===group.id).overall.percent,0,'authorization does not complete the work');
+ const during=await teacher('/analytics/'+group.id),ownStats=during.students.find(student=>student.id===targetId),peerStats=during.students.find(student=>student.id===peerId);
+ assert.equal(ownStats.current.pending,1);assert.equal(ownStats.current.overdue,0);assert.equal(peerStats.current.overdue,1);assert.equal(ownStats.activityStates[0].effectiveDueAt,null);
+ const duringBook=await teacher(gradePath+'/gradebook');assert.equal(duringBook.settings.finalPublished,true);assert.equal(duringBook.students.find(student=>student.id===targetId).cells[0].state,'pending');assert.equal(duringBook.students.find(student=>student.id===targetId).final,null);assert.equal(duringBook.students.find(student=>student.id===peerId).final,0);
+ await peer(path+'/submit',{requestId:'peer-closed-test',activityRevision:activity.revision,action:'submit',text:'No autorizado'},'POST',403);
+ const sent=await target(path+'/submit',{requestId:'target-late-test',activityRevision:activity.revision,action:'submit',text:'Entrega individual autorizada'},'POST',201);assert.equal(sent.state,'submitted');assert.equal(sent.late,false,'an authorized response is within its own deadline');
+ const after=await teacher('/analytics/'+group.id),afterOwn=after.students.find(student=>student.id===targetId);assert.equal(afterOwn.current.submitted,1);assert.equal(afterOwn.current.overdue,0);assert.equal(afterOwn.current.awaitingGrade,1);
+ const pendingGrade=await target(gradePath);assert.equal(pendingGrade.grade.cells[0].state,'submitted');assert.equal(pendingGrade.grade.cells[0].points,null,'delivered work awaiting a grade is not a missing zero');
+ await teacher('/academics/submissions/'+sent.id+'/grade',{version:sent.version,points:4,published:true},'PATCH');
+ const graded=await target(gradePath);assert.equal(graded.grade.accumulated,4);assert.equal(graded.grade.cells[0].state,'graded');
+ const completed=await target('/learning');assert.equal(completed.courses.find(course=>course.courseId===group.id).overall.percent,100);
+ const unchangedPeer=await peer(path);assert.equal(unchangedPeer.activity.deadline.closed,true);assert.equal(unchangedPeer.mine.length,0);
+});

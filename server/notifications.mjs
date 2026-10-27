@@ -56,6 +56,7 @@ export function setupNotifications(db){
  AND u.active=1 AND u.account_status='active' AND (NEW.student_id IS NULL OR NEW.student_id=e.student_id);
  END;
  `);
+ if(!db.prepare('PRAGMA table_info(notification_events)').all().some(column=>column.name==='source_version'))db.exec('ALTER TABLE notification_events ADD COLUMN source_version INTEGER');
  const sourceCourse={module:'NEW.course_id',resource:'(SELECT course_id FROM modules WHERE id=NEW.module_id)',activity:'NEW.course_id',quick:'NEW.course_id'};
  const spec=[
   ['module','modules',"NEW.published=1","OLD.published=0 OR OLD.title IS NOT NEW.title",'NEW.title',"'Nuevo capítulo'"],
@@ -113,6 +114,29 @@ export function setupNotifications(db){
  'Tu docente pidió cambios en '||COALESCE(json_extract(a.config,'$.title'),'la actividad')||'.',${clockSql}
  FROM activities a WHERE a.id=NEW.activity_id; END;
  `);
+ // A personal authorization is a separate object from the activity publication:
+ // changing it must never announce a change to classmates. Versioned events also
+ // prevent an unsent push from advertising a superseded or revoked deadline.
+ const cancelExtension=ref=>`UPDATE notification_events SET cancelled=1 WHERE object_type='extension' AND object_id=${ref}.activity_id AND student_id=${ref}.student_id;
+ UPDATE notification_push_deliveries SET state='cancelled' WHERE state='pending' AND inbox_id IN
+ (SELECT i.id FROM notification_inbox i JOIN notification_events e ON e.id=i.event_id WHERE e.object_type='extension' AND e.object_id=${ref}.activity_id AND e.student_id=${ref}.student_id);`;
+ const extensionBody=`CASE WHEN NEW.active=0 THEN 'Se retiró tu autorización individual para entregar «'||COALESCE(json_extract(a.config,'$.title'),'la actividad')||'». Consulta el plazo de la actividad.'
+ WHEN NEW.due_at IS NULL THEN 'Puedes entregar «'||COALESCE(json_extract(a.config,'$.title'),'la actividad')||'» sin límite de fecha.'
+ ELSE 'Puedes entregar «'||COALESCE(json_extract(a.config,'$.title'),'la actividad')||'» hasta el '||strftime('%d/%m/%Y a las %H:%M',NEW.due_at,'-5 hours')||' (hora de Colombia).' END`;
+ const extensionEvent=title=>`INSERT INTO notification_events(course_id,kind,object_type,object_id,student_id,title,body,created_at,source_version)
+ SELECT a.course_id,CASE WHEN NEW.active=1 THEN 'extension' ELSE 'extension-revoked' END,'extension',NEW.activity_id,NEW.student_id,${title},${extensionBody},NEW.updated_at,NEW.version
+ FROM activities a JOIN courses c ON c.id=a.course_id WHERE a.id=NEW.activity_id AND c.entity_kind='group';`;
+ db.exec(`CREATE TRIGGER IF NOT EXISTS notification_extension_create AFTER INSERT ON activity_deadline_extensions WHEN NEW.active=1 BEGIN
+ ${extensionEvent("'Entrega habilitada'")} END;
+ CREATE TRIGGER IF NOT EXISTS notification_extension_update AFTER UPDATE ON activity_deadline_extensions
+ WHEN NEW.version>OLD.version BEGIN
+ ${cancelExtension('NEW')}
+ ${extensionEvent("CASE WHEN NEW.active=0 THEN 'Autorización retirada' WHEN OLD.active=0 THEN 'Entrega habilitada' ELSE 'Plazo individual actualizado' END")} END;
+ CREATE TRIGGER IF NOT EXISTS notification_extension_delete AFTER DELETE ON activity_deadline_extensions BEGIN ${cancelExtension('OLD')} END;
+ CREATE TRIGGER IF NOT EXISTS notification_extension_activity_hide AFTER UPDATE ON activities WHEN json_extract(NEW.config,'$.status') IS NOT 'published' BEGIN
+ UPDATE notification_events SET cancelled=1 WHERE object_type='extension' AND object_id=NEW.id; END;
+ CREATE TRIGGER IF NOT EXISTS notification_extension_parent_hide AFTER UPDATE ON modules WHEN NEW.published=0 BEGIN
+ UPDATE notification_events SET cancelled=1 WHERE object_type='extension' AND object_id IN(SELECT id FROM activities WHERE module_id=NEW.id); END;`);
 }
 
 export function validPushSubscription(value){
@@ -144,22 +168,29 @@ export function createNotifications(ctx){
  function requireAuth(auth){if(!auth)fail(401,'Inicia sesión para consultar tus avisos.');if(auth.preview||auth.assurance!=='password'||auth.user.must_change_password||!currentUser(auth.user.id))fail(403,'Ingresa con tu contraseña personal para consultar los avisos.');}
  function requireCourse(auth,id){const c=getCourse(id);if(!c)fail(404,'Grupo no encontrado.');if(!teaching(auth,id)&&!(activeCourse(c)&&enrolled(auth.user.id,id)))fail(403,'No tienes acceso a los avisos de este grupo.');return c;}
  function activityVisible(row,time){if(!row)return false;const cfg=parse(row.config);return cfg.status==='published'&&(!cfg.opensAt||cfg.opensAt<=time)&&(!row.module_id||Boolean(one('SELECT id FROM modules WHERE id=? AND published=1',row.module_id)));}
- function visible(event,time=stamp()){
+ function visible(event,time=stamp(),recipientId=null){
   if(event.cancelled||!activeCourse(getCourse(event.course_id)))return false;
   switch(event.object_type){
    case 'course':return true;
    case 'module':return Boolean(one('SELECT id FROM modules WHERE id=? AND course_id=? AND published=1',event.object_id,event.course_id));
    case 'resource':return Boolean(one('SELECT r.id FROM resources r JOIN modules m ON m.id=r.module_id WHERE r.id=? AND m.course_id=? AND r.published=1 AND m.published=1',event.object_id,event.course_id));
    case 'activity':return activityVisible(one('SELECT * FROM activities WHERE id=? AND course_id=?',event.object_id,event.course_id),time);
+   case 'extension':{const row=one('SELECT x.*,a.config,a.module_id FROM activity_deadline_extensions x JOIN activities a ON a.id=x.activity_id WHERE x.activity_id=? AND x.student_id=? AND a.course_id=?',event.object_id,event.student_id,event.course_id);
+    if(!row||row.version!==event.source_version||!activityVisible(row,time))return false;
+    if(event.kind==='extension-revoked')return !row.active;
+    if(!row.active||row.due_at&&row.due_at<=time)return false;
+    const latest=one('SELECT state,returned_at FROM submissions WHERE activity_id=? AND student_id=? AND superseded=0 ORDER BY attempt DESC,updated_at DESC LIMIT 1',event.object_id,event.student_id);
+    return !(latest?.returned_at&&['draft','returned'].includes(latest.state)&&latest.returned_at>row.updated_at);
+   }
    case 'quick':return Boolean(one('SELECT id FROM quick_resources WHERE id=? AND course_id=? AND visible=1',event.object_id,event.course_id));
    case 'announcement':return Boolean(one('SELECT id FROM notification_announcements WHERE id=? AND course_id=?',event.object_id,event.course_id));
-   case 'final':return Boolean(parse(one('SELECT config FROM grading_settings WHERE course_id=?',event.course_id)?.config).finalPublished);
+   case 'final':return Boolean(parse(one('SELECT config FROM grading_settings WHERE course_id=?',event.course_id)?.config).finalPublished)&&(!recipientId||!ctx.finalGradeAvailable||ctx.finalGradeAvailable(event.course_id,recipientId));
    case 'submission':{const s=one('SELECT s.*,a.config,a.module_id FROM submissions s JOIN activities a ON a.id=s.activity_id WHERE s.id=? AND a.course_id=?',event.object_id,event.course_id);return Boolean(s&&!s.superseded&&s.student_id===event.student_id&&activityVisible(s,time)&&(event.kind==='grade'?s.published:s.state==='returned'||s.state==='draft'&&s.returned_at));}
    default:return false;
   }
  }
  function href(event){const course=encodeURIComponent(event.course_id),id=encodeURIComponent(event.object_id);
-  if(event.object_type==='activity')return '#actividad/'+id;
+  if(event.object_type==='activity'||event.object_type==='extension')return '#actividad/'+id;
   if(event.object_type==='submission'){const s=one('SELECT activity_id FROM submissions WHERE id=?',event.object_id);return s?'#actividad/'+encodeURIComponent(s.activity_id):'#curso/'+course;}
   if(event.object_type==='resource')return '#curso/'+course+'?resource='+id;
   if(event.object_type==='module')return '#curso/'+course+'?module='+id;
@@ -185,7 +216,8 @@ export function createNotifications(ctx){
     AND (m.starts_at IS NULL OR m.starts_at<=?) AND (m.expires_at IS NULL OR m.expires_at>?)
     AND c.entity_kind='group' AND c.published=1 AND c.lifecycle='active' ORDER BY e.id`,time,time);
    for(const r of pending){
-    if(!visibility.has(r.id))visibility.set(r.id,visible(r,time));if(!visibility.get(r.id))continue;
+    const key=r.object_type==='final'?r.id+':'+r.user_id:r.id;
+    if(!visibility.has(key))visibility.set(key,visible(r,time,r.user_id));if(!visibility.get(key))continue;
     if(run('INSERT OR IGNORE INTO notification_inbox(event_id,user_id,created_at) VALUES(?,?,?)',r.id,r.user_id,time).changes)changed.add(r.user_id);
     run('UPDATE notification_recipients SET delivered_at=? WHERE event_id=? AND user_id=?',time,r.id,r.user_id);
    }
@@ -197,7 +229,7 @@ export function createNotifications(ctx){
   }catch(error){db.exec('ROLLBACK');throw error;}
   if(changed.size)ctx.notifyUsers?.([...changed],['notifications']);
  }
- function ownItems(auth){return all('SELECT i.*,e.id event_id,e.course_id,e.kind,e.object_type,e.object_id,e.student_id,e.title,e.body,e.created_at event_created_at,e.cancelled FROM notification_inbox i JOIN notification_events e ON e.id=i.event_id WHERE i.user_id=? ORDER BY i.id DESC',auth.user.id).filter(r=>enrolled(auth.user.id,r.course_id)&&visible({...r,id:r.event_id}));}
+ function ownItems(auth){return all('SELECT i.*,e.id event_id,e.course_id,e.kind,e.object_type,e.object_id,e.student_id,e.title,e.body,e.created_at event_created_at,e.cancelled,e.source_version FROM notification_inbox i JOIN notification_events e ON e.id=i.event_id WHERE i.user_id=? ORDER BY i.id DESC',auth.user.id).filter(r=>enrolled(auth.user.id,r.course_id)&&visible({...r,id:r.event_id},stamp(),r.user_id));}
  function list(auth,search,courseId){
   reconcile();if(courseId)requireCourse(auth,courseId);
   const after=search.has('after')?Number(search.get('after')):null,before=search.has('before')?Number(search.get('before')):null,limit=search.has('limit')?Number(search.get('limit')):60;
@@ -266,7 +298,7 @@ export function createNotifications(ctx){
     if(!one('SELECT id FROM notification_push_subscriptions WHERE id=? AND user_id=?',delivery.subscription_id,delivery.user_id))continue;
     const event=one('SELECT * FROM notification_events WHERE id=?',delivery.event_id);
     const inbox=one('SELECT read_at FROM notification_inbox WHERE id=?',delivery.inbox_id);
-    if(!inbox||inbox.read_at||!currentUser(delivery.user_id)||!event||!enrolled(delivery.user_id,event.course_id)||!visible(event)){
+    if(!inbox||inbox.read_at||!currentUser(delivery.user_id)||!event||!enrolled(delivery.user_id,event.course_id)||!visible(event,time,delivery.user_id)){
      run("UPDATE notification_push_deliveries SET state='cancelled' WHERE inbox_id=? AND subscription_id=?",delivery.inbox_id,delivery.subscription_id);continue;
     }
     // Claim before network I/O: an application restart never sends a completed

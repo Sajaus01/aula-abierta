@@ -229,7 +229,8 @@ export async function createApp(options = {}) {
       const latest=!teacher&&auth?.assurance==='password'?one('SELECT state,returned_at,return_due_at FROM submissions WHERE activity_id=? AND student_id=? AND superseded=0 ORDER BY attempt DESC,updated_at DESC LIMIT 1',row.id,auth.user.id):null;
       const submitted=Boolean(latest&&!['draft','returned'].includes(latest.state));
       const responseState=latest?.state==='draft'&&latest.returned_at?'returned':latest?.state||null;
-      return [{id:row.id,moduleId:row.module_id,title:a.title,kind:a.kind,status:a.status,weight:a.weight,dueAt:a.dueAt,opensAt:a.opensAt,closesAt:a.closesAt,submitted,responseState,returnDueAt:latest?.return_due_at||null}];
+      const deadline=!teacher&&!auth?.preview&&auth?.assurance==='password'?academics.studentDeadline({...a,id:row.id},auth.user.id,latest):null;
+      return [{id:row.id,moduleId:row.module_id,title:a.title,kind:a.kind,status:a.status,weight:a.weight,dueAt:a.dueAt,opensAt:a.opensAt,closesAt:a.closesAt,allowLate:a.allowLate,submitted,responseState,returnedAt:latest?.returned_at||null,returnDueAt:latest?.return_due_at||null,...(deadline?{deadline,extension:deadline.extension,effectiveDueAt:deadline.dueAt,effectiveClosesAt:deadline.closesAt}:{})}];
     });
   }
   function courseView(course, auth, details = false) {
@@ -470,7 +471,7 @@ export async function createApp(options = {}) {
   const library=accessModel?createLibrary({storage,db,accessModel,fail,json,readJson,readSession,uploadsDir,audit,string,fileResponse}):null;
   const analytics=accessModel?createAnalytics({db,accessModel,fail,json,readJson,readSession,requireCourse,audit,academics,engagement}):null;
   const questionImport=accessModel?createQuestionImport({accessModel,fail,json,readJson,readSession}):null;
-  const notifications=accessModel?createNotifications({db,accessModel,fail,json,readJson,readSession,isEnrolled,audit,appOrigin,pushSend:options.notificationPushSend,notifyUsers:realtime.notifyUsers}):null;
+  const notifications=accessModel?createNotifications({db,accessModel,fail,json,readJson,readSession,isEnrolled,audit,appOrigin,pushSend:options.notificationPushSend,notifyUsers:realtime.notifyUsers,finalGradeAvailable:(courseId,studentId)=>academics.gradeRow(academics.list(courseId).filter(activity=>activity.status==='published'),studentId,academics.settings(courseId),false).final!==null}):null;
   const flushNotifications=()=>{void notifications?.flush().catch(()=>console.error('No se pudo procesar la cola de avisos.'));};
   const handler = async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');

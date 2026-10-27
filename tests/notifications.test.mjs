@@ -77,7 +77,7 @@ test('notifications: scheduled opening gets a fresh cursor, hidden content is ca
 });
 
 test('notifications: private grade drafts never alert, release and correction are personal and idempotent',async t=>{
- const f=await fixture(t),a=await f.activity();
+ const f=await fixture(t),a=await f.activity({weight:100});
  let submission=await f.student.call('/academics/activities/'+a.id+'/submit',{activityRevision:a.revision,requestId:randomUUID(),action:'submit',text:'Datos experimentales'},'POST',201);
  const gradePath='/academics/submissions/'+submission.id;
  let before=await f.student.call('/notifications');
@@ -94,6 +94,8 @@ test('notifications: private grade drafts never alert, release and correction ar
  assert.ok(!(await f.peer.call('/notifications')).items.some(i=>i.kind==='correction'));
  const events=f.db.prepare("SELECT COUNT(*) n FROM notification_events WHERE kind='correction'").get().n;
  await f.master(gradePath+'/return',{version:submission.version-1,reason:'Duplicado'},'PATCH',409);assert.equal(f.db.prepare("SELECT COUNT(*) n FROM notification_events WHERE kind='correction'").get().n,events);
+ submission=await f.student.call('/academics/activities/'+a.id+'/submit',{activityRevision:a.revision,requestId:submission.requestId,version:submission.version,action:'submit',text:'Corrección experimental completa'},'POST',201);
+ await f.master('/academics/submissions/'+submission.id+'/grade',{version:submission.version,points:84,feedback:'Corrección verificada',published:true},'PATCH');
  f.db.prepare("UPDATE grading_settings SET config=json_set(config,'$.finalPublished',1) WHERE course_id=?").run(f.course.id);
  const final=(await f.student.call('/notifications')).items.find(i=>i.kind==='grades');assert.equal(final.href,'#calificaciones/'+f.course.id);assert.ok(!final.body.includes('84'));
  f.db.prepare("UPDATE grading_settings SET config=json_set(config,'$.finalPublished',0) WHERE course_id=?").run(f.course.id);assert.ok(!(await f.student.call('/notifications')).items.some(i=>i.kind==='grades'));

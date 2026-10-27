@@ -48,7 +48,7 @@ export function restoreNavigationUI(snapshot,root,env){
 
 export function createNavigation({getState,getRoute,render,beforeLeave=async()=>true,isModalOpen=()=>false,closeModal=()=>{},root=()=>document.querySelector('main'),environment=globalThis}){
  const env=environment,history=env.history,location=env.location;
- let scope=null,current=null,renderedId=null,records=new Map(),bypass=null,chain=Promise.resolve(),started=false,restoring=false,intentVersion=0;
+ let scope=null,current=null,renderedId=null,records=new Map(),bypass=null,chain=Promise.resolve(),started=false,restoring=false,intentVersion=0,pendingTraversal=null;
  const restorers=new Map();
  const save=()=>{try{env.sessionStorage?.setItem(storageKey,JSON.stringify({scope,records:[...records.values()].slice(-80)}));}catch{/* Navigation still works if browser storage is unavailable. */}};
  const stateFor=entry=>({...history.state,[namespace]:{id:entry.id,scope:entry.scope,route:entry.route,index:entry.index,parent:entry.parent,overlay:entry.overlay}});
@@ -57,7 +57,7 @@ export function createNavigation({getState,getRoute,render,beforeLeave=async()=>
  const valid=t=>Boolean(t&&current?.id===t.id&&scope===t.scope&&navigationScope(getState())===t.scope&&getRoute()===t.route);
  function syncScope(){
   const next=navigationScope(getState());if(next===scope)return;
-  scope=next;current=null;renderedId=null;records=new Map();restorers.clear();bypass=null;
+  scope=next;current=null;renderedId=null;records=new Map();restorers.clear();bypass=null;pendingTraversal=null;
   try{const stored=JSON.parse(env.sessionStorage?.getItem(storageKey)||'null');if(stored?.scope===scope)for(const entry of stored.records||[])if(entry.scope===scope&&navigationRoute(entry.route))records.set(entry.id,entry);}catch{/* Ignore incomplete browser storage. */}
  }
  function checkpoint(){if(current&&renderedId===current.id&&navigationScope(getState())===scope){current.ui=captureNavigationUI(getState(),root(),env);save();}}
@@ -100,13 +100,13 @@ export function createNavigation({getState,getRoute,render,beforeLeave=async()=>
   if(!entry||entry.scope!==scope||!records.has(entry.id))return;
   const intent=++intentVersion;checkpoint();const from=current;if(!skipGuard&&!await guard(()=>travel(entry,{skipGuard:true})))return;
   if(intent!==intentVersion||current!==from||scope!==navigationScope(getState()))return;
-  bypass={scope,route:entry.route};history.go(entry.index-current.index);
+  bypass={scope,route:entry.route};pendingTraversal={from:current.id,to:entry.id};history.go(entry.index-current.index);
  }
  async function back(fallback){const entry=backEntry();return entry?travel(entry):go(fallback);}
  async function transition(){
   syncScope();const destination=getRoute(),meta=history.state?.[namespace];
   if(!pages.has(navigationFamily(destination).split('/')[0]))return;
-  if(current&&meta?.id===current.id&&current.route===destination)return;
+  if(current&&meta?.id===current.id&&current.route===destination){if(pendingTraversal?.to===current.id)pendingTraversal=null;return;}
   const previous=current;checkpoint();
   const target=meta?.scope===scope&&meta.route===destination?records.get(meta.id):null;
   const approved=bypass?.scope===scope&&bypass.route===destination;bypass=null;
@@ -114,12 +114,12 @@ export function createNavigation({getState,getRoute,render,beforeLeave=async()=>
   if(previous&&(current!==previous||scope!==previous.scope||scope!==navigationScope(getState())))return;
   if(!allowed){
    const delta=target?previous.index-target.index:-1;
-   if(delta)history.go(delta);else write(previous);
+   if(delta){pendingTraversal={from:previous.id,to:previous.id};history.go(delta);}else write(previous);
    return;
   }
   if(destination!==getRoute()||scope!==navigationScope(getState()))return;
   if(isModalOpen())closeModal();
-  adopt(destination);await render();
+  adopt(destination);pendingTraversal=null;await render();
   if(current.overlay&&!isModalOpen()){
    const reopen=restorers.get(current.id);if(reopen)reopen();else{current.overlay=false;write(current);save();}
   }
@@ -133,7 +133,7 @@ export function createNavigation({getState,getRoute,render,beforeLeave=async()=>
   if(!reopen){const key=parent.ui?.focus;reopen=()=>findFocus(key,root())?.click();}
   restorers.set(current.id,reopen);history.pushState(stateFor(current),'','#'+current.route);save();
  }
- function closeOverlay(){if(current?.overlay&&history.state?.[namespace]?.id===current.id&&getRoute()===current.route)history.back();}
+ function closeOverlay(){if(pendingTraversal?.from===current?.id)return;if(current?.overlay&&history.state?.[namespace]?.id===current.id&&getRoute()===current.route){pendingTraversal={from:current.id,to:current.parent};history.back();}}
  function replaceRoute(route){if(!navigationRoute(route))return;if(current){current.route=route;write(current);save();}else history.replaceState(history.state,'','#'+route);}
  function start(){if(started)return;started=true;try{history.scrollRestoration='manual';}catch{/* Older browsers retain native behavior. */}
   env.addEventListener('hashchange',schedule);env.addEventListener('popstate',schedule);env.addEventListener('pagehide',checkpoint);

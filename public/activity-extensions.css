@@ -1,0 +1,43 @@
+dialog.activity-extensions-modal{width:min(630px,calc(100vw - 32px));max-width:630px;max-height:calc(100dvh - 40px);padding:0;border:1px solid #dfe3e9;border-radius:19px;background:#fff;color:#1d1d1f;box-shadow:0 24px 85px #17233429;overflow:auto}
+.activity-extensions-modal .modal-head{position:sticky;top:0;z-index:2;padding:15px 20px;margin:0;border-bottom:1px solid #e8e9ed;background:#ffffffed;backdrop-filter:blur(16px)}
+.activity-extensions-modal .modal-head h2{font-size:19px;letter-spacing:-.35px}
+.activity-extensions-modal .modal-head .icon-btn{width:29px;height:29px;min-height:29px;border-radius:50%;background:#f1f2f5}
+.activity-extensions-modal .extension-workspace{padding:14px 20px 16px;display:grid;gap:10px;margin:0}
+.activity-extensions-modal .extension-intro,.activity-extensions-modal .extension-scope{margin:0;color:#646971;font-size:12px;line-height:1.5}
+.activity-extensions-modal .extension-activity-title{font-size:14px;font-weight:650;letter-spacing:-.1px;margin:0;color:#34383f}
+.activity-extensions-modal label{display:grid;gap:6px;margin:0;font-size:12px;color:#454b54;font-weight:550}
+.activity-extensions-modal input:not([type=radio]),.activity-extensions-modal select{width:100%;min-height:35px;height:35px;padding:6px 9px;border:1px solid #dce0e7;border-radius:8px;background:#fff;color:#20242b;font-size:13px;box-shadow:none}
+.activity-extensions-modal input:focus-visible,.activity-extensions-modal select:focus-visible{outline:3px solid #007aff22;outline-offset:1px;border-color:#007aff}
+.activity-extensions-modal input:disabled{background:#f3f4f6;color:#8a8f98}
+.activity-extensions-modal .extension-student-picker{display:grid;grid-template-columns:1fr 1.15fr;gap:11px}
+.activity-extensions-modal .extension-search-count{margin:-7px 0 0;font-size:11px;color:#747b85}
+.activity-extensions-modal .extension-current{padding:10px 12px;border:1px solid #e4e7ec;border-radius:11px;background:#f7f8fa}
+.activity-extensions-modal .extension-current>div{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.activity-extensions-modal .extension-current strong{font-size:13px;font-weight:650}
+.activity-extensions-modal .badge{padding:3px 7px;font-size:10px;line-height:1.3;border-radius:6px}
+.activity-extensions-modal .extension-current dl{display:grid;gap:7px;margin:11px 0 0;font-size:12px}
+.activity-extensions-modal .extension-current dl>div{display:grid;grid-template-columns:135px minmax(0,1fr);gap:9px}
+.activity-extensions-modal .extension-current dt{color:#747b85}
+.activity-extensions-modal .extension-current dd{margin:0;color:#2c333b;font-variant-numeric:tabular-nums}
+.activity-extensions-modal .extension-deadline-source{display:block;margin-top:2px;font-size:10px;color:#747b85}
+.activity-extensions-modal .extension-revoke{display:inline-flex;align-items:center;gap:5px;margin-top:10px;padding:0;min-height:25px;font-size:12px;color:#007aff}
+.activity-extensions-modal .extension-revoke svg{width:13px;height:13px}
+.activity-extensions-modal .field-hint{margin:0;font-size:11px;line-height:1.45;color:#747b85;font-weight:400}
+.activity-extensions-modal .extension-deadline{display:grid;gap:10px;padding:0;margin:0;border:0;min-width:0}
+.activity-extensions-modal .extension-deadline legend{font-size:12px;font-weight:650;color:#454b54;margin-bottom:9px;padding:0}
+.activity-extensions-modal .extension-deadline-options{display:flex;gap:18px;align-items:center}
+.activity-extensions-modal .extension-deadline-options label{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:450}
+.activity-extensions-modal input[type=radio]{width:14px;height:14px;margin:0;accent-color:#007aff}
+.activity-extensions-modal .extension-placeholder,.activity-extensions-modal .extension-loading{padding:18px 12px;margin:0;border:1px dashed #dce0e7;border-radius:10px;text-align:center;font-size:12px;color:#747b85}
+.activity-extensions-modal .extension-error{padding:9px 11px;margin:0;border-radius:8px;background:#fff3f2;color:#a12b28;font-size:12px;line-height:1.45}
+.activity-extensions-modal .extension-result{padding:9px 11px;margin:0;border-radius:8px;background:#eef7f2;color:#286c49;font-size:12px;line-height:1.45}
+.activity-extensions-modal [hidden]{display:none!important}
+.activity-extensions-modal .extension-actions{display:flex;justify-content:flex-end;gap:8px;margin:2px 0 0;padding-top:12px;border-top:1px solid #e8e9ed}
+.activity-extensions-modal .extension-actions .btn{min-height:33px;padding:7px 12px;border-radius:8px;font-size:12px;gap:5px}
+.activity-extensions-modal .extension-actions .btn:not(.secondary){background:#007aff;border-color:#007aff;color:white}
+.activity-extensions-modal .extension-actions .btn svg{width:14px;height:14px}
+.teacher-grading .extension-entry-icon{display:inline-flex;width:26px;min-width:26px;height:26px;min-height:26px;padding:4px;vertical-align:middle;border-radius:7px}
+.teacher-grading .extension-entry-icon svg{width:15px;height:15px}
+.teacher-grading .extension-entry{min-height:28px;padding:5px 8px;gap:5px;font-size:11px}
+.teacher-grading .extension-entry svg{width:14px;height:14px}
+@media(max-width:560px){dialog.activity-extensions-modal{width:calc(100vw - 20px);max-height:calc(100dvh - 20px);border-radius:15px}.activity-extensions-modal .modal-head{padding:13px 15px}.activity-extensions-modal .extension-workspace{padding:13px 15px 15px;gap:12px}.activity-extensions-modal .extension-student-picker{grid-template-columns:1fr}.activity-extensions-modal .extension-current>div{align-items:flex-start}.activity-extensions-modal .extension-current dl>div{grid-template-columns:112px minmax(0,1fr)}.activity-extensions-modal .extension-current .badge{max-width:45%;text-align:center}}

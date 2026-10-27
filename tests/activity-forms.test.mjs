@@ -129,7 +129,8 @@ test('student overview distinguishes drafts, corrections and delivery formats wi
  correction=await f.submit(written,{requestId:correction.requestId,version:correction.version,action:'draft',text:'PRIVATE_CORRECTED_DRAFT'});
  assert.equal(correction.state,'draft');assert.ok(correction.returnedAt);
  assert.equal((await overview()).find(a=>a.id===written.id).responseState,'returned');
- for(const a of activities)assert.deepEqual(Object.keys(a).sort(),['id','title','dueAt','opensAt','closesAt','kind','responseState','activityFormat','state'].sort());
+ for(const a of activities)assert.deepEqual(Object.keys(a).sort(),['id','title','dueAt','opensAt','closesAt','kind','responseState','activityFormat','state','deadline','extension','effectiveDueAt','effectiveClosesAt'].sort());
+ assert.equal(byId.get(written.id).deadline.source,'correction');assert.equal(byId.get(written.id).extension,null);
  assert.ok(!JSON.stringify(activities).includes('PRIVATE_'));
  activities=await overview(f.students[1]);assert.ok(activities.every(a=>a.responseState==='pending'));assert.ok(!JSON.stringify(activities).includes('PRIVATE_'));
 });
