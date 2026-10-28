@@ -237,7 +237,8 @@ export async function createApp(options = {}) {
       const submitted=Boolean(latest&&['submitted','graded'].includes(latest.state));
       const responseState=closure?.closed?'missing':latest?.state==='draft'&&latest.returned_at?'returned':latest?.state||null;
       const deadline=personal?academics.studentDeadline({...a,id:row.id},auth.user.id,latest):null;
-      return [{id:row.id,moduleId:row.module_id,title:a.title,kind:a.kind,status:a.status,weight:a.weight,dueAt:a.dueAt,opensAt:a.opensAt,closesAt:a.closesAt,allowLate:a.allowLate,submitted,responseState,returnedAt:latest?.returned_at||null,returnDueAt:latest?.return_due_at||null,...(evaluation?{evaluation:evaluation.byActivity.get(row.id)?.evaluation}:{}),...(personal?{closure,outcome:activityOutcome(latest,grades.get(row.id),grading)}:{}),...(deadline?{deadline,extension:deadline.extension,effectiveDueAt:deadline.dueAt,effectiveClosesAt:deadline.closesAt}:{})}];
+      const manualGrade=personal?academics.manualGrade(row.id,auth.user.id,false):null;
+      return [{id:row.id,moduleId:row.module_id,title:a.title,kind:a.kind,status:a.status,weight:a.weight,dueAt:a.dueAt,opensAt:a.opensAt,closesAt:a.closesAt,allowLate:a.allowLate,submitted,responseState,returnedAt:latest?.returned_at||null,returnDueAt:latest?.return_due_at||null,...(evaluation?{evaluation:evaluation.byActivity.get(row.id)?.evaluation}:{}),...(personal?{closure,...(manualGrade?{manualGrade}:{}),outcome:activityOutcome(latest,grades.get(row.id),grading)}:{}),...(deadline?{deadline,extension:deadline.extension,effectiveDueAt:deadline.dueAt,effectiveClosesAt:deadline.closesAt}:{})}];
     });
   }
   function courseView(course, auth, details = false) {
@@ -806,6 +807,7 @@ export async function createApp(options = {}) {
             const files = query('SELECT r.file_key FROM resources r JOIN modules m ON m.id=r.module_id WHERE m.course_id=?', course.id).concat(academics.courseFiles(course.id));
             files.push(...query('SELECT file_key FROM quick_resources WHERE course_id=?', course.id));
             if(one("SELECT name FROM sqlite_master WHERE type='table' AND name='chat_files'"))files.push(...query('SELECT f.file_key FROM chat_files f JOIN chat_messages m ON m.id=f.message_id WHERE m.course_id=?',course.id));
+            run('DELETE FROM grade_audit WHERE submission_id IN (SELECT s.id FROM submissions s JOIN activities a ON a.id=s.activity_id WHERE a.course_id=? UNION SELECT g.id FROM activity_manual_grades g JOIN activities a ON a.id=g.activity_id WHERE a.course_id=?)',course.id,course.id);
             run('DELETE FROM courses WHERE id=?', course.id);
             deleteFiles(files);
             audit(auth.user, 'course.delete', course.id);

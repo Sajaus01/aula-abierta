@@ -97,7 +97,7 @@ test('API aggregation excludes inactive enrollment and exemptions, counts correc
 test('batched grading aggregation keeps a constant number of data queries as activity count grows',async t=>{
  const f=await fixture(t),a=await f.activity(),s=await f.submit(a);await f.grade(s,7);
  const queries=[],db={prepare(sql){queries.push(sql);return f.db.prepare(sql);}},service=createActivityEvaluation({db,accessModel:createAccessModel(f.db,(status,message)=>{throw Object.assign(Error(message),{status});})}),auth={user:{id:f.masterId,role:'admin'},assurance:'password'};
- service.summaries([f.course.id],auth);const baseline=queries.length;assert.equal(baseline,3);queries.length=0;
+ service.summaries([f.course.id],auth);const baseline=queries.length;assert.ok(baseline<=5,'Delivery and manual grading are aggregated in a bounded number of batch reads');queries.length=0;
  const raw=f.db.prepare('SELECT config FROM activities WHERE id=?').get(a.id);for(let index=0;index<40;index++)f.db.prepare('INSERT INTO activities(id,course_id,config,created_at) VALUES(?,?,?,?)').run(randomUUID(),f.course.id,raw.config,new Date().toISOString());
  const result=service.summaries([f.course.id],auth);assert.equal(queries.length,baseline);assert.equal(result.get(f.course.id).activities.length,41);assert.ok(result.get(f.course.id).activities.every(row=>Object.keys(row.evaluation).sort().join(',')==='evaluated,pending,returned,state,submitted,unreleased'));
  queries.length=0;assert.equal(service.summaries([f.course.id],{...auth,preview:f.course.id}).size,0);assert.equal(queries.length,0,'Preview does not even read grading payloads');

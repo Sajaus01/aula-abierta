@@ -74,3 +74,26 @@ test('grading metadata never reveals private points or invents a grade for an un
  const a={...base,maxPoints:5,maxAttempts:1},submission={id:'private',state:'submitted',attempt:1,revision:2,published:false,points:null,gradingMaxPoints:5,previousActivity:{kind:'task',maxPoints:100},scaleAdjustment:{from:100,to:5}};
  const html=studentActivityWorkspace({activity:a,course:{},mine:[submission]},{questionMedia:()=>'',questionPreview:()=>''});assert.match(html,/Tu docente está revisando la entrega/);assert.doesNotMatch(html,/class="activity-result"/);assert.match(html,/Escala ajustada de 100 a 5/);
 });
+
+test('an open activity shows the published teacher grade without hiding delivery controls or consuming an attempt',()=>{
+ const manualGrade={manualGrade:true,published:true,points:4,gradingMaxPoints:5,feedback:'Comentario <publicado>'},a={...base,maxPoints:5};
+ const html=studentActivityWorkspace({activity:a,manualGrade,course:{},mine:[]},{questionMedia:()=>'',questionPreview:()=>''});
+ assert.equal((html.match(/activity-manual-result/g)||[]).length,1);assert.match(html,/Calificación docente · sin entrega/);assert.match(html,/<strong>4 <small>\/ 5<\/small>/);assert.match(html,/Comentario &lt;publicado&gt;/);
+ assert.match(html,/id="academic-submit"/);assert.match(html,/name="response"/);assert.match(html,/Enviar actividad/);assert.match(html,/0 de 2 utilizados/);assert.doesNotMatch(html,/Entrega enviada/);
+});
+
+test('a preserved student draft and published manual grade remain visible together in the open form',()=>{
+ const draft={id:'draft',state:'draft',revision:base.revision,attempt:1,text:'Mi avance conservado'};
+ const html=studentActivityWorkspace({activity:base,manualGrade:{published:true,points:0,gradingMaxPoints:10,feedback:'Nota cero docente'},mine:[draft],course:{}},{questionMedia:()=>'',questionPreview:()=>''});
+ assert.equal((html.match(/activity-manual-result/g)||[]).length,1);assert.match(html,/Mi avance conservado/);assert.match(html,/Nota cero docente/);assert.match(html,/Borrador recuperado/);assert.match(html,/0 de 2 utilizados/);
+});
+
+test('unpublished teacher grades never appear in the open student form',()=>{
+ const html=studentActivityWorkspace({activity:base,manualGrade:{published:false,points:9.876,gradingMaxPoints:10,feedback:'Comentario privado invisible'},mine:[],course:{}},{questionMedia:()=>'',questionPreview:()=>''});
+ assert.doesNotMatch(html,/activity-manual-result|9\.876|Comentario privado invisible/);assert.match(html,/Enviar actividad/);
+});
+
+test('a real submitted attempt does not duplicate a stale separate manual result in the next-attempt form',()=>{
+ const html=studentActivityWorkspace({activity:base,manualGrade:{published:true,points:4,feedback:'Nota manual anterior'},mine:[{id:'real',state:'submitted',attempt:1,revision:base.revision,submittedAt:'2026-10-20T12:00:00Z'}],course:{}},{questionMedia:()=>'',questionPreview:()=>''});
+ assert.doesNotMatch(html,/activity-manual-result|Nota manual anterior/);assert.match(html,/Entrega enviada/);assert.match(html,/Preparar otra entrega/);
+});

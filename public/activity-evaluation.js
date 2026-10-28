@@ -21,13 +21,16 @@ export function activityEvaluationPresentation(activity){
  else if(state==='archived')description='La actividad está archivada.';
  else if(state==='empty')description='No hay entregas reales vigentes para evaluar.';
  else{
-  const parts=[counts.evaluated+' de '+amount(counts.submitted,'entrega evaluada','entregas evaluadas')];
-  if(counts.pending)parts.push(amount(counts.pending,'entrega por calificar','entregas por calificar'));
+  const manualEvaluated=count(evaluation.manualEvaluated),manualPending=count(evaluation.manualPending);
+  const parts=counts.submitted?[Math.max(0,counts.evaluated-manualEvaluated)+' de '+amount(counts.submitted,'entrega evaluada','entregas evaluadas')]:[];
+  if(manualEvaluated)parts.push(amount(manualEvaluated,'nota docente sin entrega','notas docentes sin entrega'));
+  if(counts.pending>manualPending)parts.push(amount(counts.pending-manualPending,'entrega por calificar','entregas por calificar'));
+  if(manualPending)parts.push(amount(manualPending,'nota sin entrega por completar','notas sin entrega por completar'));
   if(counts.returned)parts.push(amount(counts.returned,'entrega en corrección','entregas en corrección'));
   if(counts.unreleased)parts.push(amount(counts.unreleased,'nota guardada por devolver','notas guardadas por devolver'));
   description=parts.join('. ')+'.';
   const hints=[];
-  if(state==='pending'&&counts.pending)hints.push(amount(counts.pending,'entrega','entregas'));
+  if(state==='pending'&&counts.pending)hints.push(amount(counts.pending,manualPending?'nota por completar':'entrega',manualPending?'notas por completar':'entregas'));
   if(state==='correction'&&counts.returned)hints.push(amount(counts.returned,'entrega','entregas'));
   if(counts.unreleased)hints.push(counts.unreleased+' por devolver');
   detail=hints.join(' · ');

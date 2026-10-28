@@ -5,6 +5,7 @@
 .student-activity-workspace .activity-automatic-result>strong{font-size:27px;line-height:1.1;letter-spacing:-.5px;font-weight:600}
 .activity-automatic-result>strong>small{font-size:13px;letter-spacing:0;color:#73737c}.activity-automatic-result>strong>span{display:block;margin-top:4px;font-size:11px;font-weight:500;letter-spacing:0}
 .activity-automatic-result>p{margin:0;font-size:12px;line-height:1.5}.activity-automatic-result>small{font-size:11px;line-height:1.45;color:#73737c}
+.student-activity-workspace .activity-manual-result{color:#1d1d1f}.activity-manual-result>.badge{background:#eef5ff;border-color:#dbe9fb;color:#0066cc}
 .activity-closure-history{margin:14px 0 0;padding:11px 13px;border:1px solid #e2e3e8;border-radius:10px;background:#fff;font-size:12px}
 .activity-closure-history>summary{cursor:pointer;color:#636b78;font-size:12px}.activity-closure-history>summary>span{margin-left:5px;color:#8a8f98;font-variant-numeric:tabular-nums}
 .activity-closure-history ol{display:grid;gap:10px;padding:0;margin:12px 0 0;list-style:none}.activity-closure-history li+li{padding-top:10px;border-top:1px solid #eceef3}.activity-closure-history li>div{display:flex;align-items:center;justify-content:space-between;gap:10px}.activity-closure-history strong{font-size:11px;font-weight:550;color:#535c69}.activity-closure-history time{font-size:10px;color:#7d8490}.activity-closure-history li>p{font-size:11px;line-height:1.4;color:#73737c;margin:4px 0 0}

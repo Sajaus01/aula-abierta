@@ -97,9 +97,10 @@ test('student grades show automatic origin rather than calling an unsent zero a 
  const html=await academicFixture().pageHTML('calificaciones/group');assert.match(html,/0 automático/);assert.match(html,/Vencida sin entrega/);assert.doesNotMatch(html,/Nota publicada/);
 });
 
-test('the teacher sees automatic closures separately without a fake submission to review or release',async()=>{
- const html=await academicFixture(true).pageHTML('actividad/task');assert.match(html,/activity-missing-roster/);assert.match(html,/Alumno/);assert.match(html,/0 automático/);assert.match(html,/academic-extension:task/);
- assert.doesNotMatch(html,/academic-grade:student|academic-gradebook:student|Revisar entregas/);
+test('the teacher can grade a closed missing student from the unified table even with a cached closure-only roster',async()=>{
+ const html=await academicFixture(true).pageHTML('actividad/task');assert.match(html,/submission-table/);assert.match(html,/Alumno/);assert.match(html,/0 automático/);assert.match(html,/academic-extension:task/);
+ assert.match(html,/academic-grade:manual-student/);assert.match(html,/>Calificar</);assert.match(html,/Vencida sin entrega/);assert.match(html,/value="missing">Sin entrega/);
+ assert.doesNotMatch(html,/activity-missing-roster|Intento 0|Enviado:|academic-grade:student|academic-gradebook:student/);
 });
 
 test('saving a dirty draft after automatic closure lets navigation continue with its text and files conserved',async()=>{

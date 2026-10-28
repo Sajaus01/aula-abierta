@@ -64,7 +64,7 @@ export function createPlatform(ctx){
      const keys=deletionFiles(id);
      for(const key of keys)if(key!==basename(key)||/[\\/\x00]/.test(key))fail(400,'Se encontró un archivo no válido. No se eliminó el curso.');
      audit(auth.user,'course.delete',id,{deleted:preview.counts,kind:preview.kind});
-     run('DELETE FROM grade_audit WHERE submission_id IN (SELECT s.id FROM submissions s JOIN activities a ON a.id=s.activity_id WHERE a.course_id=?)',id);
+     run('DELETE FROM grade_audit WHERE submission_id IN (SELECT s.id FROM submissions s JOIN activities a ON a.id=s.activity_id WHERE a.course_id=? UNION SELECT g.id FROM activity_manual_grades g JOIN activities a ON a.id=g.activity_id WHERE a.course_id=?)',id,id);
      run('DELETE FROM learning_events WHERE course_id=?',id);
      run('DELETE FROM enrollment_history WHERE course_id=?',id);
      run('DELETE FROM legacy_course_groups WHERE template_id=? OR group_id=?',id,id);

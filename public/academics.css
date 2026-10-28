@@ -210,3 +210,7 @@ dialog.review-workspace .review-secondary-actions .btn{min-height:32px;font-size
  dialog.review-workspace .review-response-pane,dialog.review-workspace .review-grading-pane{padding:16px}
  dialog.review-workspace .review-save-actions .btn,dialog.review-workspace .review-secondary-actions .btn{min-height:42px}
 }
+.review-manual-notice{padding:20px;border:1px solid #e3e6ed;border-radius:12px;background:#fff;display:grid;gap:12px;color:#626268;font-size:.85rem;line-height:1.6}
+.review-manual-notice h3{margin:0;color:#1d1d1f}.review-manual-notice p{margin:0}.review-manual-notice .review-panel-icon{width:36px;height:36px;border-radius:10px;background:#eef5ff;color:#0071e3}
+.submission-table .academic-row-actions>.btn{min-height:28px;padding:4px 8px;font-size:12px}
+@media(max-width:650px){.submission-table .academic-row-actions>.btn{min-height:40px}.review-manual-notice{padding:16px}}

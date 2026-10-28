@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {reviewCategory,reviewStatus,returnBlockReason,answerAssessment,createActivityReview,latestReviewSubmissions,releasableReviewSubmissions} from '../public/activity-review.js';
+import {reviewCategory,reviewStatus,returnBlockReason,answerAssessment,createActivityReview,latestReviewSubmissions,releasableReviewSubmissions,activityReviewRecords} from '../public/activity-review.js';
 
 test('el seguimiento distingue avance, corrección guardada, nota interna e historial',()=>{
  assert.equal(reviewCategory({state:'draft'}),'draft');
@@ -95,7 +95,8 @@ function reviewHarness(t,request,{submission={},activity={}}={}){
  const close=()=>handlers.get('click').find(h=>h.options.capture).fn({target:{closest:selector=>selector==='[data-action="close-modal"]'?{}:null},preventDefault(){},stopImmediatePropagation(){}});
  const action=name=>handlers.get('click').find(h=>!h.options.capture).fn({target:{closest:selector=>selector==='[data-review]'?{dataset:{review:name}}:null}});
  const closedEvent=()=>handlers.get('close').forEach(({fn,options})=>{if(!options.signal.aborted)fn();});
- return {form,input,change,close,action,status,error,root,messages,closedEvent,beforeLeave:()=>review.beforeLeave(),closed:()=>closed,renders:()=>renders};
+ const submit=()=>handlers.get('submit')[0].fn({target:{id:'review-grade-form'},preventDefault(){}});
+ return {form,input,change,close,action,submit,status,error,root,messages,closedEvent,beforeLeave:()=>review.beforeLeave(),closed:()=>closed,renders:()=>renders};
 }
 
 test('devolver a todos sin editar una nota actualiza la página al cerrar la revisión',async t=>{
@@ -198,4 +199,49 @@ test('un valor fuera de la escala efectiva se conserva en pantalla y no se guard
 test('el historial no invalidado por la conversión conserva su propia escala de 100 puntos',t=>{
  const harness=reviewHarness(t,async()=>{}, {activity:{maxPoints:5},submission:{state:'graded',points:80,published:true,superseded:true,gradingMaxPoints:100,previousActivity:{kind:'task',maxPoints:100,description:'Versión histórica'}}});
  assert.match(harness.root.innerHTML,/<span>100 puntos · 0 %<\/span>/);assert.match(harness.root.innerHTML,/Versión histórica/);assert.doesNotMatch(harness.root.innerHTML,/Escala ajustada|name="points"/);
+});
+
+test('la cola incluye alumnos sin entrega y conserva los borradores sin contarlos como enviados',()=>{
+ const activity={id:'activity',revision:4,maxPoints:12},students=[{id:'missing',name:'Ana'},{id:'draft',name:'Bea'},{id:'sent',name:'Camila'},{id:'returned',name:'Daniel'}];
+ const submissions=[{id:'draft-id',studentId:'draft',state:'draft',attempt:1},{id:'sent-id',studentId:'sent',state:'graded',attempt:1,submittedAt:'2026-10-26'},{id:'returned-id',studentId:'returned',state:'draft',attempt:1,returnedAt:'2026-10-26'}];
+ const records=activityReviewRecords({activity,students,submissions,closures:[{studentId:'missing',closure:{closed:true}}]});
+ assert.equal(records.filter(s=>s.manualGrade).length,2);assert.equal(records.filter(s=>!s.manualGrade).length,3);
+ assert.equal(records.find(s=>s.id==='draft-id'),submissions[0]);
+ const missing=records.find(s=>s.id==='manual-missing');assert.equal(missing.version,0);assert.equal(missing.submittedAt,null);assert.equal(missing.closure.closed,true);assert.equal(missing.points,null);
+ assert.equal(reviewCategory(missing),'missing');assert.equal(reviewCategory({...missing,version:1,gradeDraft:true}),'pending');
+ assert.deepEqual(latestReviewSubmissions(records).filter(s=>s.manualGrade).map(s=>s.studentId),['missing','draft']);
+ assert.equal(releasableReviewSubmissions(records).length,0);
+});
+
+test('an older closure-only report retains missing students without overriding an explicit current roster',()=>{
+ const report={activity:{id:'activity',revision:1,maxPoints:5},submissions:[],closures:[{studentId:'student',name:'Alumno',document:'synthetic',closure:{closed:true}}]};
+ const records=activityReviewRecords(report);assert.equal(records.length,1);assert.equal(records[0].id,'manual-student');assert.equal(records[0].name,'Alumno');assert.equal(records[0].points,null);assert.equal(records[0].submittedAt,null);assert.equal(records[0].closure.closed,true);
+ assert.deepEqual(activityReviewRecords({...report,students:[]}),[],'an authoritative empty roster must not revive former students from old closures');
+ assert.deepEqual(report.submissions,[],'the display fallback does not create a submission');
+});
+
+test('la revisión sin entrega permite nota pero no inventa un intento ni ofrece corrección',t=>{
+ const h=reviewHarness(t,async()=>{}, {submission:{manualGrade:true,version:0,attempt:0,closure:{closed:true}},activity:{kind:'quiz',questions:[{id:'q',type:'single',prompt:'Una pregunta que no fue respondida',options:['A','B'],correct:[1],points:100}]}});
+ assert.match(h.root.innerHTML,/No hay una entrega enviada/);assert.match(h.root.innerHTML,/La actividad continúa cerrada/);assert.match(h.root.innerHTML,/name="points"[^>]+max="100"/);
+ assert.doesNotMatch(h.root.innerHTML,/Intento 0|Enviado:|Pedir corrección|Una pregunta que no fue respondida|review-question-index/);
+ assert.match(returnBlockReason({manualGrade:true},{status:'published'},[]),/No hay una entrega/);
+});
+
+test('autoguardar la nota sin entrega reemplaza el marcador local y devuelve por estudiante con la versión guardada',async t=>{
+ const calls=[],h=reviewHarness(t,async(path,options)=>{calls.push({path,options});return {id:'manual-record',manualGrade:true,points:12,feedback:'Revisar unidades.',version:calls.length,published:options.method==='POST',publishedPoints:options.method==='POST'?12:null,gradeDraft:options.method!=='POST'};},{submission:{manualGrade:true,version:0,attempt:0}});
+ h.change();assert.equal(await h.beforeLeave(),true);
+ assert.equal(calls[0].path,'/academics/activities/activity/students/student/grade');assert.equal(calls[0].options.body.version,0);assert.equal(calls[0].options.body.publish,false);assert.equal(calls[0].options.body.points,12);
+ h.submit();await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(calls[1].path,'/academics/activities/activity/students/student/release');assert.deepEqual(calls[1].options.body,{version:1});assert.match(h.root.innerHTML,/Nota docente devuelta/);assert.match(h.root.innerHTML,/El estudiante ve 12 \/ 100/);
+});
+
+test('guardar y devolver una nota sin entrega conserva la revisión de actividad consultada',async t=>{
+ const calls=[],h=reviewHarness(t,async(path,options)=>{calls.push({path,options});return {id:'manual-record',manualGrade:true,points:12,version:calls.length,gradeDraft:options.method!=='POST',published:options.method==='POST'};},{activity:{revision:4},submission:{manualGrade:true,version:0,attempt:0}});
+ h.change();assert.equal(await h.beforeLeave(),true);assert.equal(calls[0].options.body.activityRevision,4);
+ h.submit();await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(calls[1].options.body,{version:1,activityRevision:4});
+});
+
+test('devolver a todos incluye ceros docentes guardados sin entrega y recarga manualGrades por separado',async t=>{
+ const calls=[],activity={id:'activity',kind:'task',maxPoints:100,status:'published',title:'Actividad',weight:0},h=reviewHarness(t,async(path,options)=>{calls.push({path,options});return options?.method==='POST'?{releasedCount:1,skippedCount:0}:{activity,submissions:[],manualGrades:[{id:'submission',manualGrade:true,name:'Prueba',studentId:'student',attempt:0,state:'graded',points:0,published:true,version:2}],students:[{id:'student',name:'Prueba'}]};},{submission:{manualGrade:true,attempt:0,state:'graded',points:0,published:false}});
+ await h.action('release-all');assert.deepEqual(calls[0].options.body,{submissions:[{id:'submission',version:1}]});assert.match(h.root.innerHTML,/Nota docente devuelta/);assert.match(h.root.innerHTML,/value="0"/);assert.doesNotMatch(h.root.innerHTML,/Intento 0/);
 });

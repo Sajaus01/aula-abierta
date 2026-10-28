@@ -63,3 +63,12 @@ test('individual grade detail lists activities vertically and preserves private 
  assert.match(html,/<td>— \/ 5<\/td><td>Por calificar/);assert.match(html,/academic-gradebook:submission/);
  assert.equal((html.match(/<tbody>/g)||[]).length,1);assert.equal((html.match(/<tr>/g)||[]).length,3);
 });
+
+test('individual teacher grades can grade a missing student without reopening the deadline',()=>{
+ const data={settings:{scaleMax:5,periods:[]},activities:[],students:[{id:'student',name:'Estudiante',active:true,status:'active',accumulated:0,cells:[{activityId:'closed',title:'Actividad vencida',weight:50,maxPoints:5,points:0,published:true,state:'missing',closure:{closed:true}},{activityId:'manual',title:'Nota docente',weight:50,maxPoints:5,points:4,published:true,state:'graded',manualGrade:true,closure:{closed:true}}]}]};
+ const button=(label,action)=>`<button data-action="${action}">${label}</button>`;
+ const html=renderIndividualGrades(data,button,{allowManualGrades:true});
+ assert.match(html,/academic-manual-grade:closed~student/);assert.match(html,/Calificar sin entrega/);assert.match(html,/academic-manual-grade:manual~student/);assert.match(html,/Editar nota docente/);assert.match(html,/Nota docente devuelta · sin entrega/);assert.doesNotMatch(html,/academic-extension/);
+ assert.doesNotMatch(renderIndividualGrades(data,button),/academic-manual-grade/);
+ data.students[0].status='revoked';assert.doesNotMatch(renderIndividualGrades(data,button,{allowManualGrades:true}),/academic-manual-grade/);
+});

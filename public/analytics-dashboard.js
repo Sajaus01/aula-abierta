@@ -106,7 +106,7 @@ export function renderGradeDistribution(report){
 }
 export const renderAnalyticsCharts=report=>`<div class="analytics-charts">${renderActiveBars(report)}${renderDailyLine(report)}${renderSubmissionDonut(report)}${renderGradeDistribution(report)}</div>`;
 
-const eventNames={'group.enter':'Ingresó al grupo','resource.open':'Abrió un material','resource.complete':'Completó un material','resource.pending':'Marcó un material pendiente','activity.start':'Abrió una actividad','submission.submit':'Envió una entrega','submission.start':'Guardó un borrador','lab.result':'Registró resultados de laboratorio','submission.grade':'Se guardó una calificación'};
+const eventNames={'group.enter':'Ingresó al grupo','resource.open':'Abrió un material','resource.complete':'Completó un material','resource.pending':'Marcó un material pendiente','activity.start':'Abrió una actividad','submission.submit':'Envió una entrega','submission.start':'Guardó un borrador','lab.result':'Registró resultados de laboratorio','submission.grade':'Se guardó una calificación','activity.manual-grade.grade-draft':'Se guardó una nota sin entrega','activity.manual-grade.release':'Se devolvió una nota sin entrega','activity.manual-grade.scale':'Se ajustó la escala de una nota sin entrega','activity.manual-grade.superseded':'Se archivó una nota sin entrega'};
 export function renderStudentDetail(report){
  const student=(report.students||[]).find(item=>item.id===report.detail?.studentId)||(report.students||[])[0];
  if(!student)return '<section class="analytics-panel"><p class="analytics-empty">Selecciona un estudiante para consultar sus evidencias.</p></section>';

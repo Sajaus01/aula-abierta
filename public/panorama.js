@@ -21,6 +21,7 @@ const actions={
  'resource.open':'Abrió el material','resource.complete':'Marcó el material como completado','resource.pending':'Dejó el material pendiente','lab.result':'Registró resultados del laboratorio',
  'activity.create':'Creó la actividad','activity.edit':'Modificó la actividad','activity.reassign':'Actualizó la actividad y solicitó una nueva entrega','activity.delete':'Eliminó la actividad',
  'activity.extension.grant':'Autorizó una entrega individual','activity.extension.revoke':'Retiró la autorización individual de entrega',
+ 'activity.manual-grade.grade-draft':'Guardó una nota sin entrega','activity.manual-grade.release':'Devolvió una nota sin entrega','activity.manual-grade.scale':'Ajustó la escala de una nota sin entrega','activity.manual-grade.superseded':'Archivó una nota sin entrega',
  'course.create':'Creó el curso','course.clone':'Creó una copia del curso','course.update':'Actualizó el curso','course.draft':'Dejó el curso en borrador','course.active':'Activó el curso','course.archived':'Archivó el curso','course.appearance':'Cambió la apariencia del curso',
  'module.create':'Creó el capítulo','module.update':'Actualizó el capítulo','module.delete':'Eliminó el capítulo','resource.create':'Añadió un material','resource.update':'Actualizó un material','resource.delete':'Eliminó un material',
  'enrollment.create':'Matriculó al estudiante','enrollment.update':'Actualizó la matrícula','enrollment.reactivate':'Reactivó la matrícula','enrollment.move':'Cambió al estudiante de grupo',

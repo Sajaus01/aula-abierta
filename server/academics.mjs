@@ -12,6 +12,7 @@ import {setupAutomaticClosures,createAutomaticClosures} from './automatic-closur
 import {createActivityEvaluation} from './activity-evaluation.mjs';
 import {prepareScaleConversions} from './activity-scales.mjs';
 import {submissionMaxPoints,questionPointsTotal} from '../public/grading-scale.js';
+import {setupManualGrades,manualGradeRecord,manualGradeDTO} from './manual-grades.mjs';
 
 export function setupAcademics(db) {
  db.exec(`CREATE TABLE IF NOT EXISTS grading_settings(course_id TEXT PRIMARY KEY REFERENCES courses(id) ON DELETE CASCADE, config TEXT NOT NULL);
@@ -24,6 +25,7 @@ export function setupAcademics(db) {
  for(const column of ['returned_at','return_due_at'])if(!db.prepare('PRAGMA table_info(submissions)').all().some(c=>c.name===column))db.exec(`ALTER TABLE submissions ADD COLUMN ${column} TEXT`);
  setupActivityDeadlines(db);
  setupAutomaticClosures(db);
+ setupManualGrades(db);
  db.exec('CREATE TABLE IF NOT EXISTS grade_audit(id INTEGER PRIMARY KEY AUTOINCREMENT,submission_id TEXT NOT NULL,actor_id TEXT NOT NULL,before_value TEXT NOT NULL,after_value TEXT NOT NULL,reason TEXT NOT NULL,created_at TEXT NOT NULL)');
 }
 const defaults={scaleMax:5,passMark:3,missingAsZero:false,finalPublished:false};
@@ -67,6 +69,9 @@ export function createAcademics(ctx) {
  }
  function subView(s,auth) {const p=JSON.parse(s.payload),attachments=submissionFiles(p),first=attachments[0];const visible=admin(auth)||Boolean(s.published),feedbackVisible=visible||Boolean(s.returned_at);const prior=accessModel?one('SELECT config,files FROM activity_versions WHERE activity_id=? AND revision=?',s.activity_id,s.revision):null;const versionConfig=prior?JSON.parse(prior.config):getActivity(s.activity_id),draft=admin(auth)?p.teacherGradeDraft:null;return {procedureSupport:p.procedureSupport||null,procedureNote:p.procedureNote||'',procedureReviewPending:!!p.procedureReviewPending,automaticPoints:admin(auth)?p.automaticPoints??null:undefined,questionFeedback:visible?versionConfig.questions.map(q=>({id:q.id,feedback:q.feedback||''})):[],instructionFiles:prior?files.publicFiles(JSON.parse(prior.files),`/api/academics/submissions/${s.id}/instructions`):[],id:s.id,activityId:s.activity_id,revision:s.revision,gradingMaxPoints:submissionMaxPoints(p,versionConfig),scaleAdjustment:p.scaleAdjustment||null,superseded:Boolean(s.superseded),previousActivity:admin(auth)&&prior?JSON.parse(prior.config):p.previousActivity||null,studentId:s.student_id,requestId:s.request_key,attempt:s.attempt,state:s.state==='graded'&&!visible?'submitted':s.state,text:p.text||'',url:p.url||'',answers:p.answers||{},files:files.publicFiles(attachments,`/api/academics/submissions/${s.id}/files`),fileName:first?.name||null,fileSize:first?.size||0,fileUrl:first?`/api/academics/submissions/${s.id}/file`:null,submittedAt:s.submitted_at,returnedAt:s.returned_at||null,returnDueAt:s.return_due_at||null,late:Boolean(s.late),points:visible?s.points:null,feedback:feedbackVisible?s.feedback:'',published:Boolean(s.published),version:s.version,updatedAt:s.updated_at,...(admin(auth)?{gradeDraft:!!draft,publishedPoints:s.published?s.points:null,publishedFeedback:s.published?s.feedback:'',...(draft?{points:draft.points,feedback:draft.feedback,state:['draft','returned'].includes(s.state)?s.state:draft.points===null||p.procedureReviewPending?'submitted':'graded'}:{})}:{})};}
  function rows(id,userId) {return all('SELECT * FROM submissions WHERE activity_id=? AND student_id=? AND superseded=0 ORDER BY attempt DESC,updated_at DESC',id,userId);}
+ const manualRaw=(activityId,studentId)=>one('SELECT g.*,u.name,u.document FROM activity_manual_grades g JOIN users u ON u.id=g.student_id WHERE g.activity_id=? AND g.student_id=? AND g.superseded=0',activityId,studentId);
+ const manualView=(row,auth)=>manualGradeDTO(row,{forAdmin:admin(auth)});
+ const manualFor=(activityId,studentId,forAdmin)=>manualGradeRecord(manualRaw(activityId,studentId),{forAdmin});
  function studentDeadline(activity,userId,submission=undefined,at=now()) {const a=typeof activity==='string'?getActivity(activity):activity;return resolveActivityDeadline(a,extensions.get(a.id,userId),submission===undefined?rows(a.id,userId)[0]:submission,at);}
  const automaticClosures=createAutomaticClosures({db,accessModel,studentDeadline,audit});
  function reconcileClosures(options={}) {return automaticClosures.reconcile(options);}
@@ -84,11 +89,11 @@ export function createAcademics(ctx) {
  function gradeRow(activities,userId,cfg,forAdmin) {
   for(const courseId of new Set(activities.map(activity=>activity.courseId).filter(Boolean)))reconcileClosures({courseId,studentId:userId});
   const gradeRows=(id,uid)=>rows(id,uid).map(s=>forAdmin?effectiveGrade(s):s);
-  if(accessModel)return gradeCalculation(activities,userId,cfg,forAdmin,{rows:gradeRows,closed:a=>studentDeadline(a,userId).closed,closure:a=>studentClosure(a,userId,{reconcile:false}),override:(activityId,studentId)=>Boolean(one("SELECT exempt FROM grade_overrides WHERE activity_id=? AND student_id=?",activityId,studentId)?.exempt)});
+  if(accessModel)return gradeCalculation(activities,userId,cfg,forAdmin,{rows:gradeRows,manual:(activityId,studentId)=>manualFor(activityId,studentId,forAdmin),closed:a=>studentDeadline(a,userId).closed,closure:a=>studentClosure(a,userId,{reconcile:false}),override:(activityId,studentId)=>Boolean(one("SELECT exempt FROM grade_overrides WHERE activity_id=? AND student_id=?",activityId,studentId)?.exempt)});
   let earned=0,gradedWeight=0,ready=true;
-  const cells=activities.map(a=>{const history=gradeRows(a.id,userId),latest=history[0],s=latest?.state==='draft'&&latest.returned_at?{...latest,state:'returned'}:history.find(r=>r.state!=='draft');const closure=studentClosure(a,userId,{reconcile:false}),automaticZero=!s&&Boolean(closure?.closed);const visible=s&&s.state!=='returned'&&s.points!==null&&(forAdmin||s.published);const zero=automaticZero||!s&&cfg.missingAsZero&&studentDeadline(a,userId,latest).closed;const maximum=submissionMaxPoints(s?JSON.parse(s.payload):null,a);const released=s&&s.state!=='returned'&&s.points!==null&&s.published;
+  const cells=activities.map(a=>{const history=gradeRows(a.id,userId),latest=history[0],delivery=latest?.state==='draft'&&latest.returned_at?{...latest,state:'returned'}:history.find(r=>r.state!=='draft'),s=delivery||manualFor(a.id,userId,forAdmin);const closure=studentClosure(a,userId,{reconcile:false}),automaticZero=!s&&Boolean(closure?.closed);const visible=s&&s.state!=='returned'&&s.points!==null&&(forAdmin||s.published);const zero=automaticZero||!s&&cfg.missingAsZero&&studentDeadline(a,userId,latest).closed;const maximum=submissionMaxPoints(s?JSON.parse(s.payload):null,a);const released=s&&s.state!=='returned'&&s.points!==null&&s.published;
    if(a.weight>0){if(visible||zero){earned+=(zero?0:s.points/maximum)*a.weight;gradedWeight+=a.weight;}if(!released&&!zero)ready=false;}
-   return {activityId:a.id,title:a.title,weight:a.weight,maxPoints:maximum,submissionId:s?.id||null,points:automaticZero?0:visible?s.points:null,published:automaticZero||Boolean(s?.published),state:s?.state==='returned'?'returned':zero?'missing':!s?'pending':visible?'graded':'submitted',late:Boolean(s?.late),...(closure?{closure}:{})};});
+   return {activityId:a.id,title:a.title,weight:a.weight,maxPoints:maximum,submissionId:delivery?.id||null,...(s?.manualGrade?{manualGrade:true,manualGradeId:s.id,manualGradeVersion:s.version}:{}),points:automaticZero?0:visible?s.points:null,published:automaticZero||Boolean(s?.published),state:s?.state==='returned'?'returned':zero?'missing':!s?'pending':visible?'graded':'submitted',late:Boolean(s?.late),...(closure?{closure}:{})};});
   const weightTotal=rounded(activities.reduce((n,a)=>n+a.weight,0));const complete=ready&&Math.abs(weightTotal-100)<0.001;
   return {cells,weightTotal,gradedWeight:rounded(gradedWeight),provisional:gradedWeight?rounded(earned/gradedWeight*cfg.scaleMax):null,accumulated:rounded(earned/100*cfg.scaleMax),ready:complete,final:cfg.finalPublished&&complete?rounded(earned/100*cfg.scaleMax):null};
  }
@@ -144,19 +149,19 @@ export function createAcademics(ctx) {
  }
  function releaseMany(activities,auth,selection){
   if(selection!==undefined&&(!Array.isArray(selection)||selection.length>5000||selection.some(v=>!v||typeof v.id!=='string'||!Number.isInteger(v.version))))fail(400,'Selecciona las entregas que deseas devolver.');
-  const activityMap=new Map(activities.map(a=>[a.id,a])),records=activities.flatMap(a=>all('SELECT * FROM submissions WHERE activity_id=? AND superseded=0 ORDER BY attempt DESC,updated_at DESC',a.id));
+  const activityMap=new Map(activities.map(a=>[a.id,a])),manualRecords=activities.flatMap(a=>all('SELECT * FROM activity_manual_grades WHERE activity_id=? AND superseded=0',a.id).map(row=>({...row,manualGrade:true}))),manualKeys=new Set(manualRecords.map(row=>row.activity_id+':'+row.student_id)),records=[...activities.flatMap(a=>all('SELECT * FROM submissions WHERE activity_id=? AND superseded=0 ORDER BY attempt DESC,updated_at DESC',a.id)).filter(row=>!manualKeys.has(row.activity_id+':'+row.student_id)||row.state!=='draft'||row.returned_at),...manualRecords];
   let candidates;
   if(selection!==undefined){
    if(new Set(selection.map(v=>v.id)).size!==selection.length)fail(400,'La selección contiene entregas repetidas.');
    candidates=selection.map(v=>{const s=records.find(s=>s.id===v.id);if(!s)fail(400,'Una entrega no pertenece a esta actividad o ya no está vigente.');if(s.version!==v.version)fail(409,'Una calificación cambió. Actualiza antes de devolver las notas.');return s;});
   }else {const seen=new Set();candidates=records.filter(s=>{const key=s.activity_id+':'+s.student_id;if(seen.has(key))return false;seen.add(key);return true;});}
-  const eligible=candidates.filter(s=>!releaseBlock(s,activityMap.get(s.activity_id))&&(!s.published||gradeDraft(s))),releasedIds=[];
+  const eligible=candidates.filter(s=>s.manualGrade?!releaseManualBlock(s,activityMap.get(s.activity_id),auth)&&(!s.published||s.draft_payload):!releaseBlock(s,activityMap.get(s.activity_id))&&(!s.published||gradeDraft(s))),releasedIds=[],releasedManualIds=[];
   db.exec('BEGIN IMMEDIATE');try{
-   for(const s of eligible)if(publishSubmission(s,auth))releasedIds.push(s.id);
+   for(const s of eligible)if(s.manualGrade){if(publishManual(s,auth))releasedManualIds.push(s.id);}else if(publishSubmission(s,auth))releasedIds.push(s.id);
    for(const courseId of new Set(eligible.map(s=>activityMap.get(s.activity_id).courseId)))invalidate(courseId);
    db.exec('COMMIT');
   }catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}
-  return {success:true,releasedCount:releasedIds.length,skippedCount:candidates.length-releasedIds.length,submissions:releasedIds.map(id=>subView(one('SELECT * FROM submissions WHERE id=?',id),auth))};
+  return {success:true,releasedCount:releasedIds.length+releasedManualIds.length,skippedCount:candidates.length-releasedIds.length-releasedManualIds.length,submissions:releasedIds.map(id=>subView(one('SELECT * FROM submissions WHERE id=?',id),auth)),manualGrades:releasedManualIds.map(id=>manualView(one('SELECT g.*,u.name,u.document FROM activity_manual_grades g JOIN users u ON u.id=g.student_id WHERE g.id=?',id),auth))};
  }
  function extensionActivity(id,auth) {
   requireAdmin(auth);const activity=checkActivity(id,auth);
@@ -176,10 +181,65 @@ export function createAcademics(ctx) {
   reconcileClosures({activityId:activity.id});
   return all('SELECT c.student_id,u.name,u.document FROM activity_auto_closures c JOIN users u ON u.id=c.student_id WHERE c.activity_id=? AND c.revision=? AND c.active=1 ORDER BY u.name,u.id',activity.id,activity.revision).map(student=>({studentId:student.student_id,name:student.name,document:student.document,closure:studentClosure(activity,student.student_id,{reconcile:false})}));
  }
+ function activeStudents(activity) {
+  return all('SELECT u.id,u.name,u.document,u.active,u.role FROM users u JOIN enrollments e ON e.student_id=u.id WHERE e.course_id=? AND u.active=1 ORDER BY u.name,u.id',activity.courseId).filter(student=>isEnrolled(student.id,activity.courseId)&&(accessModel?accessModel.p.active(student.id)&&accessModel.p.roles(student.id).includes('student'):student.role==='student')).map(({id,name,document})=>({id,name,document}));
+ }
+ function manualActivity(id,auth) {
+  requireAdmin(auth);const activity=checkActivity(id,auth);
+  if(accessModel){accessModel.requireScope(auth,activity.courseId,'grade');const course=one('SELECT entity_kind,lifecycle FROM courses WHERE id=?',activity.courseId);if(course.entity_kind!=='group'||course.lifecycle!=='active')fail(409,'Califica estudiantes en un grupo activo.');}
+  if(activity.status!=='published')fail(409,'Publica la actividad antes de asignar una nota sin entrega.');
+  if(!Number.isFinite(activity.maxPoints)||activity.maxPoints<=0)fail(409,'Configura una escala válida antes de asignar una nota sin entrega.');
+  return activity;
+ }
+ function manualStudent(activity,studentId) {
+  const student=extensionStudent(activity,studentId);
+  if(accessModel&&one('SELECT exempt FROM grade_overrides WHERE activity_id=? AND student_id=?',activity.id,studentId)?.exempt)fail(409,'Retira la exención antes de asignar una nota a esta actividad.');
+  if(rows(activity.id,studentId).some(record=>record.submitted_at||record.returned_at||record.state!=='draft'))fail(409,'El estudiante ya tiene una entrega vigente. Califícala desde su revisión.');
+  return student;
+ }
+ function manualAudit(row,auth,action,before,after,reason) {
+  run('INSERT INTO grade_audit(submission_id,actor_id,before_value,after_value,reason,created_at) VALUES(?,?,?,?,?,?)',row.id,auth.user.id,JSON.stringify(before),JSON.stringify(after),reason,now());
+  audit(auth.user,action,row.activity_id,{studentId:row.student_id,manualGradeId:row.id,points:after.points,change:{before,after,reason}});
+ }
+ function releaseManualBlock(row,activity,auth) {
+  if(row.superseded)return 'Esta nota pertenece al historial de la actividad.';
+  try{manualActivity(activity.id,auth);manualStudent(activity,row.student_id);}catch(error){if(error.status&&error.status<500)return error.message;throw error;}
+  const effective=manualGradeRecord(row,{forAdmin:true});
+  if(effective.points===null)return 'Escribe una nota antes de devolverla.';
+  if(!Number.isFinite(row.max_points)||row.max_points<=0||!Number.isFinite(effective.points)||effective.points<0||effective.points>row.max_points)return 'La nota está fuera de la escala de esta actividad.';
+  return '';
+ }
+ function publishManual(row,auth) {
+  if(row.published&&!row.draft_payload)return false;
+  const effective=manualGradeRecord(row,{forAdmin:true}),reason=row.draft_payload?JSON.parse(row.draft_payload).reason:'Devolución de nota sin entrega';
+  const at=now();if(!run('UPDATE activity_manual_grades SET points=?,feedback=?,published=1,draft_payload=NULL,version=version+1,updated_at=? WHERE id=? AND version=? AND superseded=0',effective.points,effective.feedback,at,row.id,row.version).changes)fail(409,'Esta nota cambió. Actualiza antes de devolverla.');
+  manualAudit(row,auth,'activity.manual-grade.release',{points:row.points,published:Boolean(row.published)},{points:effective.points,published:true},reason||'Devolución de nota sin entrega');
+  return true;
+ }
  async function handler(req,res,path,method,auth){
   if(!path.startsWith('/api/academics/'))return false;
   if(await submissionExports.handler(req,res,path,method,auth))return true;
   const send=(data,status)=>{json(res,data,status);return true;};let match;
+  match=/^\/api\/academics\/activities\/([^/]+)\/students\/([^/]+)\/(grade|release)$/.exec(path);
+  if(match&&((match[3]==='grade'&&method==='PATCH')||(match[3]==='release'&&method==='POST'))){
+   const [,activityId,studentId,action]=match;manualActivity(activityId,auth);const body=await readJson(req);auth=readSession(req);const activity=manualActivity(activityId,auth),student=manualStudent(activity,studentId);
+   if(body.activityRevision!==undefined&&body.activityRevision!==activity.revision)fail(409,'La actividad cambió. Recarga antes de guardar esta nota.');
+   if(!Number.isInteger(body.version)||body.version<0)fail(400,'Incluye la versión de esta nota.');
+   db.exec('BEGIN IMMEDIATE');try{
+    const existing=manualRaw(activityId,studentId);if(body.version!==(existing?.version||0))fail(409,'Esta nota cambió. Recarga antes de guardar.');
+    if(action==='release'){
+     if(!existing)fail(404,'Guarda una nota antes de devolverla.');const block=releaseManualBlock(existing,activity,auth);if(block)fail(409,block);if(publishManual(existing,auth))invalidate(activity.courseId);
+    }else{
+     const published=bool(body.publish??body.published??false,'Publicar nota'),points=body.points===null&&!published?null:num(body.points,'Nota en puntos',0,activity.maxPoints),feedback=text(body.feedback??'','Comentarios',10000),reason=text(body.reason||'Calificación docente sin entrega','Motivo de la calificación',1000,true),at=now(),id=existing?.id||randomUUID();
+     const draft=published?null:JSON.stringify({points,feedback,reason,savedAt:at});
+     if(existing){if(!run('UPDATE activity_manual_grades SET points=?,feedback=?,published=?,draft_payload=?,max_points=?,version=version+1,updated_at=? WHERE id=? AND version=? AND superseded=0',published?points:existing.points,published?feedback:existing.feedback,published?1:existing.published,draft,activity.maxPoints,at,id,existing.version).changes)fail(409,'Esta nota cambió. Recarga antes de guardar.');}
+     else run('INSERT INTO activity_manual_grades(id,activity_id,student_id,revision,points,feedback,published,draft_payload,max_points,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)',id,activityId,studentId,activity.revision,published?points:null,published?feedback:'',Number(published),draft,activity.maxPoints,at,at);
+     const saved=manualRaw(activityId,studentId);manualAudit(saved,auth,published?'activity.manual-grade.release':'activity.manual-grade.grade-draft',{points:existing?manualGradeRecord(existing,{forAdmin:true}).points:null,published:Boolean(existing?.published)},{points,published,draft:!published},reason);if(published)invalidate(activity.courseId);
+    }
+    db.exec('COMMIT');
+   }catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}
+   return send({...manualView(manualRaw(activityId,studentId),auth),name:student.name,document:student.document});
+  }
   if(path==='/api/academics/storage'&&method==='GET'){requireAdmin(auth);const mine=storage?.report(auth);return send({...mine,usedBytes:!accessModel||accessModel.global(auth)?files.usedBytes():mine?.own.usedBytes,maxBytes:storage?.settings().submissionBytes??maxStorage,fileMaxBytes:10*1024*1024});}
   if(path==='/api/academics/courses'&&method==='GET'){
    if(admin(auth)){
@@ -192,7 +252,7 @@ export function createAcademics(ctx) {
   }
   match=/^\/api\/academics\/courses\/([^/]+)(?:\/(activities|settings|gradebook|release))?$/.exec(path);
   if(match){const [,id,section]=match;const c=access(id,auth);
-   if(!section&&method==='GET'){const acts=list(id).filter(a=>admin(auth)||released(a));const cfg=settings(id),context=activityViewContext(id,auth);const grade=!admin(auth)&&!auth.preview?gradeRow(list(id).filter(a=>a.status==='published'),auth.user.id,cfg,false):null;if(grade)grade.cells=grade.cells.filter(cell=>acts.some(a=>a.id===cell.activityId));return send({course:{id:c.id,title:c.title},settings:cfg,activities:acts.map(a=>({...view(a,auth,context),mine:!admin(auth)?auth.preview?[]:rows(a.id,auth.user.id).map(s=>subView(s,auth)):undefined})),grade});}
+   if(!section&&method==='GET'){const acts=list(id).filter(a=>admin(auth)||released(a));const cfg=settings(id),context=activityViewContext(id,auth);const grade=!admin(auth)&&!auth.preview?gradeRow(list(id).filter(a=>a.status==='published'),auth.user.id,cfg,false):null;if(grade)grade.cells=grade.cells.filter(cell=>acts.some(a=>a.id===cell.activityId));return send({course:{id:c.id,title:c.title},settings:cfg,activities:acts.map(a=>({...view(a,auth,context),mine:!admin(auth)?auth.preview?[]:rows(a.id,auth.user.id).map(s=>subView(s,auth)):undefined,...(!admin(auth)?{manualGrade:auth.preview?null:manualView(manualRaw(a.id,auth.user.id),auth)}:{})})),grade});}
    requireAdmin(auth);
    if(section==='release'&&method==='POST'){await readJson(req);auth=readSession(req);requireAdmin(auth);access(id,auth);const result=releaseMany(list(id).filter(a=>a.status==='published'),auth);return send(result);}
    if(section==='activities'&&method==='POST'){const b=await readJson(req,29*1024*1024);auth=readSession(req);requireAdmin(auth);access(id,auth);const a=config(b);checkWeights(id,a);let moduleId=b.moduleId||null;if(moduleId&&!one('SELECT id FROM modules WHERE id=? AND course_id=?',moduleId,id))fail(400,'Capítulo no válido.');const aid=randomUUID(),plan=files.prepare([],b.attachments,b.retainAttachmentIds,{teacher:true});storage?.assertUpload({userId:auth.user.id,courseId:id,added:plan.added});saveActivityFiles(plan,aid,()=>{run('INSERT INTO activities(id,course_id,module_id,config,created_at) VALUES (?,?,?,?,?)',aid,id,moduleId,JSON.stringify(a),now());invalidate(id);audit(auth.user,'activity.create',aid);});return send(view(getActivity(aid),auth),201);}
@@ -231,14 +291,14 @@ export function createAcademics(ctx) {
     let deadline=null;
     if(accessModel&&!admin(auth)&&!auth.preview&&a.timeLimitMinutes>0&&(!a.opensAt||a.opensAt<=now())&&!studentDeadline(a,auth.user.id).closed){run('INSERT OR IGNORE INTO attempt_starts VALUES(?,?,?,?)',id,auth.user.id,a.revision,now());const start=one('SELECT started_at FROM attempt_starts WHERE activity_id=? AND student_id=? AND revision=?',id,auth.user.id,a.revision);deadline=new Date(Date.parse(start.started_at)+a.timeLimitMinutes*60000).toISOString();}
     const data={deadline,activity:view(a,auth),course:one('SELECT id,title FROM courses WHERE id=?',a.courseId)};
-    if(!admin(auth)){data.mine=auth.preview?[]:rows(id,auth.user.id).map(s=>subView(s,auth));data.previous=auth.preview?[]:all('SELECT * FROM submissions WHERE activity_id=? AND student_id=? AND superseded=1 ORDER BY revision DESC,attempt DESC',id,auth.user.id).map(s=>subView(s,auth));}
+    if(!admin(auth)){data.mine=auth.preview?[]:rows(id,auth.user.id).map(s=>subView(s,auth));data.previous=auth.preview?[]:all('SELECT * FROM submissions WHERE activity_id=? AND student_id=? AND superseded=1 ORDER BY revision DESC,attempt DESC',id,auth.user.id).map(s=>subView(s,auth));data.manualGrade=auth.preview?null:manualView(manualRaw(id,auth.user.id),auth);}
     return send(data);
    }
    if(!section&&method==='DELETE'){
     requireAdmin(auth);const b=await readJson(req);auth=readSession(req);requireAdmin(auth);a=checkActivity(id,auth);
     if(b.version!==a.version)fail(409,'La actividad cambió. Recarga antes de eliminarla.');
     const attached=[...(accessModel?all('SELECT files FROM activity_versions WHERE activity_id=?',id).flatMap(r=>JSON.parse(r.files)):[]),...files.instructionFiles(id),...all('SELECT payload FROM submissions WHERE activity_id=?',id).flatMap(s=>submissionFiles(JSON.parse(s.payload)))];
-    db.exec('BEGIN IMMEDIATE');try{if(accessModel){run('DELETE FROM grade_audit WHERE submission_id IN (SELECT id FROM submissions WHERE activity_id=?)',id);run('DELETE FROM learning_events WHERE object_id=?',id);}audit(auth.user,'activity.delete',id);run('DELETE FROM activities WHERE id=?',id);invalidate(a.courseId);db.exec('COMMIT');}catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}
+    db.exec('BEGIN IMMEDIATE');try{run('DELETE FROM grade_audit WHERE submission_id IN (SELECT id FROM submissions WHERE activity_id=? UNION SELECT id FROM activity_manual_grades WHERE activity_id=?)',id,id);if(accessModel)run('DELETE FROM learning_events WHERE object_id=?',id);audit(auth.user,'activity.delete',id);run('DELETE FROM activities WHERE id=?',id);invalidate(a.courseId);db.exec('COMMIT');}catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}
     attached.forEach(files.remove);return send({success:true,courseId:a.courseId});
    }
    if(!section&&method==='PATCH'){
@@ -248,7 +308,7 @@ export function createAcademics(ctx) {
     if(moduleId&&!one('SELECT id FROM modules WHERE id=? AND course_id=?',moduleId,a.courseId))fail(400,'Capítulo no válido.');
     const plan=files.prepare(files.instructionFiles(id),b.attachments,b.retainAttachmentIds,{teacher:true}),attachmentsChanged=plan.added.length>0||plan.removed.length>0;
     const changed=['title','description','kind','maxPoints','questions','instructionUrl','procedureSupport',...(c.kind==='task'?['responseSettings']:[])].some(k=>JSON.stringify(c[k])!==JSON.stringify(a[k]??(k==='instructionUrl'?'':undefined)))||attachmentsChanged;
-    const records=all('SELECT * FROM submissions WHERE activity_id=? AND superseded=0',id),count=records.length,hasScaleMismatch=records.some(s=>submissionMaxPoints(JSON.parse(s.payload),a)!==c.maxPoints);
+    const manualRecords=all('SELECT * FROM activity_manual_grades WHERE activity_id=? AND superseded=0',id).map(row=>({...manualGradeRecord(row,{forAdmin:true}),points:row.points,published:row.published})),manualIds=new Set(manualRecords.map(row=>row.id)),records=[...all('SELECT * FROM submissions WHERE activity_id=? AND superseded=0',id),...manualRecords],count=records.length,hasScaleMismatch=records.some(s=>submissionMaxPoints(JSON.parse(s.payload),a)!==c.maxPoints);
     const scaleOnly=scaleOnlyChange(a,c,attachmentsChanged,{hasScaleMismatch});
     if(b.requestResubmission!==undefined)bool(b.requestResubmission,'Solicitar nueva entrega');
     const decision=accessModel?revisionDecision(a,c,b,count,attachmentsChanged,fail):null,reset=decision?decision.reset:Boolean(count&&(!scaleOnly&&changed||b.requestResubmission));if(decision)c.repeatPolicy=decision.policy;let reopened=false;
@@ -257,7 +317,7 @@ export function createAcademics(ctx) {
     const snapshot={title:a.title,kind:a.kind,maxPoints:a.maxPoints,procedureSupport:a.procedureSupport,responseSettings:a.responseSettings,questions:a.questions.map(({correct,...q})=>q)};
     if(accessModel&&b.preview){
      const canGrade=activityEvaluation.canRead(auth,a.courseId),oldActivities=list(a.courseId).filter(x=>x.status==='published'),nextActivities=list(a.courseId).map(x=>x.id===id?{...x,...c}:x).filter(x=>x.status==='published');
-     const impact=canGrade?all('SELECT u.id,u.name FROM users u JOIN enrollments e ON e.student_id=u.id WHERE e.course_id=?',a.courseId).map(u=>({name:u.name,before:gradeRow(oldActivities,u.id,settings(a.courseId),true).accumulated,after:gradeCalculation(nextActivities,u.id,settings(a.courseId),true,{closed:activity=>studentDeadline(activity,u.id).closed,override:(aid,uid)=>Boolean(one('SELECT exempt FROM grade_overrides WHERE activity_id=? AND student_id=?',aid,uid)?.exempt),rows:(aid,uid)=>aid!==id?rows(aid,uid).map(effectiveGrade):reset?[]:rows(aid,uid).filter(s=>!archiveDrafts||s.state!=='draft').map(s=>{const converted=conversionMap.get(s.id),p=converted?converted.payload:JSON.parse(s.payload);return effectiveGrade({...s,points:converted?converted.points:s.points,payload:JSON.stringify({...p,previousActivity:p.previousActivity||snapshot})});})}).accumulated})):[];
+     const impact=canGrade?all('SELECT u.id,u.name FROM users u JOIN enrollments e ON e.student_id=u.id WHERE e.course_id=?',a.courseId).map(u=>({name:u.name,before:gradeRow(oldActivities,u.id,settings(a.courseId),true).accumulated,after:gradeCalculation(nextActivities,u.id,settings(a.courseId),true,{closed:activity=>studentDeadline(activity,u.id).closed,override:(aid,uid)=>Boolean(one('SELECT exempt FROM grade_overrides WHERE activity_id=? AND student_id=?',aid,uid)?.exempt),manual:(aid,uid)=>{if(aid===id&&reset)return null;const row=manualFor(aid,uid,true),converted=row&&conversionMap.get(row.id);return converted?effectiveGrade({...row,points:converted.points,payload:JSON.stringify(converted.payload)}):row;},rows:(aid,uid)=>aid!==id?rows(aid,uid).map(effectiveGrade):reset?[]:rows(aid,uid).filter(s=>!archiveDrafts||s.state!=='draft').map(s=>{const converted=conversionMap.get(s.id),p=converted?converted.payload:JSON.parse(s.payload);return effectiveGrade({...s,points:converted?converted.points:s.points,payload:JSON.stringify({...p,previousActivity:p.previousActivity||snapshot})});})}).accumulated})):[];
      const scaleConversions=conversions.length;
      return send({impact,affectedResponses:count,policy:decision.policy,changed:decision.changed,scaleOnly,oldMaxPoints:a.maxPoints,newMaxPoints:c.maxPoints,scaleConversionCount:conversions.length,scaleConversions,oldWeight:a.weight,newWeight:c.weight,oldPeriod:a.periodId||'',newPeriod:c.periodId||''});
     }
@@ -268,8 +328,12 @@ export function createAcademics(ctx) {
       run('INSERT OR IGNORE INTO activity_versions VALUES(?,?,?,?,?)',id,a.revision,JSON.stringify(a),JSON.stringify(files.instructionFiles(id)),at);
       run("UPDATE submissions SET payload=json_set(payload,'$.previousActivity',json(?)) WHERE activity_id=? AND superseded=0 AND json_extract(payload,'$.previousActivity') IS NULL",JSON.stringify(snapshot),id);
      }
-     if(reset){if(accessModel)run('UPDATE submissions SET superseded=1,version=version+1 WHERE activity_id=? AND superseded=0',id);else run("UPDATE submissions SET superseded=1,payload=json_set(payload,'$.previousActivity',json(?)),version=version+1 WHERE activity_id=? AND superseded=0",JSON.stringify(snapshot),id);}
+     if(reset){if(accessModel)run('UPDATE submissions SET superseded=1,version=version+1 WHERE activity_id=? AND superseded=0',id);else run("UPDATE submissions SET superseded=1,payload=json_set(payload,'$.previousActivity',json(?)),version=version+1 WHERE activity_id=? AND superseded=0",JSON.stringify(snapshot),id);run('UPDATE activity_manual_grades SET superseded=1,version=version+1,updated_at=? WHERE activity_id=? AND superseded=0',at,id);}
      for(const converted of conversions){
+      if(manualIds.has(converted.id)){
+       if(!run('UPDATE activity_manual_grades SET points=?,draft_payload=?,max_points=?,scale_adjustment=?,version=version+1,updated_at=? WHERE id=? AND version=? AND superseded=0',converted.points,converted.payload.teacherGradeDraft?JSON.stringify(converted.payload.teacherGradeDraft):null,converted.to,converted.payload.scaleAdjustment?JSON.stringify(converted.payload.scaleAdjustment):null,at,converted.id,converted.version).changes)fail(409,'Una nota sin entrega cambió mientras guardabas. Recarga para revisar la escala.');
+       manualAudit({id:converted.id,activity_id:id,student_id:converted.studentId},auth,'activity.manual-grade.scale',converted.before,converted.after,'Conversión proporcional de escala de '+converted.from+' a '+converted.to);continue;
+      }
       const payload={...converted.payload,previousActivity:converted.payload.previousActivity||snapshot};
       if(!run('UPDATE submissions SET points=?,payload=?,version=version+1,updated_at=? WHERE id=? AND version=? AND superseded=0',converted.points,JSON.stringify(payload),at,converted.id,converted.version).changes)fail(409,'Una entrega cambió mientras guardabas. Recarga para revisar la escala.');
       const reason='Conversión proporcional de escala de '+converted.from+' a '+converted.to;
@@ -281,7 +345,7 @@ export function createAcademics(ctx) {
     });return send({...view(getActivity(id),auth),resubmissionRequired:reset,reopened,scaleOnly,scaleConversionCount:conversions.length});
    }
    if(section==='release'&&method==='POST'){requireAdmin(auth);const b=await readJson(req);auth=readSession(req);requireAdmin(auth);a=checkActivity(id,auth);if(a.status!=='published')fail(409,'Publica la actividad antes de devolver las notas.');return send(releaseMany([a],auth,b.submissions));}
-   if(section==='submissions'&&method==='GET'){requireAdmin(auth);return send({activity:view(a,auth),submissions:all("SELECT s.*,u.name,u.document FROM submissions s JOIN users u ON u.id=s.student_id WHERE activity_id=? ORDER BY s.superseded,s.revision DESC,s.attempt DESC,s.updated_at DESC",id).map(s=>({...subView(s,auth),name:s.name,document:s.document})),closures:activityClosures(a)});}
+   if(section==='submissions'&&method==='GET'){requireAdmin(auth);return send({activity:view(a,auth),submissions:all("SELECT s.*,u.name,u.document FROM submissions s JOIN users u ON u.id=s.student_id WHERE activity_id=? ORDER BY s.superseded,s.revision DESC,s.attempt DESC,s.updated_at DESC",id).map(s=>({...subView(s,auth),name:s.name,document:s.document})),closures:activityClosures(a),students:activeStudents(a),manualGrades:all('SELECT g.*,u.name,u.document FROM activity_manual_grades g JOIN users u ON u.id=g.student_id WHERE g.activity_id=? ORDER BY g.superseded,g.updated_at DESC',id).map(row=>manualView(row,auth))});}
    if(section==='submit'&&method==='POST'){
     requireStudent(auth);const b=await readJson(req,29*1024*1024);auth=readSession(req);requireStudent(auth);a=checkActivity(id,auth);const key=text(b.requestId,'Identificador de entrega',80,true);if(!/^[\w-]{8,80}$/.test(key))fail(400,'Identificador de entrega no válido.');if(!['draft','submit'].includes(b.action))fail(400,'Acción no válida.');
     if((b.activityRevision??1)!==a.revision)fail(409,'La actividad fue actualizada. Recarga para responder la nueva versión.');
@@ -319,7 +383,7 @@ export function createAcademics(ctx) {
      const late=Number(final&&deadline.source!=='correction'&&deadline.dueAt&&at>deadline.dueAt)||0;
      if(previous)run('UPDATE submissions SET payload=?,state=?,submitted_at=?,late=?,points=?,published=0,feedback=CASE WHEN ? THEN \'\' ELSE feedback END,returned_at=CASE WHEN ? THEN NULL ELSE returned_at END,return_due_at=CASE WHEN ? THEN NULL ELSE return_due_at END,revision=?,version=version+1,updated_at=? WHERE id=?',JSON.stringify(payload),final?(points===null||payload.procedureReviewPending?'submitted':'graded'):'draft',final?at:previous.submitted_at,late,points,Number(final),Number(final),Number(final),a.revision,now(),sid);
      else run('INSERT INTO submissions(id,activity_id,student_id,request_key,attempt,state,payload,submitted_at,late,points,updated_at,revision) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',sid,id,auth.user.id,key,attempt,final?(points===null||payload.procedureReviewPending?'submitted':'graded'):'draft',JSON.stringify(payload),final?at:null,late,points,at,a.revision);
-     if(final){if(accessModel)run('DELETE FROM attempt_starts WHERE activity_id=? AND student_id=? AND revision=?',id,auth.user.id,a.revision);reconcileClosures({activityId:id,studentId:auth.user.id,at});invalidate(a.courseId);audit(auth.user,'submission.submit',sid);}else if(accessModel&&!previous)audit(auth.user,'submission.start',sid);db.exec('COMMIT');
+     if(final){const previousManual=manualRaw(id,auth.user.id);if(previousManual){run('UPDATE activity_manual_grades SET superseded=1,version=version+1,updated_at=? WHERE id=? AND superseded=0',at,previousManual.id);manualAudit(previousManual,auth,'activity.manual-grade.superseded',{points:previousManual.points,published:Boolean(previousManual.published)},{points:previousManual.points,superseded:true},'El estudiante envió una entrega real');}if(accessModel)run('DELETE FROM attempt_starts WHERE activity_id=? AND student_id=? AND revision=?',id,auth.user.id,a.revision);reconcileClosures({activityId:id,studentId:auth.user.id,at});invalidate(a.courseId);audit(auth.user,'submission.submit',sid);}else if(accessModel&&!previous)audit(auth.user,'submission.start',sid);db.exec('COMMIT');
     }catch(e){if(db.isTransaction)db.exec('ROLLBACK');plan.added.forEach(files.remove);throw e;}
     plan.removed.forEach(files.remove);return send({...subView(one('SELECT * FROM submissions WHERE id=?',sid),auth),closure:studentClosure(a,auth.user.id,{reconcile:false})},201);
    }
@@ -352,5 +416,5 @@ export function createAcademics(ctx) {
   }
   fail(404,'Función académica no encontrada.');
  }
- return {handler,settings,list,gradeRow,invalidate,studentDeadline,studentClosure,reconcileClosures,evaluationSummary,evaluationSummaries,courseFiles:files.courseFiles};
+ return {handler,settings,list,gradeRow,invalidate,studentDeadline,studentClosure,reconcileClosures,evaluationSummary,evaluationSummaries,manualGrade:(activityId,studentId,forAdmin=false)=>manualGradeDTO(manualRaw(activityId,studentId),{forAdmin}),courseFiles:files.courseFiles};
 }
