@@ -55,7 +55,9 @@ test('audit fixes: draft preview, group grades, exemptions, labs, palette, quest
  const tree=(await master('/api/library/'+entry.id)).preview;
  const snapshotFile=tree.activities.find(v=>v.title==='Draft with media').files[0];assert.ok(snapshotFile.fileUrl);
  await master(snapshotFile.fileUrl);await stranger(snapshotFile.fileUrl,undefined,'GET',403);
- assert.match(await master(tree.materials[0].previewUrl),/Safe lab/);
+ const libraryPreview=await master(tree.materials[0].previewUrl);
+ assert.match(libraryPreview,/Safe lab/);assert.match(libraryPreview,/aula:chapter-video/);
+ await stranger(tree.materials[0].previewUrl,undefined,'GET',403);
  const second=await master(`/api/platform/courses/${template.id}/clone`,{kind:'group',cohort:'2026-2',code:'B',title:'Audit B'},'POST',201);
  await master('/api/library/'+entry.id+'/use',{courseId:second.id},'POST',201);
  const copied=await master('/api/courses/'+second.id);assert.equal(copied.modules.length,1);assert.notEqual(copied.modules[0].id,module.id);

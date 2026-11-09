@@ -1,12 +1,18 @@
 import {escapeHtml as e,safeUrl,videoEmbed} from './lib.js';
+import {embedUrl,videoPlayer} from './activity-media.js';
+import {originalVideoUrl} from './video-embed.js';
 
-export function youtubeThumbnail(url){const embed=videoEmbed(url);return embed?.startsWith('https://www.youtube-nocookie.com/embed/')?`https://i.ytimg.com/vi/${embed.split('/').pop()}/hqdefault.jpg`:'';}
+export function youtubeThumbnail(url){
+ const embed=videoEmbed(url);if(!embed)return '';
+ const player=new URL(embed),id=player.pathname.match(/^\/embed\/([\w-]{11})$/)?.[1];
+ return player.hostname==='www.youtube-nocookie.com'&&id&&id!=='videoseries'?`https://i.ytimg.com/vi/${id}/hqdefault.jpg`:'';
+}
 const fileSize=n=>n<1048576?Math.max(1,Math.ceil(n/1024))+' KB':(n/1048576).toLocaleString('es-CO',{maximumFractionDigits:1})+' MB';
 const labels={video:'Video',download:'Descarga',link:'Enlace'};
 export function createQuickResourcesUI({api,getState,openModal,openResourceViewer,modal,render,toast,btn,icon}){
  const admin=()=>getState().user?.role==='admin'&&getState().viewMode!=='learning'&&!getState().preview&&getState().currentCourse?.permissions?.edit!==false;
  const current=()=>getState().currentCourse;
- const playable=r=>r.kind==='video'&&(videoEmbed(r.url)||/^https:\/\/.*\.(mp4|webm)(?:[?#].*)?$/i.test(r.url));
+ const playable=r=>r.kind==='video'&&embedUrl(r.url);
  function panel(course){const rows=course.quickResources||[];if(!admin()&&!rows.length)return '';
   return `<section class="panel quick-resources"><div class="section-head"><h2>Recursos rápidos</h2></div><p class="small-paragraph">Tutoriales, descargas y enlaces útiles para este curso.</p>${admin()?btn('Añadir recurso',`quick-new:${course.id}`,'secondary small','plus'):''}<div class="quick-list">${rows.map((r,i)=>{
    const thumbnail=safeUrl(r.imageUrl)|| (r.kind==='video'?youtubeThumbnail(r.url):''),canPlay=playable(r),href=r.fileUrl||safeUrl(r.url);
@@ -25,7 +31,7 @@ export function createQuickResourcesUI({api,getState,openModal,openResourceViewe
  }
  async function action(action,id){if(action==='quick-new')return edit(null);const r=current()?.quickResources.find(x=>x.id===id);if(!r)return;
   if(action==='quick-edit')return edit(id);
-  if(action==='quick-view'){const embed=videoEmbed(r.url),view=embed?`<iframe class="video" src="${e(embed)}" title="${e(r.title)}" allow="fullscreen; picture-in-picture" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>`:`<video class="quick-video" controls preload="metadata" src="${e(safeUrl(r.url))}"></video>`;openResourceViewer({...r,kind:'video'},view,`<a class="btn secondary" href="${e(safeUrl(r.url))}" target="_blank" rel="noopener noreferrer">Abrir original</a>`);}
+  if(action==='quick-view'){openResourceViewer({...r,kind:'video'},videoPlayer(r.url,r.title),`<a class="btn secondary" href="${e(originalVideoUrl(safeUrl(r.url)))}" target="_blank" rel="noopener noreferrer">Abrir original</a>`);}
   if(action==='quick-up'||action==='quick-down'){await api(`/admin/quick-resources/${id}`,{method:'PATCH',body:{move:action==='quick-up'?'up':'down',version:r.version}});await render();}
   if(action==='quick-delete')openModal('Eliminar recurso rápido',`<p>Se retirará <strong>${e(r.title)}</strong> de este curso${r.fileUrl?' y se eliminará su archivo subido':''}.</p>`,async()=>{await api(`/admin/quick-resources/${id}`,{method:'DELETE',body:{version:r.version}});modal.close();await render();toast('Recurso eliminado.');},{submit:'Eliminar recurso'});
  }

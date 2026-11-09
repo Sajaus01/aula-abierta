@@ -23,6 +23,7 @@ import {setupPanorama,createPanorama,eventContext} from './panorama.mjs';
 import {createBackup} from './backup.mjs';
 import {createQuestionImport} from './question-import.mjs';
 import {createLibrary} from './library.mjs';
+import {sendChapterPreview} from './chapter-preview.mjs';
 import {setupChat,createChat} from './chat.mjs';
 import {createNotifications} from './notifications.mjs';
 import {createRealtime} from './realtime.mjs';
@@ -627,15 +628,7 @@ export async function createApp(options = {}) {
           content = readFileSync(filePath, 'utf8');
         }
         if (!content) fail(404, 'Este capítulo aún no tiene contenido HTML.', 'NOT_FOUND');
-        // A separate HTTP document avoids inheriting the campus CSP. Sandbox creates
-        // an opaque origin even if opened directly; scripts cannot access sessions,
-        // the parent DOM, storage, forms, network APIs, popups or top-level navigation.
-        res.setHeader('Content-Security-Policy', "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https: data:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'self'");
-        res.setHeader('Referrer-Policy', 'no-referrer');
-        res.setHeader('Content-Type', 'text/html; charset=utf-8');
-        res.setHeader('Content-Length', Buffer.byteLength(content));
-        res.writeHead(200);
-        return res.end(method === 'HEAD' ? undefined : content);
+        return sendChapterPreview(res, method, content);
       }
       match = /^\/api\/resources\/([^/]+)\/file$/.exec(path);
       if (match && ['GET', 'HEAD'].includes(method)) {

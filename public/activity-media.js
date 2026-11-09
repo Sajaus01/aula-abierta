@@ -1,20 +1,32 @@
 import {escapeHtml as e} from './lib.js';
+import {videoEmbed, videoPermissions, isVideoFile, originalVideoUrl} from './video-embed.js';
 
 export function previewUrl(value){
  try{const u=new URL(value);if(!['https:','http:'].includes(u.protocol)||u.username||u.password)return '';return u.href;}catch{return '';}
 }
 export function embedUrl(value){
  const href=previewUrl(value);if(!href)return '';const u=new URL(href);
- if(['youtube.com','www.youtube.com','m.youtube.com','youtu.be'].includes(u.hostname)){
-  const id=u.hostname==='youtu.be'?u.pathname.slice(1):u.searchParams.get('v')||u.pathname.match(/^\/(?:shorts|embed)\/([^/]+)/)?.[1];
-  if(/^[\w-]{11}$/.test(id||''))return 'https://www.youtube-nocookie.com/embed/'+id;
+ const player=videoEmbed(href);if(player)return player;
+ if(u.hostname==='drive.google.com'){
+  const id=u.pathname.match(/^\/file\/d\/([\w-]+)(?:\/|$)/)?.[1];
+  if(id){
+   const drive=new URL('https://drive.google.com/file/d/'+id+'/preview');
+   if(u.searchParams.has('resourcekey'))drive.searchParams.set('resourcekey',u.searchParams.get('resourcekey'));
+   return drive.href;
+  }
  }
- if(u.hostname==='drive.google.com'){const id=u.pathname.match(/\/file\/d\/([\w-]+)/)?.[1];if(id)return 'https://drive.google.com/file/d/'+id+'/preview';}
  return u.protocol==='https:'?href:'';
 }
+export function videoPlayer(value,title){
+ const src=embedUrl(value);
+ if(!src)return '';
+ if(isVideoFile(src))return `<video class="quick-video" controls playsinline preload="metadata" aria-label="${e(title)}" src="${e(src)}"></video>`;
+ const sandbox=videoEmbed(src)?'':' sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"';
+ return `<iframe class="video" src="${e(src)}" title="${e(title)}" loading="lazy"${sandbox} allow="${videoPermissions}" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>`;
+}
 export function linkPreview(value,label='Material de apoyo'){
- const href=previewUrl(value);if(!href)return '';const embed=embedUrl(href),host=new URL(href).hostname;
- return `<details class="activity-link-preview" data-preview-kind="${embed.includes('youtube-nocookie.com/embed/')?'video':'page'}"><summary><span>${e(label)}</span><small>${e(host)}</small><span>Vista previa</span></summary><div class="activity-link-body">${embed?`<iframe src="${e(embed)}" title="${e(label)}" loading="lazy" sandbox="allow-scripts allow-same-origin allow-forms allow-presentation" allow="fullscreen; encrypted-media" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>`:''}<div class="activity-link-footer"><p>Si la página no permite mostrarse aquí, puedes abrirla en otra pestaña.</p><a class="btn secondary small" href="${e(href)}" target="_blank" rel="noopener noreferrer">Abrir en otra pestaña ↗</a></div></div></details>`;
+ const href=previewUrl(value);if(!href)return '';const video=videoEmbed(href)||isVideoFile(href),host=new URL(href).hostname;
+ return `<details class="activity-link-preview" data-preview-kind="${video?'video':'page'}"${video?' open':''}><summary><span>${e(label)}</span><small>${e(host)}</small><span>${video?'Video':'Vista previa'}</span></summary><div class="activity-link-body">${videoPlayer(href,label)}<div class="activity-link-footer"><p>Si la página no permite mostrarse aquí, puedes abrirla en otra pestaña.</p><a class="btn secondary small" href="${e(originalVideoUrl(href))}" target="_blank" rel="noopener noreferrer">Abrir en otra pestaña ↗</a></div></div></details>`;
 }
 export function linkedText(value){
  const text=String(value||''),parts=[],pattern=/https?:\/\/[^\s<>"']+/g;let cursor=0;
@@ -23,7 +35,8 @@ export function linkedText(value){
 }
 export function textPreviews(value,extra=''){
  const links=[extra,...(String(value||'').match(/https?:\/\/[^\s<>"']+/g)||[]).map(v=>v.replace(/[.,;!?)\]]+$/,''))].filter(previewUrl);
- return [...new Set(links)].slice(0,6).map((url,i)=>linkPreview(url,`Recurso de apoyo ${i+1}`)).join('');
+ const unique=[...new Set(links)];
+ return unique.filter((url,i)=>i<6||videoEmbed(url)||isVideoFile(url)).map((url,i)=>linkPreview(url,`Recurso de apoyo ${i+1}`)).join('');
 }
 export function questionVisual(q,attachments=[]){
  const files=(q.media||[]).map(name=>attachments.find(f=>f.name===name)).filter(Boolean),images=files.filter(f=>f.mime?.startsWith('image/'));

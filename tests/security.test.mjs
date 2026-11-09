@@ -249,6 +249,10 @@ test('la API aplica permisos, sesiones, matrículas y controles de archivos', as
     assert.deepEqual(csp['default-src'], ["'none'"]);
     assert.deepEqual(csp['script-src'], ["'unsafe-inline'"]);
     assert.deepEqual(csp['connect-src'], ["'none'"]);
+    assert.deepEqual(csp['frame-src'], ['about:']);
+    assert.ok(csp['media-src'].includes('https:'));
+    assert.equal(response.headers.get('referrer-policy'), 'strict-origin-when-cross-origin');
+    assert.match(response.text, /aula:chapter-video/);
     assert.deepEqual(csp['form-action'], ["'none'"]);
     assert.deepEqual(csp['base-uri'], ["'none'"]);
     status(await student.request(htmlResource.previewUrl, { method: 'HEAD' }), 200);
@@ -263,7 +267,8 @@ test('la API aplica permisos, sesiones, matrículas y controles de archivos', as
     assert.equal(status(await anonymous.request(`/api/courses/${openCourse.id}`), 200).locked, false);
     const publicPreview = await anonymous.request(openHtml.previewUrl);
     status(publicPreview, 200);
-    assert.equal(publicPreview.text, content);
+    assert.ok(publicPreview.text.startsWith(content));
+    assert.match(publicPreview.text.slice(content.length), /aula:chapter-video/);
   });
 
   await t.test('la importación informa duplicados sin sobrescribir cuentas existentes', async () => {

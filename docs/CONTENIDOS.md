@@ -31,6 +31,8 @@ El servidor admite PDF, PPTX, DOCX, JPG/JPEG, PNG, GIF, WebP, TXT, HTML y HTM, c
 
 Los recursos de tipo HTML ofrecen una vista previa aislada: puedes escribir HTML, CSS dentro de `<style>` y JavaScript dentro de `<script>` en el mismo documento. El visor permite esos scripts internos, pero no comparte el origen de la plataforma, sus cookies ni su almacenamiento. El servidor verifica la matrícula antes de entregar la vista previa; al descargar el archivo, se entrega como adjunto.
 
+En los capítulos HTML y laboratorios puedes incluir un enlace de YouTube o Vimeo, el `iframe` HTTPS de un proveedor, o un archivo HTTPS dentro de `<video controls>`. Al pulsar el video incrustado, el aula abre el reproductor y mantiene la diapositiva en su lugar. **Volver al capítulo** cierra el reproductor. Si el autor del video restringe su reproducción en otros sitios, **Abrir original** lleva al proveedor.
+
 Usa capítulos autocontenidos. El visor bloquea bibliotecas JavaScript externas, paquetes cargados desde CDN, `fetch`/XHR, formularios y acceso a la aplicación. Las imágenes pueden estar incluidas como `data:` o usar direcciones HTTPS externas; las fuentes deben incluirse como `data:`. Una imagen HTTPS sí genera una solicitud al sitio que la aloja. Para conservar el material completo y evitar depender de otros sitios, incorpora sus imágenes y estilos en el propio HTML. Un conjunto de archivos con rutas relativas, un archivo JavaScript suelto o un ZIP no es un capítulo autocontenido.
 
 ## Estructura sugerida

@@ -24,6 +24,12 @@ dialog.resource-viewer[open]{display:flex;flex-direction:column}
 .viewer-heading h2{font-size:1rem;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .viewer-heading>span{display:block;font-size:.7rem;color:var(--muted);margin-top:3px}
 .viewer-actions{display:flex;align-items:center;gap:8px;min-width:0}
+dialog.chapter-video-dialog{width:min(1000px,96vw);padding:12px;border:0}
+.chapter-video-dialog header{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-bottom:10px}
+.chapter-video-dialog :is(iframe,video){display:block;width:100%;aspect-ratio:16/9;max-height:calc(88dvh - 66px);border:0;background:#111}
+.chapter-video-dialog.at-video-slot{margin:0;padding:0;max-width:none;border-radius:6px}
+.chapter-video-dialog.at-video-slot::backdrop{background:transparent;backdrop-filter:none}
+.chapter-video-dialog.at-video-slot :is(iframe,video){height:var(--chapter-video-height);max-height:none;aspect-ratio:auto}
 .viewer-header .btn,.viewer-header .icon-btn{min-width:42px;min-height:42px}
 .resource-viewer .content-view{flex:1;min-height:0;min-width:0;display:flex;align-items:stretch;overflow:auto;margin:0;padding-bottom:env(safe-area-inset-bottom);overscroll-behavior:contain}
 .resource-viewer .content-view iframe,.resource-viewer .content-view iframe.video{flex:1;display:block;width:100%;height:100%;min-width:0;min-height:0;border:0;border-radius:0;aspect-ratio:auto}

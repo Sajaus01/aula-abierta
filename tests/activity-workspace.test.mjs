@@ -5,6 +5,16 @@ import {quizQuestion} from '../public/quiz-player.js';
 
 const base={id:'a',courseId:'c',title:'Actividad',kind:'task',revision:2,maxAttempts:2,maxPoints:10,weight:5,allowLate:true,questions:[],attachments:[]};
 const render=a=>studentActivityWorkspace({activity:a,course:{title:'Curso'},mine:[]},{questionMedia:()=>'',questionPreview:()=>''});
+test('un estudiante puede reproducir los videos del enunciado y del enlace docente sin salir de la actividad',()=>{
+ const html=render({...base,description:'Ver https://youtu.be/dQw4w9WgXcQ?t=2m',instructionUrl:'https://vimeo.com/12345/aa789'});
+ assert.match(html,/src="https:\/\/www\.youtube-nocookie\.com\/embed\/dQw4w9WgXcQ\?start=120"/);
+ assert.match(html,/src="https:\/\/player\.vimeo\.com\/video\/12345\?h=aa789"/);
+ assert.equal((html.match(/data-preview-kind="video" open/g)||[]).length,2);
+ assert.equal((html.match(/referrerpolicy="strict-origin-when-cross-origin"/g)||[]).length,2);
+ assert.match(html,/href="https:\/\/vimeo\.com\/12345\/aa789" target="_blank"/);
+ const otherLinks=Array.from({length:6},(_,i)=>'https://material.example/'+i).join(' ');
+ assert.match(render({...base,description:otherLinks+' https://youtu.be/dQw4w9WgXcQ'}), /src="https:\/\/www\.youtube-nocookie\.com\/embed\/dQw4w9WgXcQ"/);
+});
 test('legacy task keeps its existing delivery channels; configured channels control the form',()=>{
  assert.deepEqual(activityResponseSettings(),{text:true,link:true,files:true,requireText:false,requireLink:false,requireFiles:false});
  const written=render({...base,responseSettings:{text:true,link:false,files:false,requireText:true}});

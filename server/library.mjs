@@ -1,6 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import {copyFileSync,unlinkSync,statSync,statfsSync,readFileSync} from 'node:fs';
 import {join,extname,basename} from 'node:path';
+import {sendChapterPreview} from './chapter-preview.mjs';
 export function createLibrary(ctx){
  const storage=ctx.storage;
  const {db,uploadsDir,accessModel:a,readJson,readSession,json,fail,audit,string,fileResponse}=ctx;
@@ -41,7 +42,7 @@ export function createLibrary(ctx){
   if(m){let item=owned(m[1],auth);
    if(['preview','file'].includes(m[2])&&['GET','HEAD'].includes(method)){
     const assets=snapshotAssets(JSON.parse(item.payload)),key=new URL(req.url,'http://localhost').searchParams.get('asset')||'0',r=assets[Number(key)];if(!/^\d+$/.test(key)||!r)fail(404,'Archivo no encontrado.');
-    if(m[2]==='preview'){if(!['html','lab'].includes(r.kind))fail(404,'Vista no disponible.');const content=r.content||(r.file_key?readFileSync(join(uploadsDir,r.file_key),'utf8'):'');res.setHeader('Content-Security-Policy',"sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https: data:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'self'");res.setHeader('Content-Type','text/html; charset=utf-8');res.end(method==='HEAD'?undefined:content);return true;}
+    if(m[2]==='preview'){if(!['html','lab'].includes(r.kind))fail(404,'Vista no disponible.');const content=r.content||(r.file_key?readFileSync(join(uploadsDir,r.file_key),'utf8'):'');sendChapterPreview(res,method,content);return true;}
     if(!r.file_key)fail(404,'Archivo no encontrado.');fileResponse(req,res,join(uploadsDir,r.file_key),r.file_mime,r.file_name,!['application/pdf'].includes(r.file_mime)&&!r.file_mime.startsWith('image/'),true);return true;
    }
    if(!m[2]&&method==='GET'){const payload=JSON.parse(item.payload);return send({id:item.id,title:item.title,kind:item.kind,shared:!!item.shared,preview:previewTree(payload,item)});}

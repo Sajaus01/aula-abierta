@@ -39,7 +39,7 @@ html:has(dialog.review-workspace[open]){overflow:hidden}.review-save-actions{pos
 [data-question-image-preview] .question-illustrations{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}[data-question-image-preview] img{max-height:190px}.editor-preview-question .question-statement.with-images{grid-template-columns:minmax(0,1.25fr) minmax(180px,1fr)}
 @media(max-width:720px){.question-statement.with-images,.editor-preview-question .question-statement.with-images{grid-template-columns:1fr}.question-illustrations img{max-height:320px}.activity-link-body iframe{height:320px}.question-statement{gap:16px}.academic-question{padding:16px}}
 .excel-image-thumbnails{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}.excel-image-thumbnails img{width:86px;height:64px;object-fit:contain;background:#f3f6fa;border:1px solid #dfe5ec;border-radius:8px}
-.activity-link-preview[data-preview-kind=video] iframe{height:auto;min-height:180px;aspect-ratio:16/9}
+.activity-link-preview[data-preview-kind=video] :is(iframe,video){display:block;width:100%;height:auto;min-height:200px;aspect-ratio:16/9;background:#000}
 /* Cuestionario del estudiante: una pregunta, lectura y respuesta en el mismo espacio. */
 .main:has(.student-quiz){padding-top:18px}.workspace:has(.student-quiz) .topbar{height:64px}
 .student-quiz{max-width:1100px;margin:0 auto}.quiz-header{margin-bottom:14px}.quiz-back{display:inline-flex;align-items:center;gap:6px;font-size:.78rem}.quiz-back .icon{width:16px;height:16px}.quiz-title-row{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:10px 0}.quiz-title-row h1{font-size:1.4rem;line-height:1.25;letter-spacing:-.4px}.quiz-title-row p{font-size:.78rem;margin-top:4px;color:var(--muted)}

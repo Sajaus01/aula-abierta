@@ -11,10 +11,13 @@ import {createAnalyticsUI} from './analytics.js';
 import {createEngagementTracker} from './engagement.js';
 import {createNavigation,navigationScope} from './navigation.js';
 import {createLibraryUI} from './library.js';
+import {bindChapterVideos} from './chapter-video.js';
 import {createPlatformUI} from './platform.js';
 import { createQuickResourcesUI } from './quick-resources.js';
 import { createAcademicUI } from './academics.js';
 import { escapeHtml as e, safeUrl, videoEmbed, parseStudentsCsv } from './lib.js';
+import {embedUrl,videoPlayer} from './activity-media.js';
+import {isVideoFile,originalVideoUrl} from './video-embed.js';
 import { materialStatus, summarizeLearning, activityFinalized, quickGuide } from './learning.js';
 import { enrollmentPreview, enrollmentResultLabel } from './enrollment-import.js';
 
@@ -33,6 +36,7 @@ state.academicOverview=[];state.learning={courses:[],recent:[],activities:[]};st
 const materialName = kind => !admin()&&kind==='html'?'Lección interactiva':kinds[kind];
 const route = () => state.user?.mustChangePassword ? 'crear-contrasena' : location.hash.slice(1) || (admin() ? 'inicio' : student() ? 'mis-cursos' : 'catalogo');
 const modal = document.getElementById('modal');
+bindChapterVideos(modal);
 const app = document.getElementById('app');
 let pendingModalDismiss=null;
 let modalHandler, renderVersion = 0, toastTimer, renderedRoute=null,renderedScope=null;
@@ -362,17 +366,17 @@ async function viewResource(id) {
  const r=findResource(id);if(!r)throw new Error('Abre primero el curso que contiene este recurso.');
  const initialScope=navigationScope(state),initialRoute=route();
  if(student()&&!state.preview){const opened=await post(`/progress/${id}/open`);if(navigationScope(state)!==initialScope||route()!==initialRoute)return;state.progress=state.progress.filter(p=>p.resourceId!==id).concat(opened);}
- const url=safeUrl(r.url),embed=videoEmbed(url),file=r.fileUrl;let view='';
+ const url=safeUrl(r.url),file=r.fileUrl;let view='';
  if(['html','lab'].includes(r.kind)&&(r.content||file)){
-  view=`<iframe title="${e(r.title)}" sandbox="allow-scripts" referrerpolicy="no-referrer" src="/api/resources/${encodeURIComponent(r.id)}/preview?aula_view=${!state.preview&&student()?'learning':'teaching'}"></iframe>`;
- }else if(embed)view=`<iframe class="video" title="${e(r.title)}" src="${e(embed)}" allow="fullscreen; picture-in-picture" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>`;
+  view=`<iframe data-chapter-preview title="${e(r.title)}" sandbox="allow-scripts" referrerpolicy="strict-origin-when-cross-origin" src="/api/resources/${encodeURIComponent(r.id)}/preview?aula_view=${!state.preview&&student()?'learning':'teaching'}"></iframe>`;
+ }else if(videoEmbed(url)||isVideoFile(url)||(r.kind==='video'&&embedUrl(url)))view=videoPlayer(url,r.title);
  else if(file&&(r.fileMime==='application/pdf'||r.fileName?.toLowerCase().endsWith('.pdf')))view=`<iframe title="${e(r.title)}" src="${e(file)}"></iframe>`;
  else if(r.kind==='image'&&(file||url))view=`<img src="${e(file||url)}" alt="${e(r.title)}">`;
  else if(r.content)view=`<pre>${e(r.content)}</pre>`;
  else view=`<div class="empty"><div class="empty-icon">${icon(kindIcon(r.kind))}</div><h3>${e(r.title)}</h3><p>${file?'Descarga el archivo para abrirlo en tu dispositivo.':url?'Abre este material en su página original.':'Este material aún no tiene contenido.'}</p></div>`;
  const completed=state.progress.some(p=>p.resourceId===id&&p.completed);
  const completionLabel=completed?'Marcar pendiente':'Marcar completado';
- const actions=`${file?`<a class="btn secondary" href="${e(file)}" download aria-label="Descargar archivo" title="Descargar archivo">${icon('download')}<span class="viewer-action-label">Descargar</span></a>`:''}${url?`<a class="btn secondary" href="${e(url)}" target="_blank" rel="noopener noreferrer" aria-label="Abrir enlace original" title="Abrir enlace original">${icon('link')}<span class="viewer-action-label">Abrir enlace</span></a>`:''}${state.user&&!admin()&&!state.preview?`<button type="button" class="btn ${completed?'secondary':''}" data-action="complete:${id}" aria-label="${completionLabel}" title="${completionLabel}">${icon('check')}<span class="viewer-action-label">${completionLabel}</span></button>`:''}`;
+ const actions=`${file?`<a class="btn secondary" href="${e(file)}" download aria-label="Descargar archivo" title="Descargar archivo">${icon('download')}<span class="viewer-action-label">Descargar</span></a>`:''}${url?`<a class="btn secondary" href="${e(originalVideoUrl(url))}" target="_blank" rel="noopener noreferrer" aria-label="Abrir enlace original" title="Abrir enlace original">${icon('link')}<span class="viewer-action-label">Abrir enlace</span></a>`:''}${state.user&&!admin()&&!state.preview?`<button type="button" class="btn ${completed?'secondary':''}" data-action="complete:${id}" aria-label="${completionLabel}" title="${completionLabel}">${icon('check')}<span class="viewer-action-label">${completionLabel}</span></button>`:''}`;
  openResourceViewer(r,view,actions+(r.kind==='lab'&&r.labResults!=='disabled'&&!state.preview?btn(admin()?'Ver resultados':'Registrar resultados','lab-results:'+r.id,'secondary') :''));
 }
 function importStudents() {

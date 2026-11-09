@@ -23,6 +23,16 @@ test('media layouts escape content, preserve image aspect and embed supported li
  const policy=procedurePolicy();assert.ok(supportFileAllowed(policy,'modelo.sldprt'));assert.ok(supportFileAllowed(policy,'modelo.sim'));assert.ok(!supportFileAllowed({...policy,formats:['pdf']},'modelo.sim'));
  assert.equal(validateFile({name:'modelo.dwg',base64:Buffer.from([0,1,2,3]).toString('base64')},{any:true}).mime,'application/octet-stream');assert.throws(()=>validateFile({name:'modelo.dwg',base64:'AAEC'}));assert.throws(()=>validateFile({name:'../modelo.dwg',base64:'AAEC'},{any:true}));
 });
+test('las actividades aceptan archivos de video y reproductores HTTPS de terceros',()=>{
+ const direct=linkPreview('https://media.example/ensayo.webm?signature=1','Ensayo <A>');
+ assert.match(direct,/<video[^>]+controls[^>]+src="https:\/\/media\.example\/ensayo\.webm\?signature=1"/);
+ assert.match(direct,/aria-label="Ensayo &lt;A&gt;"/);
+ const other=linkPreview('https://media.example/player/2?token=abc');
+ assert.match(other,/<iframe[^>]+src="https:\/\/media\.example\/player\/2\?token=abc"/);
+ assert.match(other,/sandbox="/);
+ assert.match(other,/href="https:\/\/media\.example\/player\/2\?token=abc" target="_blank"/);
+ assert.equal(embedUrl('https://drive.google.com/file/d/123/view?usp=sharing&resourcekey=abc'), 'https://drive.google.com/file/d/123/preview?resourcekey=abc');
+});
 test('images and CAD submissions stay private and unknown binaries download unchanged',async t=>{
  const root=await mkdtemp(join(tmpdir(),'aula-media-')),app=await createApp({dataDir:root,env:{NODE_ENV:'test',AULA_MODEL_V2:'1',ADMIN_DOCUMENT:'99881001',ADMIN_PASSWORD:'Synthetic-Media-2026!'}});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+app.server.address().port;
  t.after(async()=>{await new Promise(r=>app.server.close(r));assert.ok(resolve(root).startsWith(resolve(tmpdir())+sep+'aula-media-'));await rm(root,{recursive:true,force:true});});

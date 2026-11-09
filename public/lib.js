@@ -2,17 +2,7 @@ export const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char 
 export function safeUrl(value) {
   try { const url = new URL(value); return ['https:', 'http:'].includes(url.protocol) ? url.href : ''; } catch { return ''; }
 }
-export function videoEmbed(value) {
-  try {
-    const u = new URL(value); let id;
-    if (!['https:', 'http:'].includes(u.protocol) || u.username || u.password) return null;
-    if (u.hostname === 'youtu.be') id = u.pathname.slice(1);
-    if (['www.youtube.com','youtube.com','www.youtube-nocookie.com'].includes(u.hostname)) id = u.searchParams.get('v') || u.pathname.match(/^\/(?:embed|shorts)\/([^/]+)/)?.[1];
-    if (id && /^[\w-]{11}$/.test(id)) return `https://www.youtube-nocookie.com/embed/${id}`;
-    if (['vimeo.com','www.vimeo.com'].includes(u.hostname) && /^\/\d+$/.test(u.pathname)) return `https://player.vimeo.com/video${u.pathname}`;
-  } catch { /* Unsupported links remain ordinary links. */ }
-  return null;
-}
+export {videoEmbed} from './video-embed.js';
 export function parseStudentsCsv(text, { allowDuplicates = false } = {}) {
   const rows = []; let row = [], cell = '', quoted = false;
   text = text.replace(/^\uFEFF/, '');
